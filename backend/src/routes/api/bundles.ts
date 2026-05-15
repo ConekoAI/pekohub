@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { db } from '../../db/index.js';
-import { bundles, bundleVersions } from '../../db/schema.js';
-import { eq, and } from 'drizzle-orm';
+import { bundles, bundleVersions, pullStats } from '../../db/schema.js';
+import { eq, and, sql } from 'drizzle-orm';
 import { BundleDetail } from '@pekohub/shared';
 
 /**
@@ -16,21 +16,34 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
 
     const bundle = await db.query.bundles.findFirst({
       where: and(eq(bundles.namespace, namespace), eq(bundles.name, name)),
-      with: {
-        versions: true,
-      },
     });
 
     if (!bundle) {
       return reply.status(404).send({ error: 'Bundle not found' });
     }
 
-    const latestVersion = bundle.versions[bundle.versions.length - 1];
+    // Fetch versions separately
+    const versions = await db.query.bundleVersions.findMany({
+      where: eq(bundleVersions.bundleId, bundle.id),
+      orderBy: (v, { desc }) => [desc(v.createdAt)],
+    });
+
+    const latestVersion = versions[0];
+
+    // Aggregate pull stats
+    const stats = await db.select({
+      daily: sql<number>`COALESCE(SUM(CASE WHEN ${pullStats.date} >= NOW() - INTERVAL '1 day' THEN ${pullStats.count} ELSE 0 END), 0)`,
+      weekly: sql<number>`COALESCE(SUM(CASE WHEN ${pullStats.date} >= NOW() - INTERVAL '7 days' THEN ${pullStats.count} ELSE 0 END), 0)`,
+      monthly: sql<number>`COALESCE(SUM(CASE WHEN ${pullStats.date} >= NOW() - INTERVAL '30 days' THEN ${pullStats.count} ELSE 0 END), 0)`,
+      allTime: sql<number>`COALESCE(SUM(${pullStats.count}), 0)`,
+    }).from(pullStats).where(eq(pullStats.bundleId, bundle.id));
+
+    const pullCounts = stats[0] ?? { daily: 0, weekly: 0, monthly: 0, allTime: bundle.pullCount };
 
     const detail = BundleDetail.parse({
       namespace: bundle.namespace,
       name: bundle.name,
-      versions: bundle.versions.map((v) => ({
+      versions: versions.map((v) => ({
         version: v.version,
         digest: v.digest,
         size: v.size,
@@ -53,13 +66,14 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
         repository: bundle.repository,
         readme: bundle.readme,
         version: latestVersion?.version ?? '0.0.0',
+        deprecated: false,
       },
       readme: bundle.readme,
       pullCount: {
-        daily: 0, // TODO: aggregate from pullStats
-        weekly: 0,
-        monthly: 0,
-        allTime: bundle.pullCount,
+        daily: Number(pullCounts.daily),
+        weekly: Number(pullCounts.weekly),
+        monthly: Number(pullCounts.monthly),
+        allTime: Number(pullCounts.allTime),
       },
       installCommand: `peko agent install ${namespace}/${name}:${latestVersion?.version ?? 'latest'}`,
     });
@@ -73,19 +87,21 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
 
     const bundle = await db.query.bundles.findFirst({
       where: and(eq(bundles.namespace, namespace), eq(bundles.name, name)),
-      with: {
-        versions: true,
-      },
     });
 
     if (!bundle) {
       return reply.status(404).send({ error: 'Bundle not found' });
     }
 
+    const versions = await db.query.bundleVersions.findMany({
+      where: eq(bundleVersions.bundleId, bundle.id),
+      orderBy: (v, { desc }) => [desc(v.createdAt)],
+    });
+
     return {
       namespace: bundle.namespace,
       name: bundle.name,
-      versions: bundle.versions.map((v) => ({
+      versions: versions.map((v) => ({
         version: v.version,
         digest: v.digest,
         size: v.size,

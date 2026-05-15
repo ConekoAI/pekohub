@@ -13,12 +13,15 @@ export interface AuthenticatedUser {
   avatarUrl: string | null;
 }
 
+declare module '@fastify/jwt' {
+  interface FastifyJWT {
+    user: AuthenticatedUser;
+  }
+}
+
 declare module 'fastify' {
   interface FastifyInstance {
     authenticate: (request: FastifyRequest) => Promise<AuthenticatedUser>;
-  }
-  interface FastifyRequest {
-    user: AuthenticatedUser;
   }
 }
 
@@ -45,7 +48,7 @@ async function authPlugin(fastify: FastifyInstance) {
         });
 
         if (!keyRecord) {
-          throw fastify.httpErrors.unauthorized('Invalid API key');
+          throw new Error('Invalid API key');
         }
 
         // In production: hash token and compare with keyRecord.hash
@@ -55,7 +58,7 @@ async function authPlugin(fastify: FastifyInstance) {
         });
 
         if (!user) {
-          throw fastify.httpErrors.unauthorized('User not found');
+          throw new Error('User not found');
         }
 
         return {
@@ -74,7 +77,7 @@ async function authPlugin(fastify: FastifyInstance) {
       });
 
       if (!user) {
-        throw fastify.httpErrors.unauthorized('User not found');
+        throw new Error('User not found');
       }
 
       return {
@@ -86,7 +89,7 @@ async function authPlugin(fastify: FastifyInstance) {
       };
     }
 
-    throw fastify.httpErrors.unauthorized('Missing or invalid authorization');
+    throw new Error('Missing or invalid authorization');
   });
 }
 

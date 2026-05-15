@@ -5,6 +5,17 @@ import type { SearchResultItem } from '@pekohub/shared';
 
 const INDEX_NAME = 'bundles';
 
+/**
+ * Sanitize a document ID for Meilisearch.
+ * Meilisearch only allows a-zA-Z0-9_- in document IDs.
+ */
+export function sanitizeObjectID(id: string): string {
+  return id
+    .replace(/[^a-zA-Z0-9_-]/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-+/g, '-');
+}
+
 export interface SearchService {
   indexBundle(doc: SearchResultItem & { objectID: string }): Promise<void>;
   search(query: string, options?: SearchParams): Promise<{
@@ -57,26 +68,42 @@ async function searchPlugin(fastify: FastifyInstance) {
 
   const search: SearchService = {
     async indexBundle(doc) {
-      await index.addDocuments([doc]);
+      const sanitizedDoc = { ...doc, id: sanitizeObjectID(doc.objectID) };
+      delete (sanitizedDoc as any).objectID;
+      await index.addDocuments([sanitizedDoc]);
     },
 
     async search(query, options = {}) {
+      // Use offset/limit instead of page/hitsPerPage for consistent results across Meilisearch versions
+      const page = options.page ?? 0;
+      const perPage = options.hitsPerPage ?? 20;
+
       const result = await index.search<SearchResultItem>(query, {
-        ...options,
-        hitsPerPage: options.hitsPerPage ?? 20,
-        page: options.page ?? 0,
+        filter: options.filter,
+        sort: options.sort,
+        attributesToRetrieve: options.attributesToRetrieve,
+        attributesToHighlight: options.attributesToHighlight,
+        highlightPreTag: options.highlightPreTag,
+        highlightPostTag: options.highlightPostTag,
+        matchingStrategy: options.matchingStrategy,
+        showMatchesPosition: options.showMatchesPosition,
+        attributesToCrop: options.attributesToCrop,
+        cropLength: options.cropLength,
+        cropMarker: options.cropMarker,
+        offset: page * perPage,
+        limit: perPage,
       });
 
       return {
         hits: result.hits,
-        total: result.estimatedTotalHits ?? result.totalHits ?? 0,
-        page: (result.page ?? 0) + 1,
-        perPage: result.hitsPerPage ?? 20,
+        total: result.estimatedTotalHits ?? 0,
+        page: page + 1,
+        perPage,
       };
     },
 
     async deleteBundle(objectID) {
-      await index.deleteDocument(objectID);
+      await index.deleteDocument(sanitizeObjectID(objectID));
     },
   };
 

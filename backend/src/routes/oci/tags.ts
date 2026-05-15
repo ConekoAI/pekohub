@@ -6,9 +6,12 @@ import { eq, and, desc } from 'drizzle-orm';
 /**
  * OCI Distribution Spec: Tag listing
  * GET /v2/{namespace}/{name}/tags/list
+ *
+ * Note: This route is registered with prefix /v2/:namespace/:name
+ * so the handler path is just /tags/list
  */
 export default async function tagRoutes(fastify: FastifyInstance) {
-  fastify.get('/:namespace/:name/tags/list', async (request, reply) => {
+  fastify.get('/tags/list', async (request, reply) => {
     const { namespace, name } = request.params as { namespace: string; name: string };
     const { n = 100, last } = request.query as { n?: number; last?: string };
 

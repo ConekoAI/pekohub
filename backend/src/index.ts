@@ -10,11 +10,7 @@ import authPlugin from './plugins/auth.js';
 import storagePlugin from './plugins/storage.js';
 import searchPlugin from './plugins/search.js';
 
-import catalogRoutes from './routes/oci/catalog.js';
-import blobRoutes from './routes/oci/blobs.js';
-import manifestRoutes from './routes/oci/manifests.js';
-import tagRoutes from './routes/oci/tags.js';
-
+import ociRoutes from './routes/oci/index.js';
 import searchApiRoutes from './routes/api/search.js';
 import bundleApiRoutes from './routes/api/bundles.js';
 import oauthRoutes from './routes/auth/oauth.js';
@@ -25,6 +21,20 @@ async function main() {
       level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
       transport: process.env.NODE_ENV !== 'production' ? { target: 'pino-pretty' } : undefined,
     },
+    // Increase body size limit for blob uploads (100MB)
+    bodyLimit: 100 * 1024 * 1024,
+  });
+
+  // Allow raw binary bodies for OCI blob uploads
+  app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer' }, (_req, body, done) => {
+    done(null, body);
+  });
+  // Allow OCI manifest content types
+  app.addContentTypeParser('application/vnd.oci.image.manifest.v1+json', { parseAs: 'buffer' }, (_req, body, done) => {
+    done(null, body);
+  });
+  app.addContentTypeParser('application/vnd.oci.image.index.v1+json', { parseAs: 'buffer' }, (_req, body, done) => {
+    done(null, body);
   });
 
   // Register plugins
@@ -60,11 +70,8 @@ async function main() {
   // Health check
   app.get('/health', async () => ({ status: 'ok', version: '0.1.0' }));
 
-  // OCI Distribution Spec routes
-  await app.register(catalogRoutes, { prefix: '/v2' });
-  await app.register(blobRoutes, { prefix: '/v2/:namespace/:name' });
-  await app.register(manifestRoutes, { prefix: '/v2/:namespace/:name' });
-  await app.register(tagRoutes, { prefix: '/v2/:namespace/:name' });
+  // OCI Distribution Spec routes — registered via single aggregator
+  await app.register(ociRoutes);
 
   // Custom API routes
   await app.register(searchApiRoutes, { prefix: '/api/v1' });

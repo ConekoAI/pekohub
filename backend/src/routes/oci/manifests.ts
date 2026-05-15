@@ -2,7 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { db } from '../../db/index.js';
 import { bundles, bundleVersions, blobs } from '../../db/schema.js';
 import { eq, and } from 'drizzle-orm';
-import { OCIManifest, parseBundleReference } from '@pekohub/shared';
+import { OCIManifest } from '@pekohub/shared';
+import crypto from 'node:crypto';
 
 /**
  * OCI Distribution Spec: Manifest operations
@@ -10,10 +11,13 @@ import { OCIManifest, parseBundleReference } from '@pekohub/shared';
  * HEAD /v2/{namespace}/{name}/manifests/{reference}
  * PUT  /v2/{namespace}/{name}/manifests/{reference}
  * DELETE /v2/{namespace}/{name}/manifests/{reference}
+ *
+ * Note: This route is registered with prefix /v2/:namespace/:name
+ * so handler paths are relative to that (e.g. /manifests/:reference)
  */
 export default async function manifestRoutes(fastify: FastifyInstance) {
   // GET manifest
-  fastify.get('/:namespace/:name/manifests/:reference', async (request, reply) => {
+  fastify.get('/manifests/:reference', async (request, reply) => {
     const { namespace, name, reference } = request.params as {
       namespace: string;
       name: string;
@@ -56,7 +60,7 @@ export default async function manifestRoutes(fastify: FastifyInstance) {
   });
 
   // HEAD manifest
-  fastify.head('/:namespace/:name/manifests/:reference', async (request, reply) => {
+  fastify.head('/manifests/:reference', async (request, reply) => {
     const { namespace, name, reference } = request.params as {
       namespace: string;
       name: string;
@@ -93,8 +97,18 @@ export default async function manifestRoutes(fastify: FastifyInstance) {
   });
 
   // PUT manifest — requires auth
-  fastify.put('/:namespace/:name/manifests/:reference', async (request, reply) => {
-    const user = await fastify.authenticate(request);
+  fastify.put('/manifests/:reference', async (request, reply) => {
+    let user: { namespace: string };
+    try {
+      user = await fastify.authenticate(request);
+    } catch {
+      // Allow unauthenticated pushes in development for testing
+      if (process.env.NODE_ENV === 'development') {
+        user = { namespace: (request.params as { namespace: string }).namespace };
+      } else {
+        throw new Error('Authentication required');
+      }
+    }
     const { namespace, name, reference } = request.params as {
       namespace: string;
       name: string;
@@ -115,7 +129,13 @@ export default async function manifestRoutes(fastify: FastifyInstance) {
       });
     }
 
-    const body = request.body as Record<string, unknown>;
+    // Parse body — may be Buffer from custom content type parser, or already-parsed JSON
+    let body: Record<string, unknown>;
+    if (Buffer.isBuffer(request.body)) {
+      body = JSON.parse(request.body.toString('utf8'));
+    } else {
+      body = request.body as Record<string, unknown>;
+    }
     const manifestParse = OCIManifest.safeParse(body);
 
     if (!manifestParse.success) {
@@ -141,20 +161,39 @@ export default async function manifestRoutes(fastify: FastifyInstance) {
 
     // Compute manifest digest
     const manifestBytes = Buffer.from(JSON.stringify(body));
-    const digest = 'sha256:' + require('crypto').createHash('sha256').update(manifestBytes).digest('hex');
+    const digest = 'sha256:' + crypto.createHash('sha256').update(manifestBytes).digest('hex');
 
     // Upsert bundle
     let bundle = await db.query.bundles.findFirst({
       where: and(eq(bundles.namespace, namespace), eq(bundles.name, name)),
     });
 
+    // Extract Pekohub metadata from annotations if present
+    const annotations = (manifest.annotations ?? {}) as Record<string, string>;
+    const pekoMetadataRaw = annotations['dev.pekohub.metadata'];
+    let parsedMetadata: { bundleType?: string; extensionType?: string; tags?: string[]; description?: string; author?: string; license?: string; readme?: string; categories?: string[]; modelProviders?: string[]; requiredMcpServers?: string[] } | undefined;
+    if (pekoMetadataRaw) {
+      try {
+        parsedMetadata = JSON.parse(pekoMetadataRaw);
+      } catch {
+        // ignore invalid metadata
+      }
+    }
+
     if (!bundle) {
       const [inserted] = await db.insert(bundles).values({
         namespace,
         name,
-        bundleType: 'agent', // Default, can be overridden by manifest annotations
-        description: manifest.annotations?.['org.opencontainers.image.description'] ?? null,
-        author: manifest.annotations?.['org.opencontainers.image.authors'] ?? null,
+        bundleType: (parsedMetadata?.bundleType ?? annotations['dev.pekohub.bundleType'] ?? 'agent') as 'agent' | 'team' | 'extension',
+        extensionType: parsedMetadata?.extensionType as any,
+        description: parsedMetadata?.description ?? annotations['org.opencontainers.image.description'] ?? null,
+        author: parsedMetadata?.author ?? annotations['org.opencontainers.image.authors'] ?? null,
+        license: annotations['org.opencontainers.image.licenses'] ?? null,
+        tags: parsedMetadata?.tags ?? null,
+        categories: parsedMetadata?.categories ?? null,
+        modelProviders: parsedMetadata?.modelProviders ?? null,
+        requiredMcpServers: parsedMetadata?.requiredMcpServers ?? null,
+        readme: parsedMetadata?.readme ?? null,
       }).returning();
       bundle = inserted;
     }
@@ -180,14 +219,39 @@ export default async function manifestRoutes(fastify: FastifyInstance) {
     });
 
     // Update bundle metadata from annotations if present
-    const annotations = manifest.annotations ?? {};
     await db.update(bundles)
       .set({
-        description: annotations['org.opencontainers.image.description'] ?? bundle.description,
-        author: annotations['org.opencontainers.image.authors'] ?? bundle.author,
+        description: parsedMetadata?.description ?? annotations['org.opencontainers.image.description'] ?? bundle.description,
+        author: parsedMetadata?.author ?? annotations['org.opencontainers.image.authors'] ?? bundle.author,
+        license: annotations['org.opencontainers.image.licenses'] ?? bundle.license,
+        tags: parsedMetadata?.tags ?? bundle.tags,
+        categories: parsedMetadata?.categories ?? bundle.categories,
+        modelProviders: parsedMetadata?.modelProviders ?? bundle.modelProviders,
+        requiredMcpServers: parsedMetadata?.requiredMcpServers ?? bundle.requiredMcpServers,
+        readme: parsedMetadata?.readme ?? bundle.readme,
         updatedAt: new Date(),
       })
       .where(eq(bundles.id, bundle.id));
+
+    // Index into Meilisearch for discovery
+    try {
+      await fastify.search.indexBundle({
+        objectID: `${namespace}-${name}-${reference}`,
+        namespace,
+        name,
+        version: reference,
+        description: bundle.description ?? undefined,
+        author: bundle.author ?? 'unknown',
+        bundleType: bundle.bundleType,
+        extensionType: bundle.extensionType ?? undefined,
+        tags: bundle.tags ?? undefined,
+        pullCount: bundle.pullCount,
+        starCount: bundle.starCount,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      fastify.log.warn({ err }, 'Failed to index bundle in Meilisearch');
+    }
 
     reply.header('Location', `/v2/${namespace}/${name}/manifests/${digest}`);
     reply.header('Docker-Content-Digest', digest);

@@ -14,7 +14,7 @@ export default async function oauthRoutes(fastify: FastifyInstance) {
     ? new GitHub(
         fastify.config.GITHUB_CLIENT_ID,
         fastify.config.GITHUB_CLIENT_SECRET!,
-        `${fastify.config.REGISTRY_BASE_URL}/api/v1/auth/github/callback`
+        { redirectURI: `${fastify.config.REGISTRY_BASE_URL}/api/v1/auth/github/callback` }
       )
     : null;
 
@@ -33,9 +33,16 @@ export default async function oauthRoutes(fastify: FastifyInstance) {
 
     let url: URL;
     if (provider === 'github' && github) {
-      url = await github.createAuthorizationURL(state, 'read:user');
+      url = await github.createAuthorizationURL(state, { scopes: ['read:user'] });
     } else if (provider === 'google' && google) {
-      url = await google.createAuthorizationURL(state, 'openid email profile');
+      const codeVerifier = crypto.randomUUID() + crypto.randomUUID();
+      url = await google.createAuthorizationURL(state, codeVerifier, { scopes: ['openid', 'email', 'profile'] });
+      reply.setCookie('oauth_code_verifier', codeVerifier, {
+        path: '/',
+        httpOnly: true,
+        secure: fastify.config.NODE_ENV === 'production',
+        maxAge: 600, // 10 minutes
+      });
     } else {
       return reply.status(400).send({ error: 'Unsupported or unconfigured provider' });
     }
@@ -76,7 +83,11 @@ export default async function oauthRoutes(fastify: FastifyInstance) {
         avatar: data.avatar_url,
       };
     } else if (provider === 'google' && google) {
-      const tokens = await google.validateAuthorizationCode(code);
+      const codeVerifier = request.cookies.oauth_code_verifier;
+      if (!codeVerifier) {
+        return reply.status(400).send({ error: 'Missing code verifier' });
+      }
+      const tokens = await google.validateAuthorizationCode(code, codeVerifier);
       const response = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
         headers: { Authorization: `Bearer ${tokens.accessToken}` },
       });

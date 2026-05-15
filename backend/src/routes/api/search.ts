@@ -31,6 +31,8 @@ export default async function searchRoutes(fastify: FastifyInstance) {
       filter: meiliFilters.length > 0 ? meiliFilters : undefined,
     });
 
+    fastify.log.debug({ result }, 'Search result from Meilisearch');
+
     const response = SearchResponse.parse({
       items: result.hits,
       total: result.total,
@@ -38,6 +40,8 @@ export default async function searchRoutes(fastify: FastifyInstance) {
       perPage: result.perPage,
       totalPages: Math.ceil(result.total / perPage),
     });
+
+    fastify.log.debug({ response }, 'Parsed search response');
 
     return response;
   });
