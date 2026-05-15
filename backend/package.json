@@ -1,0 +1,50 @@
+{
+  "name": "@pekohub/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "lint": "eslint src",
+    "test": "vitest",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio",
+    "db:push": "drizzle-kit push"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.600.0",
+    "@aws-sdk/s3-request-presigner": "^3.1047.0",
+    "@fastify/cookie": "9",
+    "@fastify/cors": "9",
+    "@fastify/jwt": "8",
+    "@fastify/multipart": "8",
+    "@fastify/swagger": "8",
+    "@fastify/swagger-ui": "4",
+    "@pekohub/shared": "workspace:*",
+    "arctic": "^1.9.0",
+    "dotenv": "^16.4.0",
+    "drizzle-orm": "^0.31.0",
+    "drizzle-zod": "^0.5.0",
+    "fastify": "4",
+    "fastify-plugin": "4",
+    "fastify-type-provider-zod": "2",
+    "meilisearch": "^0.40.0",
+    "pg": "^8.12.0",
+    "pino": "^9.2.0",
+    "pino-pretty": "^11.2.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/pg": "^8.11.0",
+    "drizzle-kit": "^0.22.0",
+    "eslint": "^9.0.0",
+    "tsx": "^4.15.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  }
+}

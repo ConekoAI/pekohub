@@ -1,0 +1,53 @@
+services:
+  db:
+    image: m.daocloud.io/docker.io/library/postgres:16
+    container_name: pekohub-db
+    restart: unless-stopped
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: pekohub
+      POSTGRES_PASSWORD: pekohub
+      POSTGRES_DB: pekohub
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pekohub"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: m.daocloud.io/quay.io/minio/minio:latest
+    container_name: pekohub-minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: pekohub
+      MINIO_ROOT_PASSWORD: pekohubpekohub
+    command: server /data --console-address ":9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  meilisearch:
+    image: m.daocloud.io/docker.io/getmeili/meilisearch:v1.9
+    container_name: pekohub-meilisearch
+    restart: unless-stopped
+    ports:
+      - "7700:7700"
+    environment:
+      MEILI_MASTER_KEY: pekohub-master-key
+    volumes:
+      - meilisearchdata:/meili_data
+
+volumes:
+  pgdata:
+  miniodata:
+  meilisearchdata:
