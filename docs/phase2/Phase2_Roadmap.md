@@ -1,8 +1,8 @@
-# Phase 2 Roadmap: Public Registry Beta + Extension Ecosystem
+# Phase 2 Roadmap: Public Registry Beta
 
-> **Version**: 2.1  
-> **Phase**: 4–5 Months (following Phase 1 completion 2026-05-14)  
-> **Objective**: Enable agent discovery and sharing at scale through a public registry, while maturing the extension ecosystem so that advanced behaviors (including multi-agent orchestration) are implemented as extensions, not core runtime features.
+> **Version**: 2.2
+> **Phase**: 2 Months (following Phase 1 completion 2026-05-14)
+> **Objective**: Enable agent discovery and sharing at scale through a public registry. Extension ecosystem and team orchestration are deferred to Phase 3.
 
 See `Phase2_Success_Criteria.md` for the complete, detailed success criteria. This document is the **implementation roadmap** — it identifies the workstreams, their dependencies, and the suggested execution order.
 
@@ -10,24 +10,25 @@ See `Phase2_Success_Criteria.md` for the complete, detailed success criteria. Th
 
 ## 1. Overview
 
-Phase 2 has two workstreams that build on the Phase 1 runtime:
+Phase 2 has one workstream that builds on the Phase 1 runtime:
 
 | Workstream | What It Does | Depends On |
 |------------|-------------|------------|
-| **A. Public Registry Beta** | Hosted registry + web UI for publishing and discovering agents, teams, and extensions | Phase 1 packaging (`src/portable/`), registry client (`src/registry/`) |
-| **B. Extension Ecosystem** | Extension source references, team orchestration as an extension type, and A2A tooling that integrates with the extension framework's existing hooks | Phase 1 extension framework (22 hooks, 6 types), A2A event bus, IPC layer (ADR-021) |
+| **Public Registry Beta** | Hosted registry + web UI for publishing and discovering agents, teams, and extensions | Phase 1 packaging (`src/portable/`), registry client (`src/registry/`) |
 
-The success criteria for both workstreams are defined in the companion document. This roadmap focuses on **execution order** and **integration points**.
+The success criteria are defined in the companion document. This roadmap focuses on **execution order** and **integration points**.
 
-> **Design Principle**: Phase 2 does NOT add team orchestration, memory management, or coordination patterns to the core runtime. These are **extension concerns**. The core runtime provides the 22 hook points, the A2A event bus, and built-in tools — extensions compose these primitives into higher-level behaviors like team coordination. See §8 for the full rationale.
+> **Design Principle**: Phase 2 does NOT add team orchestration, memory management, coordination patterns, or extension runtime features. These are **deferred to Phase 3**. The core runtime remains unchanged. See §7 for the full rationale.
 
-> **Note on Shared Services Fabric**: The Shared Services Fabric (shared browser pool, vector DB, memory tiers) was originally scoped for Phase 2 but has been **deferred to Phase 3 / Cloud Runtime**. Agents and teams continue to use MCP servers and built-in tools for browser, vector, and memory operations — exactly as they do in Phase 1. See `Phase2_Roadmap.md` §8 (previous version) for the full rationale.
+> **Note on Shared Services Fabric**: The Shared Services Fabric (shared browser pool, vector DB, memory tiers) was originally scoped for Phase 2 but has been **deferred to Phase 3 / Cloud Runtime**. Agents and teams continue to use MCP servers and built-in tools for browser, vector, and memory operations — exactly as they do in Phase 1.
+
+> **Note on Extension Ecosystem**: Extension source references, remote installation, A2A built-in tools, team orchestrator extensions, and the `team` extension type are all **deferred to Phase 3**. Phase 2's registry supports `.ext` artifacts as publishable/discoverable packages (same as `.agent` and `.team`), but the runtime does not yet install extensions from remote sources.
 
 ---
 
 ## 2. Execution Order
 
-We recommend building Phase 2 in four milestones, each delivering user-visible value:
+We recommend building Phase 2 in two milestones, each delivering user-visible value:
 
 ### Milestone 1: Registry Foundation (Weeks 1–4)
 **Goal:** A deployable registry server that can accept pushes and serve pulls.
@@ -55,48 +56,11 @@ We recommend building Phase 2 in four milestones, each delivering user-visible v
 
 **User outcome:** A developer can find an agent or extension on the web, copy the install command, and run it.
 
-**Success criteria:** REG-007 through REG-014, REG-025 through REG-028
-
-### Milestone 3: Extension Ecosystem (Weeks 9–14)
-**Goal:** Extensions can be installed from remote sources, and team orchestration is available as an installable extension — not core runtime.
-
-- Extension source references: `github:`, `https:`, `mcp+https:` resolution (deferred from Phase 1)
-- `peko ext install github:owner/repo` — install extension from GitHub
-- `peko ext install https://example.com/extension.ext` — install from direct URL
-- `peko ext update <id>` — check for and install updates
-- `peko ext list --outdated` — show extensions with available updates
-- Team orchestration as a `general` extension type (or new `team` extension type):
-  - Uses existing `EventSubscribe`/`EventEmit` hooks for A2A messaging
-  - Uses existing `AgentInit`/`AgentShutdown` hooks for agent lifecycle
-  - Uses existing `ToolRegister` hook to provide coordination tools (`delegate`, `synthesize`, `broadcast`)
-  - Uses existing `SessionStateChange` hook for shared context
-- A2A built-in tools (`a2a_send`, `a2a_receive`) integrate with the extension framework's event hooks
-- Example team orchestrator extensions published to registry:
-  - `pekohub.org/extensions/supervisor-team` — supervisor pattern
-  - `pekohub.org/extensions/pipeline-team` — pipeline pattern
-  - `pekohub.org/extensions/mesh-team` — mesh pattern
-
-**User outcome:** A user installs a team orchestrator extension, enables it in `agent.toml`, and the agent gains team coordination capabilities through the extension framework's hooks.
-
-**Success criteria:** EXT-001 through EXT-015, TEAM-001 through TEAM-010
-
-### Milestone 4: Registry + Extension Integration (Weeks 15–18)
-**Goal:** Extensions are first-class citizens in the registry, and the platform demonstrates multi-agent orchestration via extensions.
-
-- Registry supports `.ext` package publishing and discovery
-- Extension detail pages show hook points used, example configurations, and compatibility
-- `peko ext publish <id>` — publish extension to registry
-- `peko ext install pekohub.org/extensions/supervisor-team` — install from registry
-- Integration demo: 3-agent research team using the supervisor extension, shared MCP tools, and A2A messaging
-- Performance benchmarks for extension hook invocation overhead
-
-**User outcome:** A user finds a team orchestrator extension on `pekohub.org`, installs it, and configures their agent for multi-agent coordination — all without core runtime changes.
-
-**Success criteria:** EXT-016 through EXT-020, REG-035
+**Success criteria:** REG-007 through REG-028
 
 ---
 
-## 3. Workstream A: Public Registry Beta
+## 3. Public Registry Beta
 
 ### 3.1 Architecture
 
@@ -114,7 +78,7 @@ We recommend building Phase 2 in four milestones, each delivering user-visible v
                            │ HTTPS / OCI
 ┌──────────────────────────┴──────────────────────────────────┐
 │                    CLI (peko)                                 │
-│  push │ pull │ search │ auth login │ agent install │ ext install│
+│  push │ pull │ search │ auth login │ agent install           │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -140,159 +104,39 @@ peko auth status                   # Show logged-in user
 # Discovery
 peko search "github assistant"     # Search registry
 peko agent info user/agent:1.0     # Show bundle metadata
-peko ext info user/extension:1.0   # Show extension metadata
 
 # Publishing (aliases for push/pull)
 peko agent publish my-agent        # Push to public registry
 peko agent install user/agent:1.0  # Pull + import in one step
-peko ext publish my-extension      # Push extension to registry
-peko ext install user/extension:1.0 # Pull + install extension from registry
 ```
+
+> **Note on Extensions**: `peko ext publish` and `peko ext install <registry-ref>` are deferred to Phase 3. The registry accepts `.ext` packages (they are OCI artifacts like any other), but the CLI does not yet resolve or install them from remote sources.
 
 ---
 
-## 4. Workstream B: Extension Ecosystem
+## 4. Extension Artifacts in the Registry (Passive Support)
 
-### 4.1 Design Philosophy
+Phase 2's registry treats `.ext` packages as **first-class OCI artifacts** for publishing and discovery, but the runtime does not yet install them from remote sources.
 
-**The core runtime is minimal. Everything else is an extension.**
+### 4.1 What Works in Phase 2
 
-Phase 1's extension framework provides 22 hook points that cover the entire agent lifecycle. Phase 2 does NOT add new hook points or core modules for team orchestration. Instead, it:
+- `.ext` packages can be pushed to and pulled from the registry via standard OCI operations
+- Registry indexes extension metadata (extension type, hook points declared, compatibility)
+- Web UI displays extension detail pages with installation commands (for manual/local install)
+- Search and faceted filtering include extensions alongside agents and teams
 
-1. **Enables remote extension installation** — so users can discover and install team orchestrators from the registry
-2. **Provides A2A tools** — built-in tools that integrate with the existing `EventSubscribe`/`EventEmit` hooks
-3. **Publishes example extensions** — reference implementations of team coordination patterns
+### 4.2 What Is Deferred to Phase 3
 
-### 4.2 How Team Orchestration Works as an Extension
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Agent Runtime (Core)                       │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │         Extension Core (22 Hook Points)               │   │
-│  │  • ToolRegister                                       │   │
-│  │  • ToolExecute / ToolExecuteAsync                     │   │
-│  │  • EventSubscribe / EventEmit                         │   │
-│  │  • AgentInit / AgentShutdown / AgentIteration         │   │
-│  │  • SessionStateChange / SessionContextBuild           │   │
-│  └──────────────────────────────────────────────────────┘   │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │         A2A Event Bus (In-Memory / Redis / NATS)      │   │
-│  └──────────────────────────────────────────────────────┘   │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │         Built-in Tools                                │   │
-│  │  • a2a_send, a2a_receive, a2a_broadcast               │   │
-│  │  • memory.store, memory.retrieve                      │   │
-│  │  • session.branch, session.overlay                    │   │
-│  └──────────────────────────────────────────────────────┘   │
-└──────────────────────────┬──────────────────────────────────┘
-                           │ Hooks + Tools + Bus
-┌──────────────────────────┴──────────────────────────────────┐
-│              Team Orchestrator Extension                      │
-│  (installed via `peko ext install supervisor-team`)           │
-│                                                               │
-│  Hooks registered:                                            │
-│  • AgentInit → spawn worker agent instances                   │
-│  • EventSubscribe "team.task.*" → route tasks to workers      │
-│  • EventSubscribe "team.result.*" → collect results           │
-│  • ToolRegister → register `team_delegate`, `team_synthesize` │
-│  • SessionStateChange → maintain shared team context          │
-│                                                               │
-│  The extension IS the team runtime. Core knows nothing.       │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### 4.3 Extension Types for Phase 2
-
-| Extension Type | Use Case | How It Works |
-|----------------|----------|--------------|
-| **`general`** | Team orchestrator, custom coordination logic | Declares hooks in `manifest.yaml`, implements handlers |
-| **`skill`** | Team behavior instructions | Injects coordination patterns into system prompt via `PromptSystemSection` |
-| **`mcp`** | Shared tools for teams (browser, vector DB) | MCP server shared across all agents in a team |
-| **`team`** *(new)* | Declarative team composition | New adapter that reads `team.toml`-like manifest, registers appropriate hooks |
-
-### 4.4 Example: Supervisor Team as a `general` Extension
-
-```yaml
-# manifest.yaml
-id: "supervisor-team"
-name: "Supervisor Team Orchestrator"
-version: "1.0.0"
-extension_type: "general"
-description: "Enables supervisor-pattern multi-agent teams"
-
-hooks:
-  - point: "agent.init"
-    handler: "init_team"
-  - point: "tool.register"
-    handler: "register_team_tools"
-  - point: "event.subscribe"
-    topic_pattern: "team.task.*"
-    handler: "on_task_received"
-  - point: "event.subscribe"
-    topic_pattern: "team.result.*"
-    handler: "on_result_received"
-  - point: "session.state_change"
-    handler: "sync_team_context"
-```
-
-```toml
-# agent.toml — user enables the extension
-[extensions]
-enabled = ["supervisor-team"]
-
-[extensions.config.supervisor-team]
-workers = ["researcher", "coder"]
-max_iterations = 10
-```
-
-### 4.5 Example: Team as a Declarative Extension Type
-
-```yaml
-# manifest.yaml
-id: "research-team"
-name: "Research Team"
-version: "1.0.0"
-extension_type: "team"
-
-team:
-  pattern: "supervisor"
-  agents:
-    - bundle: "pekohub.org/agents/router:v1.0"
-      role: "coordinator"
-    - bundle: "pekohub.org/agents/researcher:v1.0"
-      role: "worker"
-      replicas: 2
-```
-
-A new `TeamAdapter` would:
-1. Parse the `team` section from the manifest
-2. Register `AgentInit` hook to spawn team agents
-3. Register `EventSubscribe` hooks for A2A coordination
-4. Register `ToolRegister` to provide `delegate`, `synthesize` tools
-
-### 4.6 A2A Built-in Tools (Core)
-
-These tools ship with the core runtime and integrate with the extension framework's event hooks:
-
-| Tool | What It Does | Hook Used |
-|------|-------------|-----------|
-| `a2a_send` | Send direct message to another agent | `EventEmit` |
-| `a2a_broadcast` | Broadcast message to all agents on a topic | `EventEmit` |
-| `a2a_receive` | Receive messages from inbox | `EventSubscribe` |
-| `a2a_subscribe` | Subscribe to a topic | `EventSubscribe` |
-
-Extensions build coordination patterns on top of these primitives.
-
-### 4.7 Key Design Decisions
-
-| Decision | Rationale |
-|----------|-----------|
-| Team orchestration as extension, not core | Maximally flexible — users can install supervisor, pipeline, mesh, debate, market, or custom patterns without core changes |
-| No new hook points for Phase 2 | Existing 22 hooks cover all team coordination needs (events, agent lifecycle, session, tools) |
-| A2A tools are built-in | Low-level primitives that extensions compose; similar to how `shell` and `fs` are built-in |
-| `team` as potential new extension type | If `general` extension proves too verbose for declarative teams, add a `TeamAdapter` with simplified manifest |
-| Remote extension sources | Deferred from Phase 1; essential for discovering team orchestrators from registry |
+| Feature | Phase 3 Workstream |
+|---------|-------------------|
+| `peko ext install github:owner/repo` | Extension Source References |
+| `peko ext install https://...` | Extension Source References |
+| `peko ext install pekohub.org/...` | Extension Registry Integration |
+| `peko ext update <id>` | Extension Source References |
+| `peko ext list --outdated` | Extension Source References |
+| A2A built-in tools (`a2a_send`, `a2a_broadcast`, `a2a_receive`) | A2A Tooling |
+| Team orchestrator extensions | Team Orchestration as Extension |
+| `team` extension type adapter | Team Orchestration as Extension |
 
 ---
 
@@ -307,17 +151,13 @@ Extensions build coordination patterns on top of these primitives.
 | Token expiry | 24-hour expiry + revocation | SEC-002 |
 | Audit logs | Append-only with tamper-evident hashing | SEC-003 |
 | Vulnerability scans | Scan on push, block critical | SEC-004 |
-| Extension sandboxing | Extensions run in-process; MCP servers run as separate processes with env stripping | SEC-005 |
 
 ### 5.2 Performance Targets
 
 | Metric | Target | Verification |
 |--------|--------|-------------|
 | Registry concurrent ops | 100 push/pull, p95 < 2s | Load test |
-| Extension hook invocation | < 1ms per hook | Benchmark |
-| A2A message delivery | < 10ms in-memory | Benchmark |
 | Registry uptime | ≥ 99.5% monthly | Monitoring |
-| 3-agent team E2E (via extension) | < 30s (excl. LLM latency) | Integration test |
 
 ### 5.3 Developer Experience
 
@@ -325,10 +165,8 @@ Extensions build coordination patterns on top of these primitives.
 |-------------|--------|-------|
 | Public registry live | `pekohub.org` | Registry team |
 | Community bundles | ≥ 50 published | Community |
-| Team orchestrator extensions | ≥ 3 patterns (supervisor, pipeline, mesh) | Core team |
-| Tutorial series | 3+ tutorials: "Installing extensions", "Building a team orchestrator", "Publishing to registry" | Docs |
-| Extension development guide | How to use the 22 hook points, with examples | Docs |
-| CLI getting-started wizard | Interactive `peko init` for registry login + extension discovery | CLI |
+| Tutorial series | 2+ tutorials: "Publishing to registry", "Discovering agents on PekoHub" | Docs |
+| CLI getting-started wizard | Interactive `peko init` for registry login + agent discovery | CLI |
 
 ---
 
@@ -341,10 +179,8 @@ Phase 2 is successful when all P0 criteria are met AND:
 | Published bundles | ≥ 50 community + 10 official | Registry API |
 | Monthly active users | ≥ 500 | OAuth events |
 | Total pulls | ≥ 10,000 cumulative | Analytics |
-| Extension installations | ≥ 500 total | Installation logs |
-| Team executions (via extensions) | ≥ 100 unique | Execution logs |
 | Test coverage | ≥ 75% | Coverage report |
-| Documentation pages | ≥ 30 | docs site |
+| Documentation pages | ≥ 20 | docs site |
 | GitHub stars | ≥ 5,000 | GitHub API |
 | Active contributors | ≥ 30 | Commit log |
 
@@ -354,6 +190,11 @@ Phase 2 is successful when all P0 criteria are met AND:
 
 | Feature | Rationale |
 |---------|-----------|
+| **Extension source references** (`github:`, `https:`, `mcp+https:`) | Needs dedicated runtime work; registry is higher priority |
+| **Remote extension installation** (`peko ext install <remote>`) | Depends on source references; defer together |
+| **A2A built-in tools** (`a2a_send`, `a2a_broadcast`, `a2a_receive`) | Needs A2A event bus stabilization; not required for registry |
+| **Team orchestration as extensions** | Large workstream that deserves its own phase after registry matures |
+| **`team` extension type adapter** | Depends on team orchestration workstream |
 | **Shared Services Fabric** | Premature for local single-user tool. Agents already share MCP tools via single process. Relevant for cloud/multi-tenant runtime. |
 | **Enterprise Governance (RBAC, SSO, audit dashboards)** | Needs enterprise customers |
 | **Cloud Runtime SaaS** | Needs operational infrastructure + cost modeling |
@@ -366,80 +207,27 @@ Phase 2 is successful when all P0 criteria are met AND:
 
 ---
 
-## 8. Why Team Orchestration Is an Extension, Not Core
-
-### 8.1 The Extension Framework Already Covers It
-
-Phase 1's ADR-017 provides 22 hook points that span the entire agent lifecycle. Team orchestration needs:
-
-| Team Concern | Phase 1 Hook Point | Status |
-|-------------|-------------------|--------|
-| Spawn team agents on startup | `AgentInit` | ✅ Exists |
-| Coordinate between agents | `EventSubscribe` / `EventEmit` | ✅ Exists |
-| Provide team tools (delegate, synthesize) | `ToolRegister` | ✅ Exists |
-| Share context across agents | `SessionStateChange` / `SessionContextBuild` | ✅ Exists |
-| Monitor agent iterations | `AgentIteration` | ✅ Exists |
-| Clean up on shutdown | `AgentShutdown` | ✅ Exists |
-
-**There is no gap.** The current `src/team/mod.rs` hardcodes behavior that the extension framework can already express.
-
-### 8.2 Core Should Be Minimal
-
-The design principle from ADR-017:
-
-> *"The Extension Core is the single registry of all hook points... Type-specific adapters provide semantic validation and simpler manifests for common cases. The GeneralExtensionAdapter provides unconstrained access to all 22 hook points."*
-
-Team orchestration is a **common case** that deserves a type-specific adapter (e.g., `TeamAdapter`). It is NOT a core runtime concern.
-
-### 8.3 Flexibility Over Prescription
-
-If team orchestration is core:
-- Users get supervisor, pipeline, mesh — and nothing else
-- Adding a "debate" or "market" pattern requires a core PR
-
-If team orchestration is an extension:
-- Anyone can publish a new coordination pattern
-- Users install what they need
-- The core team focuses on hook points and primitives
-
-### 8.4 The Current `src/team/` Is Technical Debt
-
-The existing `src/team/mod.rs`:
-- Hardcodes `EventBus` outside the extension framework
-- Hardcodes `SharedServicesFabric` with memory namespaces
-- Has TODOs for instance creation, MCP lifecycle, scaling
-- Duplicates what extensions already do
-
-**The path forward:** Migrate `src/team/` into an extension type. The event bus stays as a core service (like session storage), but orchestration logic moves to extensions.
-
----
-
-## 9. Definition of Done
+## 8. Definition of Done
 
 Phase 2 is complete when:
 
-1. All P0 success criteria (REG-001 through REG-028, EXT-001 through EXT-015, TEAM-001 through TEAM-010, PERF-001 through PERF-005, SEC-001 through SEC-005, DX-001 through DX-005) are implemented, tested, and documented
+1. All P0 success criteria (REG-001 through REG-028, SEC-001 through SEC-004, PERF-001 through PERF-002, DX-001 through DX-003) are implemented, tested, and documented
 2. All quantitative KPIs meet or exceed targets
 3. Public Registry is live at `https://pekohub.org` with ≥ 50 community bundles
-4. Extension source references work (GitHub, URL, MCP endpoint)
-5. At least 3 team orchestrator extensions are published to the registry (supervisor, pipeline, mesh)
-6. A public demo showcases a 3-agent team using an installed orchestrator extension, shared MCP tools, and A2A messaging
-7. At least 3 external teams (outside the core dev team) have successfully published extensions or multi-agent systems on the platform
-8. Phase 2 retrospective is published
+4. Registry supports `.agent`, `.team`, and `.ext` as publishable OCI artifact types
+5. At least 3 external teams (outside the core dev team) have successfully published bundles on the platform
+6. Phase 2 retrospective is published
 
 ---
 
-## 10. Document Reference
+## 9. Document Reference
 
 | Document | Purpose |
 |----------|---------|
 | `Phase2_Success_Criteria.md` | Complete, detailed success criteria with numbered requirements |
 | `Phase2_Roadmap.md` (this document) | Implementation roadmap: execution order, milestones, architecture diagrams, design decisions |
-| ADR-017 (`docs/architecture/adr/ADR-017.md`) | Unified Extension Architecture — hook points, adapters, design philosophy |
-| ADR-021 (`docs/architecture/adr/ADR-021-daemon-as-central-runtime.md`) | IPC layer for CLI↔daemon communication |
-| ADR-024 (`docs/architecture/adr/ADR-024-unified-extension-manifest.md`) | Extension manifest format (`manifest.yaml` + `extension_type`) |
 | ADR-027 (`docs/architecture/adr/ADR-027-unified-packaging.md`) | Packaging format for `.agent`/`.team`/`.ext` |
 
 ---
 
-*End of Phase 2 Roadmap v2.1*
+*End of Phase 2 Roadmap v2.2*
