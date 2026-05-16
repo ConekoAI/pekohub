@@ -1,5 +1,4 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
-import { useState } from 'react';
 import { SearchBar } from '~/components/SearchBar';
 import { BundleCard } from '~/components/BundleCard';
 import { useSearch } from '~/hooks/useSearch';
@@ -11,10 +10,9 @@ export const Route = createFileRoute('/')({
 
 function HomePage() {
   const navigate = useNavigate();
-  const [searchQuery, setSearchQuery] = useState('');
 
   const search = useSearch({
-    q: searchQuery,
+    q: '',
     page: 1,
     perPage: 20,
   });
