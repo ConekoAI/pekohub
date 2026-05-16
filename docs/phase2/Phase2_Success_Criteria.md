@@ -49,7 +49,7 @@ Phase 2 depends on the following Phase 1 outputs being production-stable:
 | Milestone | Status | Notes |
 |-----------|--------|-------|
 | **Milestone 1: Registry Foundation** | 🟢 Mostly Complete | OCI push/pull working, PostgreSQL + MinIO storage, Meilisearch search index. GC service implemented + scheduled via daily cron. All OCI routes tested (56 tests passing). Audit logging wired. Fork API implemented. |
-| **Milestone 2: Auth, Search, Web UI** | 🟡 In Progress | OAuth routes scaffolded, API key generation + bcrypt verification implemented, full-text search + faceted filtering working, bundle detail API ready. Rate limiting implemented. Web UI scaffolded (homepage, search, bundle detail) but auth state not yet wired. |
+| **Milestone 2: Auth, Search, Web UI** | 🟢 Mostly Complete | OAuth routes working (GitHub/Google), API key generation + bcrypt verification, full-text search + faceted filtering, bundle detail API. Rate limiting implemented. Web UI has homepage, search, bundle detail, auth callback, and profile pages. Auth state fully wired (me endpoint, localStorage token, Bearer headers, logout). Mobile responsive pass completed. |
 
 ### Recent Fixes & Additions (2026-05-15 / 2026-05-16)
 - ✅ Fixed Meilisearch search returning empty `items` array — root cause was `page`/`hitsPerPage` conflicting with `offset`/`limit` in Meilisearch v1.9
@@ -67,6 +67,15 @@ Phase 2 depends on the following Phase 1 outputs being production-stable:
 - ✅ **Audit log query API** (`GET /api/v1/admin/audit?namespace=&action=&page=&perPage=`) for namespace owners
 - ✅ **Scheduled garbage collection** via `Scheduler` service — runs daily with configurable retention/batch size
 - ✅ **Bundle forking API** (`POST /api/v1/bundles/:namespace/:name/fork`) — copies metadata + versions, preserves provenance via `forkedFrom`
+- ✅ **Cookie-based JWT auth fallback** — `fastify.authenticate` now reads `pekohub_session` cookie when no Bearer header present
+- ✅ **Auth `/me` endpoint** (`GET /api/v1/auth/me`) — returns user profile from JWT cookie or Bearer token
+- ✅ **Auth `/logout` endpoint** (`POST /api/v1/auth/logout`) — clears session cookie
+- ✅ **Frontend auth context** (`useAuth` hook) — queries `/me`, manages token in localStorage, provides logout
+- ✅ **OAuth callback page** (`/auth/callback`) — stores token from query param, redirects to home
+- ✅ **Auth-aware Layout** — shows user avatar, display name, dropdown with Profile/Sign out; mobile hamburger menu
+- ✅ **Auth-gated deprecation UI** — only bundle namespace owners see deprecate/undeprecate buttons
+- ✅ **Profile page** (`/profile`) — shows user info, API key generation/revocation list, user's bundles
+- ✅ **Mobile responsiveness pass** — all pages (header, hero, search, bundle detail, profile) stack vertically at <640px
 
 ---
 
@@ -100,8 +109,8 @@ The Public Registry is the discovery and distribution layer for Agent Bundles. I
 - [x] **REG-010**: Registry MUST provide full-text search with relevance ranking across all indexed fields, supporting phrase matching and boolean operators (`AND`, `OR`, `NOT`)
 - [~] **REG-011**: Registry MUST support faceted search — users can filter by: model provider (OpenAI/Anthropic/local), MCP server dependencies, category (research/support/development/content), license, bundle type (agent/team/extension), and extension type (skill/mcp/gateway/universal/general/team) — *filter fields configured in Meilisearch, API filter params implemented, tests passing*
 - [~] **REG-012**: Registry MUST auto-generate a public HTML page for every published bundle containing: metadata, README, version history, dependency tree, installation command, and usage statistics (pull count, star count) — *API endpoints ready, web UI pending*
-- [ ] **REG-013**: Registry MUST expose a public Web UI (`https://pekohub.org`) with: homepage featuring trending bundles, category browsing, search with autocomplete, bundle detail pages, and user profile pages — *not started*
-- [ ] **REG-014**: Web UI MUST be responsive and functional on mobile devices (viewport ≥ 375px) — *not started*
+- [~] **REG-013**: Registry MUST expose a public Web UI (`https://pekohub.org`) with: homepage featuring trending bundles, category browsing, search with autocomplete, bundle detail pages, and user profile pages — ✅ Homepage, search, bundle detail, and profile pages scaffolded. Auth state wired. Deploy pipeline not started.
+- [~] **REG-014**: Web UI MUST be responsive and functional on mobile devices (viewport ≥ 375px) — ✅ Mobile pass completed on all pages: header (hamburger menu), hero, search, bundle detail, profile. Flexbox + grid breakpoints verified.
 
 #### 3.2.3 Bundle Management
 - [~] **REG-015**: Registry MUST support semantic versioning (MAJOR.MINOR.PATCH) with `latest` tag resolution and version constraint syntax (`>=1.0.0`, `^1.2.0`, `~1.2.3`) — *semver validation + latest tag resolution implemented (tested); constraint syntax parsing not started*

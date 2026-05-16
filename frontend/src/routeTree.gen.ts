@@ -10,7 +10,9 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SearchRouteImport } from './routes/search'
+import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
 import { Route as BundlesNamespaceNameRouteImport } from './routes/bundles/$namespace.$name'
 
 const SearchRoute = SearchRouteImport.update({
@@ -18,9 +20,19 @@ const SearchRoute = SearchRouteImport.update({
   path: '/search',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProfileRoute = ProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthCallbackRoute = AuthCallbackRouteImport.update({
+  id: '/auth/callback',
+  path: '/auth/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BundlesNamespaceNameRoute = BundlesNamespaceNameRouteImport.update({
@@ -31,31 +43,55 @@ const BundlesNamespaceNameRoute = BundlesNamespaceNameRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/profile': typeof ProfileRoute
   '/search': typeof SearchRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/bundles/$namespace/$name': typeof BundlesNamespaceNameRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/profile': typeof ProfileRoute
   '/search': typeof SearchRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/bundles/$namespace/$name': typeof BundlesNamespaceNameRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/profile': typeof ProfileRoute
   '/search': typeof SearchRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/bundles/$namespace/$name': typeof BundlesNamespaceNameRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/search' | '/bundles/$namespace/$name'
+  fullPaths:
+    | '/'
+    | '/profile'
+    | '/search'
+    | '/auth/callback'
+    | '/bundles/$namespace/$name'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/search' | '/bundles/$namespace/$name'
-  id: '__root__' | '/' | '/search' | '/bundles/$namespace/$name'
+  to:
+    | '/'
+    | '/profile'
+    | '/search'
+    | '/auth/callback'
+    | '/bundles/$namespace/$name'
+  id:
+    | '__root__'
+    | '/'
+    | '/profile'
+    | '/search'
+    | '/auth/callback'
+    | '/bundles/$namespace/$name'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ProfileRoute: typeof ProfileRoute
   SearchRoute: typeof SearchRoute
+  AuthCallbackRoute: typeof AuthCallbackRoute
   BundlesNamespaceNameRoute: typeof BundlesNamespaceNameRoute
 }
 
@@ -68,11 +104,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SearchRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/profile': {
+      id: '/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof ProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/callback': {
+      id: '/auth/callback'
+      path: '/auth/callback'
+      fullPath: '/auth/callback'
+      preLoaderRoute: typeof AuthCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/bundles/$namespace/$name': {
@@ -87,7 +137,9 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ProfileRoute: ProfileRoute,
   SearchRoute: SearchRoute,
+  AuthCallbackRoute: AuthCallbackRoute,
   BundlesNamespaceNameRoute: BundlesNamespaceNameRoute,
 }
 export const routeTree = rootRouteImport

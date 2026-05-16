@@ -99,6 +99,27 @@ async function authPlugin(fastify: FastifyInstance) {
       };
     }
 
+    // Try cookie-based JWT
+    const cookieToken = request.cookies.pekohub_session;
+    if (cookieToken) {
+      const decoded = await fastify.jwt.verify<{ sub: string; namespace: string }>(cookieToken);
+      const user = await db.query.users.findFirst({
+        where: eq(users.id, Number(decoded.sub)),
+      });
+
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      return {
+        id: user.id,
+        namespace: user.namespace,
+        displayName: user.displayName,
+        email: user.email,
+        avatarUrl: user.avatarUrl,
+      };
+    }
+
     throw new Error('Missing or invalid authorization');
   });
 }

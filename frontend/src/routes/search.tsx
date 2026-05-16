@@ -1,4 +1,4 @@
-import { createFileRoute, useSearch as useRouteSearch } from '@tanstack/react-router';
+import { createFileRoute, useSearch as useRouteSearch, useNavigate } from '@tanstack/react-router';
 import { SearchBar } from '~/components/SearchBar';
 import { BundleCard } from '~/components/BundleCard';
 import { useSearch } from '~/hooks/useSearch';
@@ -15,16 +15,23 @@ export const Route = createFileRoute('/search')({
 
 function SearchPage() {
   const { q } = useRouteSearch({ from: '/search' });
+  const navigate = useNavigate();
   const search = useSearch({
     q,
     page: 1,
     perPage: 20,
   });
 
+  const handleSearch = (query: string) => {
+    if (query) {
+      navigate({ to: '/search', search: { q: query } });
+    }
+  };
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <div className="mb-8">
-        <SearchBar initialQuery={q} onSearch={() => {}} />
+        <SearchBar initialQuery={q} onSearch={handleSearch} />
       </div>
 
       {search.isLoading && <div className="text-center text-gray-500">Searching...</div>}

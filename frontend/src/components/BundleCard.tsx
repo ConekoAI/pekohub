@@ -27,7 +27,7 @@ export function BundleCard({ bundle }: BundleCardProps) {
         </span>
       </div>
 
-      <div className="mt-4 flex items-center gap-4 text-sm text-gray-500">
+      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500">
         <span className="flex items-center gap-1">
           <Download className="h-4 w-4" />
           {bundle.pullCount.toLocaleString()}

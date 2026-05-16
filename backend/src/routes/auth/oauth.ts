@@ -5,9 +5,11 @@ import { users } from '../../db/schema.js';
 import { eq } from 'drizzle-orm';
 
 /**
- * OAuth 2.0 login flow
+ * OAuth 2.0 login flow + session endpoints
  * GET /api/v1/auth/:provider/authorize
  * GET /api/v1/auth/:provider/callback
+ * GET /api/v1/auth/me
+ * POST /api/v1/auth/logout
  */
 export default async function oauthRoutes(fastify: FastifyInstance) {
   const github = fastify.config.GITHUB_CLIENT_ID
@@ -135,5 +137,27 @@ export default async function oauthRoutes(fastify: FastifyInstance) {
 
     // Redirect to frontend
     return reply.redirect(`${fastify.config.REGISTRY_BASE_URL}/auth/callback?token=${token}`);
+  });
+
+  // GET /api/v1/auth/me
+  fastify.get('/me', async (request, reply) => {
+    try {
+      const user = await fastify.authenticate(request);
+      return {
+        id: user.id,
+        namespace: user.namespace,
+        displayName: user.displayName,
+        email: user.email,
+        avatarUrl: user.avatarUrl,
+      };
+    } catch {
+      return reply.status(401).send({ error: 'Unauthorized' });
+    }
+  });
+
+  // POST /api/v1/auth/logout
+  fastify.post('/logout', async (_request, reply) => {
+    reply.clearCookie('pekohub_session', { path: '/' });
+    return { success: true };
   });
 }

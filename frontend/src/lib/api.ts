@@ -1,12 +1,28 @@
-import type { SearchQuery, SearchResponse, BundleDetail } from '@pekohub/shared';
+import type { SearchQuery, SearchResponse, BundleDetail, UserProfile } from '@pekohub/shared';
 
 const API_BASE = '';
 
+const TOKEN_KEY = 'pekohub_token';
+
+export function getAuthToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function setAuthToken(token: string): void {
+  localStorage.setItem(TOKEN_KEY, token);
+}
+
+export function clearAuthToken(): void {
+  localStorage.removeItem(TOKEN_KEY);
+}
+
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
+  const token = getAuthToken();
   const response = await fetch(`${API_BASE}${url}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options?.headers,
     },
   });
@@ -76,5 +92,13 @@ export const api = {
   revokeApiKey: (id: number) =>
     fetch(`/api/v1/auth/api-keys/${id}`, { method: 'DELETE' }).then((r) => {
       if (!r.ok) throw new Error('Failed to revoke key');
+    }),
+
+  getMe: () =>
+    fetchJson<UserProfile>('/api/v1/auth/me'),
+
+  logout: () =>
+    fetchJson<void>('/api/v1/auth/logout', { method: 'POST' }).finally(() => {
+      clearAuthToken();
     }),
 };
