@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { db } from '../../db/index.js';
 import { bundles, bundleVersions, blobs } from '../../db/schema.js';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, desc } from 'drizzle-orm';
 import { OCIManifest } from '@pekohub/shared';
 import crypto from 'node:crypto';
 
@@ -34,15 +34,23 @@ export default async function manifestRoutes(fastify: FastifyInstance) {
       });
     }
 
-    // Find version by tag or digest
-    const version = await db.query.bundleVersions.findFirst({
-      where: and(
-        eq(bundleVersions.bundleId, bundle.id),
-        reference.startsWith('sha256:')
-          ? eq(bundleVersions.digest, reference)
-          : eq(bundleVersions.version, reference)
-      ),
-    });
+    // Find version by tag, digest, or resolve 'latest' to newest version
+    let version;
+    if (reference === 'latest') {
+      version = await db.query.bundleVersions.findFirst({
+        where: eq(bundleVersions.bundleId, bundle.id),
+        orderBy: [desc(bundleVersions.createdAt)],
+      });
+    } else {
+      version = await db.query.bundleVersions.findFirst({
+        where: and(
+          eq(bundleVersions.bundleId, bundle.id),
+          reference.startsWith('sha256:')
+            ? eq(bundleVersions.digest, reference)
+            : eq(bundleVersions.version, reference)
+        ),
+      });
+    }
 
     if (!version) {
       return reply.status(404).send({
@@ -75,14 +83,22 @@ export default async function manifestRoutes(fastify: FastifyInstance) {
       return reply.status(404).send();
     }
 
-    const version = await db.query.bundleVersions.findFirst({
-      where: and(
-        eq(bundleVersions.bundleId, bundle.id),
-        reference.startsWith('sha256:')
-          ? eq(bundleVersions.digest, reference)
-          : eq(bundleVersions.version, reference)
-      ),
-    });
+    let version;
+    if (reference === 'latest') {
+      version = await db.query.bundleVersions.findFirst({
+        where: eq(bundleVersions.bundleId, bundle.id),
+        orderBy: [desc(bundleVersions.createdAt)],
+      });
+    } else {
+      version = await db.query.bundleVersions.findFirst({
+        where: and(
+          eq(bundleVersions.bundleId, bundle.id),
+          reference.startsWith('sha256:')
+            ? eq(bundleVersions.digest, reference)
+            : eq(bundleVersions.version, reference)
+        ),
+      });
+    }
 
     if (!version) {
       return reply.status(404).send();

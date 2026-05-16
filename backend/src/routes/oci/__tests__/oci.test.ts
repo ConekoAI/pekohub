@@ -408,6 +408,38 @@ describe('OCI Distribution Spec Routes', () => {
       expect(res.statusCode).toBe(200);
       expect(JSON.parse(res.body)).toEqual(manifest);
     });
+
+    it('resolves "latest" tag to the newest version', async () => {
+      const manifest = {
+        schemaVersion: 2,
+        mediaType: 'application/vnd.oci.image.manifest.v1+json',
+        config: { mediaType: 'application/vnd.oci.image.config.v1+json', digest: sha256('{}'), size: 2 },
+        layers: [],
+      };
+      const digest = sha256(JSON.stringify(manifest));
+      mockDbQueries.bundles.findFirst.mockResolvedValue({ id: 1 });
+      // When reference is 'latest', the handler calls findFirst with orderBy instead of version match
+      mockDbQueries.bundleVersions.findFirst.mockResolvedValue({
+        version: 'v2.0.0',
+        digest,
+        manifestJson: manifest,
+      });
+
+      const res = await app.inject({ method: 'GET', url: '/v2/ns/name/manifests/latest' });
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['docker-content-digest']).toBe(digest);
+      expect(JSON.parse(res.body)).toEqual(manifest);
+    });
+
+    it('returns 404 when no versions exist for "latest"', async () => {
+      mockDbQueries.bundles.findFirst.mockResolvedValue({ id: 1 });
+      mockDbQueries.bundleVersions.findFirst.mockResolvedValue(undefined);
+
+      const res = await app.inject({ method: 'GET', url: '/v2/ns/name/manifests/latest' });
+      expect(res.statusCode).toBe(404);
+      const body = JSON.parse(res.body);
+      expect(body.errors[0].code).toBe('MANIFEST_UNKNOWN');
+    });
   });
 
   describe('HEAD /v2/:namespace/:name/manifests/:reference', () => {
@@ -434,6 +466,27 @@ describe('OCI Distribution Spec Routes', () => {
       });
 
       const res = await app.inject({ method: 'HEAD', url: '/v2/ns/name/manifests/v1.0.0' });
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['docker-content-digest']).toBe(digest);
+      expect(res.headers['content-length']).toBe(String(JSON.stringify(manifest).length));
+    });
+
+    it('resolves "latest" tag to the newest version', async () => {
+      const manifest = {
+        schemaVersion: 2,
+        mediaType: 'application/vnd.oci.image.manifest.v1+json',
+        config: { mediaType: 'application/vnd.oci.image.config.v1+json', digest: sha256('{}'), size: 2 },
+        layers: [],
+      };
+      const digest = sha256(JSON.stringify(manifest));
+      mockDbQueries.bundles.findFirst.mockResolvedValue({ id: 1 });
+      mockDbQueries.bundleVersions.findFirst.mockResolvedValue({
+        version: 'v2.0.0',
+        digest,
+        manifestJson: manifest,
+      });
+
+      const res = await app.inject({ method: 'HEAD', url: '/v2/ns/name/manifests/latest' });
       expect(res.statusCode).toBe(200);
       expect(res.headers['docker-content-digest']).toBe(digest);
       expect(res.headers['content-length']).toBe(String(JSON.stringify(manifest).length));
