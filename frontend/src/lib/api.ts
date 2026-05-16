@@ -37,10 +37,44 @@ export const api = {
     fetchJson<BundleDetail>(`/api/v1/bundles/${namespace}/${name}`),
 
   getBundleVersions: (namespace: string, name: string) =>
-    fetchJson<{ namespace: string; name: string; versions: Array<{ version: string; digest: string; size: number; createdAt: string }> }>(
+    fetchJson<{ namespace: string; name: string; versions: Array<{ version: string; digest: string; size: number; createdAt: string; deprecated: boolean | null; deprecatedMessage: string | null }> }>(
       `/api/v1/bundles/${namespace}/${name}/versions`
     ),
 
   getCatalog: () =>
     fetchJson<{ repositories: string[] }>('/v2/_catalog'),
+
+  deprecateVersion: (
+    namespace: string,
+    name: string,
+    version: string,
+    deprecated: boolean,
+    message?: string
+  ) =>
+    fetchJson<{
+      namespace: string;
+      name: string;
+      version: string;
+      deprecated: boolean | null;
+      deprecatedMessage: string | null;
+    }>(`/api/v1/bundles/${namespace}/${name}/versions/${version}/deprecate`, {
+      method: 'POST',
+      body: JSON.stringify({ deprecated, message }),
+    }),
+
+  generateApiKey: (name: string) =>
+    fetchJson<{ id: number; name: string; prefix: string; key: string; createdAt: string }>(
+      '/api/v1/auth/api-keys',
+      { method: 'POST', body: JSON.stringify({ name }) }
+    ),
+
+  listApiKeys: () =>
+    fetchJson<{ keys: Array<{ id: number; name: string; prefix: string; createdAt: string; lastUsedAt: string | null }> }>(
+      '/api/v1/auth/api-keys'
+    ),
+
+  revokeApiKey: (id: number) =>
+    fetch(`/api/v1/auth/api-keys/${id}`, { method: 'DELETE' }).then((r) => {
+      if (!r.ok) throw new Error('Failed to revoke key');
+    }),
 };

@@ -4,6 +4,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { db } from '../db/index.js';
 import { users, apiKeys } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
+import bcrypt from 'bcryptjs';
 
 export interface AuthenticatedUser {
   id: number;
@@ -51,8 +52,17 @@ async function authPlugin(fastify: FastifyInstance) {
           throw new Error('Invalid API key');
         }
 
-        // In production: hash token and compare with keyRecord.hash
-        // For now, simplified check
+        // Verify hash
+        const valid = await bcrypt.compare(token, keyRecord.hash);
+        if (!valid) {
+          throw new Error('Invalid API key');
+        }
+
+        // Update last used timestamp
+        await db.update(apiKeys)
+          .set({ lastUsedAt: new Date() })
+          .where(eq(apiKeys.id, keyRecord.id));
+
         const user = await db.query.users.findFirst({
           where: eq(users.id, keyRecord.userId),
         });

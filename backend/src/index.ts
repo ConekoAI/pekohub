@@ -4,6 +4,7 @@ import cors from '@fastify/cors';
 import cookie from '@fastify/cookie';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
+import rateLimit from '@fastify/rate-limit';
 
 import configPlugin from './plugins/config.js';
 import authPlugin from './plugins/auth.js';
@@ -15,6 +16,7 @@ import searchApiRoutes from './routes/api/search.js';
 import bundleApiRoutes from './routes/api/bundles.js';
 import adminRoutes from './routes/api/admin.js';
 import oauthRoutes from './routes/auth/oauth.js';
+import apiKeyRoutes from './routes/auth/api-keys.js';
 
 async function main() {
   const app = Fastify({
@@ -49,6 +51,10 @@ async function main() {
     credentials: true,
   });
   await app.register(cookie);
+  await app.register(rateLimit, {
+    max: app.config.RATE_LIMIT_MAX,
+    timeWindow: app.config.RATE_LIMIT_WINDOW_MS,
+  });
   await app.register(authPlugin);
   await app.register(storagePlugin);
   await app.register(searchPlugin);
@@ -79,6 +85,31 @@ async function main() {
   await app.register(bundleApiRoutes, { prefix: '/api/v1' });
   await app.register(adminRoutes, { prefix: '/api/v1/admin' });
   await app.register(oauthRoutes, { prefix: '/api/v1/auth' });
+  await app.register(apiKeyRoutes, { prefix: '/api/v1/auth' });
+
+  // Stricter rate limits for auth endpoints
+  app.addHook('onRequest', async (request, reply) => {
+    if (request.url.startsWith('/api/v1/auth/')) {
+      // Use a simple in-memory rate limiter for auth endpoints
+      // @fastify/rate-limit doesn't support prefix-based scoping,
+      // so we apply a custom hook here.
+      const key = `ratelimit:auth:${request.ip}`;
+      const now = Date.now();
+      const windowMs = 60_000;
+      const max = 10;
+      const store = (app as any)._authRateLimitStore ?? new Map<string, number[]>();
+      (app as any)._authRateLimitStore = store;
+
+      const timestamps = store.get(key) ?? [];
+      const valid = timestamps.filter((t: number) => now - t < windowMs);
+      if (valid.length >= max) {
+        reply.header('Retry-After', Math.ceil(windowMs / 1000));
+        return reply.status(429).send({ error: 'Too many requests' });
+      }
+      valid.push(now);
+      store.set(key, valid);
+    }
+  });
 
   // Error handler
   app.setErrorHandler((error, request, reply) => {

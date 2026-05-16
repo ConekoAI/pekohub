@@ -89,6 +89,9 @@ async function buildApp(): Promise<FastifyInstance> {
     MEILISEARCH_API_KEY: 'test',
     JWT_SECRET: 'test-secret-must-be-at-least-32-characters-long',
     REGISTRY_BASE_URL: 'http://localhost:3000',
+    ALLOW_DEV_AUTH_BYPASS: 'true',
+    RATE_LIMIT_MAX: 100,
+    RATE_LIMIT_WINDOW_MS: 60000,
   });
 
   // Mock storage

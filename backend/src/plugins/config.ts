@@ -20,6 +20,9 @@ const schema = z.object({
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
   REGISTRY_BASE_URL: z.string().url().default('http://localhost:3000'),
+  ALLOW_DEV_AUTH_BYPASS: z.enum(['true', 'false']).default('false'),
+  RATE_LIMIT_MAX: z.coerce.number().default(100),
+  RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60_000),
 });
 
 export type Config = z.infer<typeof schema>;

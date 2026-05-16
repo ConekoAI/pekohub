@@ -8,6 +8,7 @@ import { BundleDetail } from '@pekohub/shared';
  * Custom API: Bundle metadata and detail pages
  * GET /api/v1/bundles/:namespace/:name
  * GET /api/v1/bundles/:namespace/:name/versions
+ * POST /api/v1/bundles/:namespace/:name/versions/:version/deprecate
  */
 export default async function bundleRoutes(fastify: FastifyInstance) {
   // GET bundle detail
@@ -109,6 +110,62 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
         deprecated: v.deprecated,
         deprecatedMessage: v.deprecatedMessage,
       })),
+    };
+  });
+
+  // POST deprecate / undeprecate a specific version
+  fastify.post<{
+    Body: { deprecated: boolean; message?: string };
+  }>('/bundles/:namespace/:name/versions/:version/deprecate', async (request, reply) => {
+    const { namespace, name, version } = request.params as {
+      namespace: string;
+      name: string;
+      version: string;
+    };
+
+    let user: { namespace: string };
+    try {
+      user = await fastify.authenticate(request);
+    } catch {
+      if (fastify.config.NODE_ENV === 'development' && fastify.config.ALLOW_DEV_AUTH_BYPASS === 'true') {
+        user = { namespace };
+      } else {
+        return reply.status(401).send({ error: 'Authentication required' });
+      }
+    }
+
+    if (user.namespace !== namespace) {
+      return reply.status(403).send({ error: 'Namespace ownership mismatch' });
+    }
+
+    const bundle = await db.query.bundles.findFirst({
+      where: and(eq(bundles.namespace, namespace), eq(bundles.name, name)),
+    });
+
+    if (!bundle) {
+      return reply.status(404).send({ error: 'Bundle not found' });
+    }
+
+    const { deprecated, message } = request.body;
+
+    const [updated] = await db.update(bundleVersions)
+      .set({
+        deprecated,
+        deprecatedMessage: deprecated ? (message ?? null) : null,
+      })
+      .where(and(eq(bundleVersions.bundleId, bundle.id), eq(bundleVersions.version, version)))
+      .returning();
+
+    if (!updated) {
+      return reply.status(404).send({ error: 'Version not found' });
+    }
+
+    return {
+      namespace,
+      name,
+      version: updated.version,
+      deprecated: updated.deprecated,
+      deprecatedMessage: updated.deprecatedMessage,
     };
   });
 }

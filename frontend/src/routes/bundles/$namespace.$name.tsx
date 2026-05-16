@@ -1,7 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useBundle } from '~/hooks/useBundle';
-import { Download, Star, Copy, Check } from 'lucide-react';
+import { Download, Star, Copy, Check, AlertTriangle } from 'lucide-react';
 import { useState } from 'react';
+import { api } from '~/lib/api';
+import { useQueryClient } from '@tanstack/react-query';
 
 export const Route = createFileRoute('/bundles/$namespace/$name')({
   component: BundleDetailPage,
@@ -10,12 +12,26 @@ export const Route = createFileRoute('/bundles/$namespace/$name')({
 function BundleDetailPage() {
   const { namespace, name } = Route.useParams();
   const bundle = useBundle(namespace, name);
+  const queryClient = useQueryClient();
   const [copied, setCopied] = useState(false);
+  const [deprecating, setDeprecating] = useState<string | null>(null);
+  const [deprecateMessage, setDeprecateMessage] = useState('');
 
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleDeprecate = async (version: string, deprecated: boolean) => {
+    try {
+      await api.deprecateVersion(namespace, name, version, deprecated, deprecateMessage || undefined);
+      queryClient.invalidateQueries({ queryKey: ['bundle', namespace, name] });
+      setDeprecating(null);
+      setDeprecateMessage('');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to update deprecation');
+    }
   };
 
   if (bundle.isLoading) {
@@ -97,11 +113,65 @@ function BundleDetailPage() {
         <h2 className="text-xl font-semibold text-gray-900">Versions</h2>
         <div className="mt-4 divide-y divide-gray-200 border rounded-lg">
           {data.versions.map((v) => (
-            <div key={v.version} className="flex items-center justify-between px-4 py-3">
-              <span className="font-mono text-sm">{v.version}</span>
-              <span className="text-xs text-gray-500">
-                {new Date(v.createdAt).toLocaleDateString()}
-              </span>
+            <div key={v.version} className="px-4 py-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-sm">{v.version}</span>
+                  {v.deprecated && (
+                    <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+                      <AlertTriangle className="h-3 w-3" />
+                      Deprecated
+                    </span>
+                  )}
+                </div>
+                <span className="text-xs text-gray-500">
+                  {new Date(v.createdAt).toLocaleDateString()}
+                </span>
+              </div>
+              {v.deprecatedMessage && (
+                <p className="mt-1 text-xs text-amber-700">{v.deprecatedMessage}</p>
+              )}
+              {deprecating === v.version ? (
+                <div className="mt-2 flex items-center gap-2">
+                  <input
+                    type="text"
+                    placeholder="Deprecation reason (optional)"
+                    value={deprecateMessage}
+                    onChange={(e) => setDeprecateMessage(e.target.value)}
+                    className="flex-1 rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-peko-500 focus:outline-none"
+                  />
+                  <button
+                    onClick={() => handleDeprecate(v.version, true)}
+                    className="rounded-md bg-amber-600 px-2 py-1 text-xs font-medium text-white hover:bg-amber-700"
+                  >
+                    Deprecate
+                  </button>
+                  <button
+                    onClick={() => { setDeprecating(null); setDeprecateMessage(''); }}
+                    className="rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-200"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <div className="mt-2 flex items-center gap-2">
+                  {v.deprecated ? (
+                    <button
+                      onClick={() => handleDeprecate(v.version, false)}
+                      className="rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-200"
+                    >
+                      Un-deprecate
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setDeprecating(v.version)}
+                      className="rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100"
+                    >
+                      Deprecate
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>

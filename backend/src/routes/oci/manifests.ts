@@ -118,11 +118,13 @@ export default async function manifestRoutes(fastify: FastifyInstance) {
     try {
       user = await fastify.authenticate(request);
     } catch {
-      // Allow unauthenticated pushes in development for testing
-      if (process.env.NODE_ENV === 'development') {
+      // Allow unauthenticated pushes in development when explicitly enabled
+      if (fastify.config.NODE_ENV === 'development' && fastify.config.ALLOW_DEV_AUTH_BYPASS === 'true') {
         user = { namespace: (request.params as { namespace: string }).namespace };
       } else {
-        throw new Error('Authentication required');
+        return reply.status(401).send({
+          errors: [{ code: 'UNAUTHORIZED', message: 'Authentication required' }],
+        });
       }
     }
     const { namespace, name, reference } = request.params as {

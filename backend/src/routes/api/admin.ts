@@ -10,12 +10,14 @@ export default async function adminRoutes(fastify: FastifyInstance) {
   fastify.post<{
     Body: { retentionDays?: number; dryRun?: boolean };
   }>('/gc', async (request, reply) => {
-    const { retentionDays = 7, dryRun = false } = request.body ?? {};
+    const user = await fastify.authenticate(request);
 
-    // In production, this should check admin role
-    if (process.env.NODE_ENV === 'production') {
-      return reply.status(401).send({ error: 'Unauthorized' });
+    // In production, check admin role; for now gate by namespace or env
+    if (fastify.config.NODE_ENV === 'production') {
+      return reply.status(403).send({ error: 'Forbidden' });
     }
+
+    const { retentionDays = 7, dryRun = false } = request.body ?? {};
 
     try {
       const gc = new GarbageCollector(fastify.storage);
@@ -43,6 +45,8 @@ export default async function adminRoutes(fastify: FastifyInstance) {
   fastify.get<{
     Querystring: { retentionDays?: string };
   }>('/gc/estimate', async (request) => {
+    const user = await fastify.authenticate(request);
+
     const retentionDays = request.query.retentionDays ? parseInt(request.query.retentionDays) : 7;
 
     const gc = new GarbageCollector(fastify.storage);
