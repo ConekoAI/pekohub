@@ -18,6 +18,9 @@ import adminRoutes from './routes/api/admin.js';
 import oauthRoutes from './routes/auth/oauth.js';
 import apiKeyRoutes from './routes/auth/api-keys.js';
 
+import { GarbageCollector } from './services/gc.js';
+import { Scheduler } from './services/scheduler.js';
+
 async function main() {
   const app = Fastify({
     logger: {
@@ -131,6 +134,49 @@ async function main() {
     app.log.error(err);
     process.exit(1);
   }
+
+  // ── Scheduled garbage collection ────────────────────────────────────────────
+  const scheduler = new Scheduler(app.log);
+
+  if (app.config.GC_ENABLED === 'true') {
+    const gc = new GarbageCollector(app.storage);
+
+    scheduler.addJob('garbage-collection', app.config.GC_INTERVAL_MS, async () => {
+      const result = await gc.collect({
+        retentionDays: app.config.GC_RETENTION_DAYS,
+        dryRun: false,
+        batchSize: app.config.GC_BATCH_SIZE,
+      });
+
+      app.log.info(
+        `GC completed — blobsScanned=${result.blobsScanned} blobsDeleted=${result.blobsDeleted} bytesFreed=${result.bytesFreed} errors=${result.errors.length}`
+      );
+
+      if (result.errors.length > 0) {
+        for (const error of result.errors) {
+          app.log.error(`GC error: ${error}`);
+        }
+      }
+    });
+
+    scheduler.start();
+    app.log.info(
+      `Scheduled GC enabled (interval=${app.config.GC_INTERVAL_MS}ms, retention=${app.config.GC_RETENTION_DAYS}days, batchSize=${app.config.GC_BATCH_SIZE})`
+    );
+  } else {
+    app.log.info('Scheduled GC disabled');
+  }
+
+  // ── Graceful shutdown ───────────────────────────────────────────────────────
+  const shutdown = async (signal: string) => {
+    app.log.info(`Received ${signal}, shutting down gracefully...`);
+    scheduler.stop();
+    await app.close();
+    process.exit(0);
+  };
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
 main();

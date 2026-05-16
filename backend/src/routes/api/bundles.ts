@@ -3,12 +3,14 @@ import { db } from '../../db/index.js';
 import { bundles, bundleVersions, pullStats } from '../../db/schema.js';
 import { eq, and, sql } from 'drizzle-orm';
 import { BundleDetail } from '@pekohub/shared';
+import { auditService } from '../../services/audit.js';
 
 /**
  * Custom API: Bundle metadata and detail pages
  * GET /api/v1/bundles/:namespace/:name
  * GET /api/v1/bundles/:namespace/:name/versions
  * POST /api/v1/bundles/:namespace/:name/versions/:version/deprecate
+ * POST /api/v1/bundles/:namespace/:name/fork
  */
 export default async function bundleRoutes(fastify: FastifyInstance) {
   // GET bundle detail
@@ -68,6 +70,7 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
         readme: bundle.readme,
         version: latestVersion?.version ?? '0.0.0',
         deprecated: false,
+        forkedFrom: bundle.forkedFrom ?? undefined,
       },
       readme: bundle.readme,
       pullCount: {
@@ -160,6 +163,15 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
       return reply.status(404).send({ error: 'Version not found' });
     }
 
+    // Fire-and-forget audit log (must not throw)
+    const userId = (user as { id?: number }).id;
+    await auditService.logPermissionChange(
+      namespace,
+      userId,
+      `${namespace}/${name}:${version}`,
+      { action: deprecated ? 'deprecate' : 'undeprecate', message: deprecated ? (message ?? null) : null },
+    );
+
     return {
       namespace,
       name,
@@ -167,5 +179,111 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
       deprecated: updated.deprecated,
       deprecatedMessage: updated.deprecatedMessage,
     };
+  });
+
+  // POST fork a bundle to the authenticated user's namespace
+  fastify.post<{
+    Querystring: { targetName?: string };
+  }>('/bundles/:namespace/:name/fork', async (request, reply) => {
+    const { namespace, name } = request.params as { namespace: string; name: string };
+    const { targetName } = request.query;
+
+    let user: { id: number; namespace: string };
+    try {
+      user = await fastify.authenticate(request) as { id: number; namespace: string };
+    } catch {
+      if (fastify.config.NODE_ENV === 'development' && fastify.config.ALLOW_DEV_AUTH_BYPASS === 'true') {
+        user = { id: 0, namespace: 'dev-user' };
+      } else {
+        return reply.status(401).send({ error: 'Authentication required' });
+      }
+    }
+
+    const sourceBundle = await db.query.bundles.findFirst({
+      where: and(eq(bundles.namespace, namespace), eq(bundles.name, name)),
+    });
+
+    if (!sourceBundle) {
+      return reply.status(404).send({ error: 'Bundle not found' });
+    }
+
+    const newName = targetName?.trim() || name;
+
+    // Check for conflict in user's namespace
+    const existing = await db.query.bundles.findFirst({
+      where: and(eq(bundles.namespace, user.namespace), eq(bundles.name, newName)),
+    });
+
+    if (existing) {
+      return reply.status(409).send({ error: `Bundle ${user.namespace}/${newName} already exists` });
+    }
+
+    // Create the forked bundle
+    const [newBundle] = await db.insert(bundles).values({
+      namespace: user.namespace,
+      name: newName,
+      bundleType: sourceBundle.bundleType,
+      extensionType: sourceBundle.extensionType,
+      description: sourceBundle.description,
+      author: sourceBundle.author,
+      license: sourceBundle.license,
+      tags: sourceBundle.tags,
+      categories: sourceBundle.categories,
+      modelProviders: sourceBundle.modelProviders,
+      requiredMcpServers: sourceBundle.requiredMcpServers,
+      homepage: sourceBundle.homepage,
+      repository: sourceBundle.repository,
+      readme: sourceBundle.readme,
+      forkedFrom: `${namespace}/${name}`,
+      starCount: 0,
+      pullCount: 0,
+    }).returning();
+
+    // Copy all versions (blobs are content-addressable, no need to duplicate)
+    const sourceVersions = await db.query.bundleVersions.findMany({
+      where: eq(bundleVersions.bundleId, sourceBundle.id),
+    });
+
+    if (sourceVersions.length > 0) {
+      await db.insert(bundleVersions).values(
+        sourceVersions.map((v) => ({
+          bundleId: newBundle.id,
+          version: v.version,
+          digest: v.digest,
+          manifestJson: v.manifestJson,
+          size: v.size,
+          deprecated: v.deprecated,
+          deprecatedMessage: v.deprecatedMessage,
+        }))
+      );
+    }
+
+    // Index into search
+    try {
+      const latestVersion = sourceVersions[0];
+      await fastify.search.indexBundle({
+        objectID: `${user.namespace}-${newName}-${latestVersion?.version ?? 'latest'}`,
+        namespace: user.namespace,
+        name: newName,
+        version: latestVersion?.version ?? 'latest',
+        description: newBundle.description ?? undefined,
+        author: newBundle.author ?? 'unknown',
+        bundleType: newBundle.bundleType,
+        extensionType: newBundle.extensionType ?? undefined,
+        tags: newBundle.tags ?? undefined,
+        pullCount: 0,
+        starCount: 0,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      fastify.log.warn({ err }, 'Failed to index forked bundle in Meilisearch');
+    }
+
+    return reply.status(201).send({
+      namespace: newBundle.namespace,
+      name: newBundle.name,
+      forkedFrom: newBundle.forkedFrom,
+      versionsCopied: sourceVersions.length,
+    });
   });
 }

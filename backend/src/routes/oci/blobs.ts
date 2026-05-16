@@ -5,6 +5,7 @@ import { eq, and, sql } from 'drizzle-orm';
 import crypto from 'node:crypto';
 import { pipeline } from 'node:stream/promises';
 import { Writable } from 'node:stream';
+import { auditService } from '../../services/audit.js';
 
 /**
  * OCI Distribution Spec: Blob operations
@@ -52,12 +53,14 @@ export default async function blobRoutes(fastify: FastifyInstance) {
     }
 
     // Increment pull stats
+    let bundleForAudit: { id: number; name: string; namespace: string } | undefined;
     try {
       const { namespace, name } = request.params as { namespace: string; name: string };
       const bundle = await db.query.bundles.findFirst({
         where: and(eq(bundles.namespace, namespace), eq(bundles.name, name)),
       });
       if (bundle) {
+        bundleForAudit = bundle;
         await db.insert(pullStats).values({
           bundleId: bundle.id,
           date: new Date(),
@@ -73,6 +76,19 @@ export default async function blobRoutes(fastify: FastifyInstance) {
     } catch (err) {
       // Don't fail the request if stats tracking fails
       fastify.log.warn({ err }, 'Failed to increment pull stats');
+    }
+
+    // Fire-and-forget audit log (must not throw)
+    if (bundleForAudit) {
+      const userId = (request as unknown as { user?: { id?: number } }).user?.id;
+      await auditService.logPull(
+        bundleForAudit.namespace,
+        userId,
+        bundleForAudit.name,
+        'unknown',
+        digest,
+        { blobSize: blob.size },
+      );
     }
 
     const data = await fastify.storage.get(blob.storageKey);

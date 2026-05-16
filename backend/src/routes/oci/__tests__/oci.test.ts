@@ -92,6 +92,10 @@ async function buildApp(): Promise<FastifyInstance> {
     ALLOW_DEV_AUTH_BYPASS: 'true',
     RATE_LIMIT_MAX: 100,
     RATE_LIMIT_WINDOW_MS: 60000,
+    GC_ENABLED: 'true',
+    GC_INTERVAL_MS: 86400000,
+    GC_RETENTION_DAYS: 7,
+    GC_BATCH_SIZE: 1000,
   });
 
   // Mock storage

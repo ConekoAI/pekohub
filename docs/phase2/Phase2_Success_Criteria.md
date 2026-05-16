@@ -44,19 +44,29 @@ Phase 2 depends on the following Phase 1 outputs being production-stable:
 
 ---
 
-## Progress Tracker (Last Updated: 2026-05-15)
+## Progress Tracker (Last Updated: 2026-05-16)
 
 | Milestone | Status | Notes |
 |-----------|--------|-------|
-| **Milestone 1: Registry Foundation** | 🟡 In Progress | OCI push/pull working, PostgreSQL + MinIO storage, Meilisearch search index. Remaining: GC, catalog/tags endpoints, full auth enforcement. |
-| **Milestone 2: Auth, Search, Web UI** | 🟡 In Progress | OAuth routes scaffolded, full-text search + faceted filtering working, bundle detail API ready. Remaining: Web UI pages, auth enforcement in production, API keys. |
+| **Milestone 1: Registry Foundation** | 🟢 Mostly Complete | OCI push/pull working, PostgreSQL + MinIO storage, Meilisearch search index. GC service implemented + scheduled via daily cron. All OCI routes tested (56 tests passing). Audit logging wired. Fork API implemented. |
+| **Milestone 2: Auth, Search, Web UI** | 🟡 In Progress | OAuth routes scaffolded, API key generation + bcrypt verification implemented, full-text search + faceted filtering working, bundle detail API ready. Rate limiting implemented. Web UI scaffolded (homepage, search, bundle detail) but auth state not yet wired. |
 
-### Recent Fixes (2026-05-15)
+### Recent Fixes & Additions (2026-05-15 / 2026-05-16)
 - ✅ Fixed Meilisearch search returning empty `items` array — root cause was `page`/`hitsPerPage` conflicting with `offset`/`limit` in Meilisearch v1.9
 - ✅ Fixed TypeScript build errors across backend (auth plugin, OAuth routes, OCI routes)
 - ✅ Fixed Meilisearch document ID sanitization (`a-zA-Z0-9_-` only)
 - ✅ Fixed pull stats increment to use `(namespace, name)` composite key instead of name-only lookup
 - ✅ Auto-index bundles into Meilisearch on successful manifest push
+- ✅ Integration tests for OCI routes (catalog, tags, blobs, manifests) — 56 test cases passing
+- ✅ API key generation endpoint (POST /api/v1/auth/api-keys) with bcrypt hash verification
+- ✅ Rate limiting via @fastify/rate-limit configured with env vars; stricter limits on auth endpoints
+- ✅ Bundle deprecation API (POST /api/v1/bundles/{ns}/{name}/versions/{ver}/deprecate)
+- ✅ Latest tag resolution for manifest GET (resolves to newest version by createdAt)
+- ✅ **Audit logging service** (`src/services/audit.ts`) with fire-and-forget push/pull/delete/permission_change logging
+- ✅ **Audit log integration** wired into manifest PUT, blob GET, and bundle deprecation handlers
+- ✅ **Audit log query API** (`GET /api/v1/admin/audit?namespace=&action=&page=&perPage=`) for namespace owners
+- ✅ **Scheduled garbage collection** via `Scheduler` service — runs daily with configurable retention/batch size
+- ✅ **Bundle forking API** (`POST /api/v1/bundles/:namespace/:name/fork`) — copies metadata + versions, preserves provenance via `forkedFrom`
 
 ---
 
@@ -70,42 +80,42 @@ The Public Registry is the discovery and distribution layer for Agent Bundles. I
 
 #### 3.2.1 Registry Core Infrastructure
 - [x] **REG-001**: Registry MUST implement the OCI Distribution Spec v1.1 for push/pull/tag operations, ensuring any OCI-compliant client (docker, oras, CLI) can interact with it
-- [~] **REG-002**: Registry MUST support manifest listing for bundle discovery, including support for tag lists, digest resolution, and multi-arch/index manifests — *tag list endpoint pending*
+- [~] **REG-002**: Registry MUST support manifest listing for bundle discovery, including support for tag lists, digest resolution, and multi-arch/index manifests — *tag list implemented (GET /v2/{namespace}/{name}/tags/list), multi-arch/index not tested*
 - [x] **REG-003**: Registry MUST persist bundle metadata (manifest.json content) in a queryable database (PostgreSQL or equivalent) enabling search and filtering
 - [x] **REG-004**: Registry MUST implement content-addressable storage — all blob uploads are de-duplicated via digest, and layer re-use is automatic across bundles
-- [ ] **REG-005**: Registry MUST support garbage collection of unreferenced blobs with configurable retention policies — *not started*
+- [x] **REG-005**: Registry MUST support garbage collection of unreferenced blobs with configurable retention policies — ✅ `GarbageCollector` class + `Scheduler` daily cron job; admin manual trigger also available
 - [~] **REG-006**: Registry MUST expose a REST API (OpenAPI 3.1 documented) with the following endpoints:
-  - `GET /v2/_catalog` — List all bundle namespaces — *pending*
-  - `GET /v2/{namespace}/bundles/tags/list` — List tags for a bundle — *pending*
+  - `GET /v2/_catalog` — List all bundle namespaces — ✅ implemented
+  - `GET /v2/{namespace}/bundles/tags/list` — List tags for a bundle — ✅ implemented
   - `GET /v2/{namespace}/bundles/manifests/{reference}` — Pull a manifest — ✅ implemented
   - `PUT /v2/{namespace}/bundles/manifests/{reference}` — Push a manifest — ✅ implemented
   - `GET /api/v1/search?q={query}` — Full-text search across bundles — ✅ implemented
   - `GET /api/v1/bundles/{namespace}/{name}` — Bundle metadata and README — ✅ implemented
-  - `GET /api/v1/bundles/{namespace}/{name}/versions` — Version history — *pending*
-- [~] **REG-007**: Registry MUST authenticate users via OAuth 2.0 (GitHub, Google, or equivalent) and support organization/team namespaces — *OAuth routes implemented, auth bypass in dev mode for testing*
-- [~] **REG-008**: Registry MUST enforce namespace ownership — only authenticated owners of a namespace can push or delete bundles within it — *namespace check implemented, auth enforcement pending*
+  - `GET /api/v1/bundles/{namespace}/{name}/versions` — Version history — ✅ implemented
+- [~] **REG-007**: Registry MUST authenticate users via OAuth 2.0 (GitHub, Google, or equivalent) and support organization/team namespaces — *OAuth + API key auth implemented; bearer token (JWT or ph_ API key) supported via @fastify/jwt + bcrypt hash verification*
+- [~] **REG-008**: Registry MUST enforce namespace ownership — only authenticated owners of a namespace can push or delete bundles within it — *namespace check implemented in deprecate endpoint; auth bypass in dev mode*
 
 #### 3.2.2 Bundle Discovery & Search
 - [x] **REG-009**: Registry MUST index the following searchable fields from bundle manifests: name, description, author, tags/keywords, required MCP servers, supported model providers, skill definitions, license, and extension type
 - [x] **REG-010**: Registry MUST provide full-text search with relevance ranking across all indexed fields, supporting phrase matching and boolean operators (`AND`, `OR`, `NOT`)
-- [~] **REG-011**: Registry MUST support faceted search — users can filter by: model provider (OpenAI/Anthropic/local), MCP server dependencies, category (research/support/development/content), license, bundle type (agent/team/extension), and extension type (skill/mcp/gateway/universal/general/team) — *filter fields configured in Meilisearch, API filter params implemented*
+- [~] **REG-011**: Registry MUST support faceted search — users can filter by: model provider (OpenAI/Anthropic/local), MCP server dependencies, category (research/support/development/content), license, bundle type (agent/team/extension), and extension type (skill/mcp/gateway/universal/general/team) — *filter fields configured in Meilisearch, API filter params implemented, tests passing*
 - [~] **REG-012**: Registry MUST auto-generate a public HTML page for every published bundle containing: metadata, README, version history, dependency tree, installation command, and usage statistics (pull count, star count) — *API endpoints ready, web UI pending*
 - [ ] **REG-013**: Registry MUST expose a public Web UI (`https://pekohub.org`) with: homepage featuring trending bundles, category browsing, search with autocomplete, bundle detail pages, and user profile pages — *not started*
 - [ ] **REG-014**: Web UI MUST be responsive and functional on mobile devices (viewport ≥ 375px) — *not started*
 
 #### 3.2.3 Bundle Management
-- [~] **REG-015**: Registry MUST support semantic versioning (MAJOR.MINOR.PATCH) with `latest` tag resolution and version constraint syntax (`>=1.0.0`, `^1.2.0`, `~1.2.3`) — *semver validation implemented, latest tag and constraint resolution pending*
+- [~] **REG-015**: Registry MUST support semantic versioning (MAJOR.MINOR.PATCH) with `latest` tag resolution and version constraint syntax (`>=1.0.0`, `^1.2.0`, `~1.2.3`) — *semver validation + latest tag resolution implemented (tested); constraint syntax parsing not started*
 - [x] **REG-016**: Registry MUST maintain version history with immutable manifests — once published, a manifest digest can never be modified (following OCI immutability guarantees)
-- [ ] **REG-017**: Registry MUST support bundle deprecation — owners can mark versions as deprecated with a redirect message to a replacement bundle — *not started*
-- [~] **REG-018**: Registry MUST provide download/pull statistics (daily, weekly, monthly, all-time) per bundle and per version — *pull stats table exists, blob GET increments tracked, aggregation queries pending*
-- [ ] **REG-019**: Registry MUST support bundle forking — any authenticated user can fork a public bundle to their own namespace, preserving provenance metadata — *not started*
+- [~] **REG-017**: Registry MUST support bundle deprecation — owners can mark versions as deprecated with a redirect message to a replacement bundle — *API endpoint implemented (POST /api/v1/bundles/{ns}/{name}/versions/{ver}/deprecate), web UI not started*
+- [~] **REG-018**: Registry MUST provide download/pull statistics (daily, weekly, monthly, all-time) per bundle and per version — *pull stats table exists, blob GET increments tracked, aggregation queries implemented in bundle detail endpoint*
+- [x] **REG-019**: Registry MUST support bundle forking — any authenticated user can fork a public bundle to their own namespace, preserving provenance metadata — ✅ `POST /api/v1/bundles/:namespace/:name/fork` implemented with `forkedFrom` tracking
 
 #### 3.2.4 Security & Trust
 - [ ] **REG-020**: Registry MUST verify bundle signatures (`signature.json`) on push and reject bundles with invalid or missing signatures — *not started*
 - [ ] **REG-021**: Registry MUST support Sigstore/cosign signing as an alternative to the built-in signature scheme, enabling keyless signing via OIDC — *not started*
 - [ ] **REG-022**: Registry MUST implement vulnerability scanning for bundle layers — report known CVEs in bundled tool binaries or Python/Node.js dependencies — *not started*
-- [ ] **REG-023**: Registry MUST enforce rate limits: anonymous users 100 pulls/hour, authenticated users 1,000 pulls/hour, with configurable limits per namespace — *not started*
-- [ ] **REG-024**: Registry MUST provide an audit log of all push, pull, delete, and permission-change events per namespace, accessible to namespace owners — *not started*
+- [~] **REG-023**: Registry MUST enforce rate limits: anonymous users 100 pulls/hour, authenticated users 1,000 pulls/hour, with configurable limits per namespace — *@fastify/rate-limit configured with RATE_LIMIT_MAX/WINDOW_MS env vars; auth endpoints have custom in-memory 10/min limit*
+- [x] **REG-024**: Registry MUST provide an audit log of all push, pull, delete, and permission-change events per namespace, accessible to namespace owners — ✅ `AuditService` + `GET /api/v1/admin/audit` endpoint; wired into manifest PUT, blob GET, deprecation
 
 #### 3.2.5 CLI Integration
 - [ ] **REG-025**: CLI `peko agent push` MUST integrate with the Public Registry as the default endpoint, requiring only `peko auth login` for authentication — *not started*

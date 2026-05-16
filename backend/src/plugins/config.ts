@@ -23,6 +23,10 @@ const schema = z.object({
   ALLOW_DEV_AUTH_BYPASS: z.enum(['true', 'false']).default('false'),
   RATE_LIMIT_MAX: z.coerce.number().default(100),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60_000),
+  GC_ENABLED: z.enum(['true', 'false']).default('true'),
+  GC_INTERVAL_MS: z.coerce.number().default(24 * 60 * 60 * 1000),
+  GC_RETENTION_DAYS: z.coerce.number().default(7),
+  GC_BATCH_SIZE: z.coerce.number().default(1000),
 });
 
 export type Config = z.infer<typeof schema>;

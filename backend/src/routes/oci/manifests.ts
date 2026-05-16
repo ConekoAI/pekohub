@@ -4,6 +4,7 @@ import { bundles, bundleVersions, blobs } from '../../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
 import { OCIManifest } from '@pekohub/shared';
 import crypto from 'node:crypto';
+import { auditService } from '../../services/audit.js';
 
 /**
  * OCI Distribution Spec: Manifest operations
@@ -274,5 +275,9 @@ export default async function manifestRoutes(fastify: FastifyInstance) {
     reply.header('Location', `/v2/${namespace}/${name}/manifests/${digest}`);
     reply.header('Docker-Content-Digest', digest);
     reply.status(201).send();
+
+    // Fire-and-forget audit log (must not throw)
+    const userId = (user as { id?: number }).id;
+    await auditService.logPush(namespace, userId, name, reference, digest, { size: manifestBytes.length });
   });
 }

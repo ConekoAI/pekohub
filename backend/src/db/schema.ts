@@ -60,6 +60,7 @@ export const bundles = pgTable(
     homepage: text('homepage'),
     repository: text('repository'),
     readme: text('readme'),
+    forkedFrom: varchar('forked_from', { length: 256 }),
     starCount: integer('star_count').default(0).notNull(),
     pullCount: integer('pull_count').default(0).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
