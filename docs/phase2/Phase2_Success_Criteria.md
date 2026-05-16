@@ -80,6 +80,10 @@ Phase 2 depends on the following Phase 1 outputs being production-stable:
 - ✅ **Mobile responsiveness pass** — all pages (header, hero, search, bundle detail, profile) stack vertically at <640px
 - ✅ **Search pagination** — page state + Previous/Next controls, resets on new query
 - ✅ **Markdown rendering** — bundle README rendered via react-markdown + remark-gfm (tables, code blocks, blockquotes, GFM)
+- ✅ **`peko search`** — REG-027: `peko search <query>` with pagination and type filtering; also `peko search info <bundle>` for detailed metadata
+- ✅ **`peko auth login/logout/status --registry`** — registry token management via `CredentialsService` (API key auth)
+- ✅ **`peko agent push` → PekoHub** — REG-028: registry token injected into `RegistrySource`, `resolve_auth` prioritizes source token
+- ✅ **`peko agent pull` → PekoHub** — REG-029: same token injection pattern as push
 
 ---
 
@@ -129,9 +133,9 @@ The Public Registry is the discovery and distribution layer for Agent Bundles. I
 - [x] **REG-024**: Registry MUST provide an audit log of all push, pull, delete, and permission-change events per namespace, accessible to namespace owners — ✅ `AuditService` + `GET /api/v1/admin/audit` endpoint; wired into manifest PUT, blob GET, deprecation
 
 #### 3.2.5 CLI Integration
-- [ ] **REG-027**: CLI MUST implement `peko search <query>` command that queries the Registry search API and displays results with metadata in a terminal-friendly table — *not started*
-- [~] **REG-028**: CLI `peko agent push` MUST integrate with the Public Registry as the default endpoint, requiring only `peko auth login` for authentication — *not started*
-- [~] **REG-029**: CLI `peko agent pull` MUST resolve bundle references from the Public Registry (e.g. `peko agent pull pekohub.org/user/researcher:v1.0`) — *not started*
+- [x] **REG-027**: CLI MUST implement `peko search <query>` command that queries the Registry search API and displays results with metadata in a terminal-friendly table — ✅ `src/commands/search.rs` — `peko search <query>` with `--page`, `--per-page`, `--type` filters; also includes `peko search info <bundle>` subcommand for detailed bundle metadata
+- [x] **REG-028**: CLI `peko agent push` MUST integrate with the Public Registry as the default endpoint, requiring only `peko auth login` for authentication — ✅ `handle_agent_push` reads registry token from `CredentialsService`, injects into `RegistrySource.token`; `resolve_auth` in `client.rs` prioritizes source token over env-based auth
+- [x] **REG-029**: CLI `peko agent pull` MUST resolve bundle references from the Public Registry (e.g. `peko agent pull pekohub.org/user/researcher:v1.0`) — ✅ `handle_agent_pull` same pattern as push; registry token wired via `CredentialsService`
 
 > **CLI Naming Note**: The CLI uses `peko` as the binary name (not `agent`). Commands are `peko agent push`, `peko agent pull`, `peko search`, etc. See `Phase2_Roadmap.md` §3.3 for the full CLI command reference.
 
