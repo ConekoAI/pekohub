@@ -1,0 +1,64 @@
+{
+  "family": "pekohub-backend",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::AWS_ACCOUNT_ID:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::AWS_ACCOUNT_ID:role/ecsTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "backend",
+      "image": "AWS_ACCOUNT_ID.dkr.ecr.AWS_REGION.amazonaws.com/pekohub-backend:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 3000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "NODE_ENV", "value": "production" },
+        { "name": "PORT", "value": "3000" },
+        { "name": "HOST", "value": "0.0.0.0" },
+        { "name": "S3_REGION", "value": "us-east-1" },
+        { "name": "S3_BUCKET", "value": "pekohub-blobs" },
+        { "name": "S3_FORCE_PATH_STYLE", "value": "false" },
+        { "name": "ALLOW_DEV_AUTH_BYPASS", "value": "false" },
+        { "name": "GC_ENABLED", "value": "true" },
+        { "name": "GC_INTERVAL_MS", "value": "86400000" },
+        { "name": "GC_RETENTION_DAYS", "value": "7" },
+        { "name": "GC_BATCH_SIZE", "value": "1000" }
+      ],
+      "secrets": [
+        { "name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:AWS_REGION:AWS_ACCOUNT_ID:secret:pekohub/database-url" },
+        { "name": "S3_ENDPOINT", "valueFrom": "arn:aws:secretsmanager:AWS_REGION:AWS_ACCOUNT_ID:secret:pekohub/s3-endpoint" },
+        { "name": "S3_ACCESS_KEY", "valueFrom": "arn:aws:secretsmanager:AWS_REGION:AWS_ACCOUNT_ID:secret:pekohub/s3-access-key" },
+        { "name": "S3_SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:AWS_REGION:AWS_ACCOUNT_ID:secret:pekohub/s3-secret-key" },
+        { "name": "MEILISEARCH_URL", "valueFrom": "arn:aws:secretsmanager:AWS_REGION:AWS_ACCOUNT_ID:secret:pekohub/meilisearch-url" },
+        { "name": "MEILISEARCH_API_KEY", "valueFrom": "arn:aws:secretsmanager:AWS_REGION:AWS_ACCOUNT_ID:secret:pekohub/meilisearch-api-key" },
+        { "name": "JWT_SECRET", "valueFrom": "arn:aws:secretsmanager:AWS_REGION:AWS_ACCOUNT_ID:secret:pekohub/jwt-secret" },
+        { "name": "GITHUB_CLIENT_ID", "valueFrom": "arn:aws:secretsmanager:AWS_REGION:AWS_ACCOUNT_ID:secret:pekohub/github-client-id" },
+        { "name": "GITHUB_CLIENT_SECRET", "valueFrom": "arn:aws:secretsmanager:AWS_REGION:AWS_ACCOUNT_ID:secret:pekohub/github-client-secret" },
+        { "name": "GOOGLE_CLIENT_ID", "valueFrom": "arn:aws:secretsmanager:AWS_REGION:AWS_ACCOUNT_ID:secret:pekohub/google-client-id" },
+        { "name": "GOOGLE_CLIENT_SECRET", "valueFrom": "arn:aws:secretsmanager:AWS_REGION:AWS_ACCOUNT_ID:secret:pekohub/google-client-secret" },
+        { "name": "REGISTRY_BASE_URL", "valueFrom": "arn:aws:secretsmanager:AWS_REGION:AWS_ACCOUNT_ID:secret:pekohub/registry-base-url" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/pekohub-backend",
+          "awslogs-region": "AWS_REGION",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "healthCheck": {
+        "command": ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/health', (r) => r.statusCode === 200 ? process.exit(0) : process.exit(1))\""],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      }
+    }
+  ]
+}
