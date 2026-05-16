@@ -1,12 +1,15 @@
 name: Deploy Frontend to Cloudflare Pages
 
-# Builds the React SPA and deploys to Cloudflare Pages (free CDN + SSL)
-# Runs on every push to main that touches frontend code
+# Builds the React SPA and deploys to Cloudflare Pages
+# Triggered on pushes to master that touch frontend code
 #
-# Required GitHub Secrets:
-#   CLOUDFLARE_API_TOKEN    - Cloudflare API token with 'Cloudflare Pages:Edit' permission
+# Required GitHub Secrets (only if using Actions instead of direct Git integration):
+#   CLOUDFLARE_API_TOKEN    - Cloudflare API token with 'Cloudflare Pages:Edit'
 #   CLOUDFLARE_ACCOUNT_ID   - Your Cloudflare account ID
 #   CLOUDFLARE_PROJECT_NAME - Pages project name (e.g. 'pekohub')
+#
+# Alternative: Use Cloudflare Pages direct Git integration (recommended)
+#   Go to dash.cloudflare.com → Pages → Create project → Connect to Git
 
 on:
   push:
@@ -21,7 +24,7 @@ env:
 
 jobs:
   deploy:
-    name: Build & Deploy to Cloudflare Pages
+    name: Build & Deploy
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -48,6 +51,7 @@ jobs:
         run: pnpm --filter @pekohub/frontend build
 
       - name: Deploy to Cloudflare Pages
+        if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}

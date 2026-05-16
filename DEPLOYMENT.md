@@ -1,27 +1,60 @@
 # PekoHub Deployment Guide
 
+> **Recommended path: Cloudflare Pages + Lightsail + R2** — ~$5-10/month, 30 min setup, auto-deploy on git push.
+
+---
+
 ## Overview
 
-This document covers deploying PekoHub to production using **Cloudflare** (DNS + SSL + Frontend + Storage) and **AWS** (backend compute + database + search).
+This guide covers deploying PekoHub using **Cloudflare** (DNS, SSL, CDN, frontend hosting, blob storage) and **AWS Lightsail** (backend compute, database, search).
 
-Three deployment paths provided:
+### Architecture
 
-| Path | Complexity | Monthly Cost | Best For |
-|------|-----------|--------------|----------|
-| **Cloudflare Pages + EC2** | Low | ~$20-25/mo | Getting started, < 1000 users |
-| **EC2 (docker-compose)** | Low | ~$45/mo | Full AWS, simple ops |
-| **ECS Fargate (managed)** | Medium | ~$80-150/mo | Production, auto-scaling |
+```
+Cloudflare (pekohub.org)
+├─ Pages    → Frontend SPA (React/Vite) — FREE, auto-deploy, global CDN
+├─ R2       → Blob storage (OCI layers) — FREE 10GB, S3-compatible
+├─ DNS      → A record → Lightsail static IP
+├─ SSL/TLS  → Full Strict, auto-renew — FREE
+└─ Security → DDoS, rate limiting, bot fight
 
-**Recommended for most users: Cloudflare Pages + Single EC2** — uses Cloudflare's generous free tiers for frontend and blob storage, keeping only the stateful backend on a small EC2 instance.
+AWS Lightsail ($5-10/mo)
+├─ Ubuntu 24.04, 2 vCPU, 2-4 GB RAM
+├─ Docker + docker-compose
+├─ Nginx (reverse proxy, port 80)
+├─ Backend API (Node 22 / Fastify, port 3000)
+├─ PostgreSQL 16 (internal)
+└─ Meilisearch 1.9 (internal)
+```
+
+### Cost Breakdown
+
+| Service | Monthly Cost |
+|---------|-------------|
+| AWS Lightsail (2 vCPU / 2 GB) | **$5** |
+| AWS Lightsail (2 vCPU / 4 GB) | $10 |
+| Cloudflare Pages | **$0** |
+| Cloudflare R2 (≤10 GB) | **$0** |
+| Cloudflare DNS + SSL | **$0** |
+| GitHub Actions (public repo) | **$0** |
+| **Total** | **$5-10** |
+
+### Deployment Paths
+
+| Path | Complexity | Cost | Best For |
+|------|-----------|------|----------|
+| **Cloudflare Pages + Lightsail + R2** ⭐ | Low | **$5-10/mo** | **Dev / staging / early production** |
+| Cloudflare Pages + EC2 + R2 | Low | ~$22-25/mo | Full AWS, slightly more RAM |
+| ECS Fargate (managed) | Medium | ~$80-150/mo | Production auto-scaling (future) |
 
 ---
 
 ## Prerequisites
 
-- AWS account with CLI access
-- Cloudflare account with `pekohub.org` domain
-- GitHub repository with Actions enabled
-- OAuth apps registered (GitHub + Google)
+- [AWS account](https://aws.amazon.com)
+- [Cloudflare account](https://dash.cloudflare.com) with `pekohub.org` domain
+- [GitHub repository](https://github.com/ConekoAI/pekohub) with Actions enabled
+- OAuth apps: [GitHub](https://github.com/settings/developers) + [Google](https://console.cloud.google.com/apis/credentials) (optional)
 
 ---
 
@@ -29,346 +62,389 @@ Three deployment paths provided:
 
 ### GitHub OAuth App
 
-1. Go to https://github.com/settings/developers
-2. New OAuth App → Name: "PekoHub"
+1. https://github.com/settings/developers → **New OAuth App**
+2. Application name: `PekoHub`
 3. Homepage URL: `https://pekohub.org`
 4. Authorization callback URL: `https://pekohub.org/api/v1/auth/github/callback`
-5. Save Client ID and Client Secret
+5. Save **Client ID** and **Client Secret**
 
-### Google OAuth 2.0
+### Google OAuth 2.0 (Optional)
 
-1. Go to https://console.cloud.google.com/apis/credentials
-2. Create Credentials → OAuth client ID → Web application
+1. https://console.cloud.google.com/apis/credentials
+2. **Create Credentials** → **OAuth client ID** → **Web application**
 3. Authorized redirect URIs: `https://pekohub.org/api/v1/auth/google/callback`
-4. Save Client ID and Client Secret
+4. Save **Client ID** and **Client Secret**
+
+> **Note:** Use `https://pekohub.org` for single-domain, or `https://app.pekohub.org` if using a subdomain for the frontend.
 
 ---
 
-## Step 2: Cloudflare Infrastructure Setup
+## Step 2: Cloudflare Infrastructure
 
-### Cloudflare Pages (Frontend — Free)
+### 2.1 R2 Blob Storage (Free Tier)
 
-1. Go to https://pages.cloudflare.com/
-2. Create a project → Connect to GitHub
-3. Select your `pekohub` repository
-4. Configure build:
-   - **Build command:** `pnpm build`
-   - **Build output directory:** `frontend/dist`
-5. Add environment variables:
-   - `CI=true`
-   - `VITE_API_BASE_URL=https://pekohub.org/api/v1`
-   - `VITE_REGISTRY_BASE_URL=https://pekohub.org`
-6. Deploy
+1. Go to [Cloudflare Dashboard](https://dash.cloudflare.com) → **R2**
+2. **Create bucket**: `pekohub-blobs`
+3. **Settings** → **CORS**: Allow `GET, PUT` from `https://pekohub.org`
+4. **Manage R2 API Tokens** → **Create API Token**
+   - Permissions: **Object Read & Write**
+   - Bucket: `pekohub-blobs`
+5. Save:
+   - **Access Key ID**
+   - **Secret Access Key**
+   - **Account ID** (from dashboard right sidebar)
+   - **Jurisdiction-specific endpoint** (e.g. `https://ACCOUNT_ID.r2.cloudflarestorage.com`)
 
-### Cloudflare R2 (Blob Storage — Free Tier)
+### 2.2 Pages (Frontend — Free)
 
-1. Go to R2 → Create bucket: `pekohub-blobs`
-2. Create an R2 API token (Object Admin scope)
-3. Save the token and bucket URL for later
+1. Go to [Cloudflare Dashboard](https://dash.cloudflare.com) → **Pages**
+2. **Create a project** → Connect to Git → Select `ConekoAI/pekohub`
+3. **Build settings**:
+   - Framework preset: **None**
+   - Build command: `npm install -g pnpm && pnpm install && pnpm --filter @pekohub/shared build && pnpm --filter @pekohub/frontend build`
+   - Build output directory: `frontend/dist`
+   - Root directory: `/`
+4. **Environment variables**:
+   - `VITE_API_BASE_URL`: `https://pekohub.org`
+   - `NODE_VERSION`: `22`
+5. **Save and Deploy**
 
-### Cloudflare Workers (Optional)
+6. **Custom domain** (optional but recommended):
+   - Pages project → **Custom domains** → Add `app.pekohub.org`
+   - Or use the default `pekohub.pages.dev` for now
 
-If you want rate limiting or simple edge caching, create a Worker at Workers & Pages → Create Worker.
-
----
-
-## Step 3: AWS EC2 Setup (Backend)
-
-### Option A: Single EC2 + Cloudflare (Recommended — Low Cost)
-
-1. **Launch EC2 instance**
-   - AMI: Ubuntu 24.04 LTS
-   - Instance type: `t3.small` (1 vCPU, 2 GB RAM) — sufficient for < 1000 users
-   - Storage: 20 GB gp3
-   - Security group: Allow 22 (SSH), 80 (HTTP), 443 (HTTPS)
-
-2. **Install Docker & docker-compose**
-   ```bash
-   curl -fsSL https://get.docker.com | sh
-   sudo usermod -aG docker $USER
-   sudo apt install docker-compose-plugin
-   ```
-
-3. **Clone repo & configure**
-   ```bash
-   git clone https://github.com/YOUR_ORG/pekohub.git
-   cd pekohub
-   cp backend/.env.example backend/.env
-   # Edit backend/.env with production values
-   ```
-
-4. **Update storage config** to use R2:
-   ```
-   BLOB_PROVIDER=r2
-   R2_ACCOUNT_ID=your-account-id
-   R2_ACCESS_KEY_ID=your-key
-   R2_SECRET_ACCESS_KEY=your-secret
-   R2_BUCKET=pekohub-blobs
-   ```
-
-5. **Update backend/.env** with:
-   ```
-   NODE_ENV=production
-   DATABASE_URL=postgres://user:pass@localhost:5432/pekohub
-   MEILISEARCH_HOST=http://localhost:7700
-   FRONTEND_URL=https://pekohub.org
-   ```
-
-6. **Start services**:
-   ```bash
-   docker compose up -d
-   ```
-
-7. **Point Cloudflare DNS** to EC2 public IP:
-   - A record: `pekohub.org` → EC2 public IP
-
-8. **Run migrations**:
-   ```bash
-   docker compose exec backend npx drizzle-kit migrate
-   ```
-
-### Option B: EC2 (docker-compose) — Full AWS
-
-1. **Launch EC2 instance**
-   - AMI: Ubuntu 24.04 LTS
-   - Instance type: `t3.medium` (2 vCPU, 4 GB RAM)
-   - Storage: 30 GB gp3
-   - Security group: Allow 22 (SSH), 80 (HTTP), 443 (HTTPS)
-
-2. **Install Docker & docker-compose**
-   ```bash
-   curl -fsSL https://get.docker.com | sh
-   sudo usermod -aG docker $USER
-   sudo apt install docker-compose-plugin
-   ```
-
-3. **Clone repo & configure**
-   ```bash
-   git clone https://github.com/YOUR_ORG/pekohub.git
-   cd pekohub
-   cp backend/.env.example backend/.env
-   # Edit backend/.env with production values
-   ```
-
-4. **Start services**
-   ```bash
-   docker compose -f docker-compose.prod.yml up -d
-   ```
-
-### Option C: ECS Fargate (Managed)
-
-1. **Run setup script**
-   ```bash
-   cd pekohub/infra/aws
-   chmod +x setup.sh
-   AWS_REGION=us-east-1 ./setup.sh
-   ```
-
-2. **Update Secrets Manager** with real values:
-   ```bash
-   aws secretsmanager put-secret-value \
-     --secret-id pekohub/database-url \
-     --secret-string "postgres://user:pass@host:5432/pekohub"
-   # ... repeat for all secrets
-   ```
-
-3. **Register task definitions**
-   ```bash
-   # Replace AWS_ACCOUNT_ID and AWS_REGION in the JSON files, then:
-   aws ecs register-task-definition --cli-input-json file://ecs-task-definition-backend.json
-   aws ecs register-task-definition --cli-input-json file://ecs-task-definition-frontend.json
-   ```
-
-4. **Create Application Load Balancer** with target groups:
-   - TG `/api/*, /v2/*, /docs, /health` → backend:3000
-   - TG `/*` → frontend:80
-
-5. **Create ECS services** using the ALB target groups
+> **Alternative:** The GitHub Actions workflow (`.github/workflows/deploy-frontend.yml`) can deploy to Pages instead of direct Git integration. Use whichever you prefer.
 
 ---
 
-## Step 4: Cloudflare DNS Configuration
+## Step 3: AWS Lightsail Setup
 
-1. **DNS Records**
-   - A record: `pekohub.org` → EC2 public IP (Option A/B) / ALB DNS name (Option C)
-   - AAAA record: (optional, for IPv6)
+### 3.1 Create Instance
 
-2. **SSL/TLS**
+1. Go to [AWS Lightsail Console](https://lightsail.aws.amazon.com)
+2. **Create instance**
+   - Platform: Linux/Unix
+   - OS: **Ubuntu 24.04 LTS**
+   - Plan: **$5/mo** (2 vCPU, 2 GB RAM, 80 GB SSD)
+     - Upgrade to $10/mo if you hit memory limits later
+3. **Attach a Static IP** (free, never changes)
+   - Networking → Create static IP → Attach to instance
+   - **Save this IP** for DNS and GitHub Secrets
+4. **Open firewall ports**
+   - Networking → IPv4 Firewall → Add rules:
+     - HTTP (80) — from anywhere
+     - HTTPS (443) — optional (Cloudflare handles SSL)
+5. **Download SSH key** or use your own key pair
+
+### 3.2 Run Setup Script
+
+SSH into your instance and run the one-time setup:
+
+```bash
+ssh -i ~/.ssh/lightsail-key.pem ubuntu@YOUR_STATIC_IP
+
+curl -fsSL https://raw.githubusercontent.com/ConekoAI/pekohub/master/infra/lightsail/setup-instance.sh | bash
+
+# Log out and back in (or run 'newgrp docker') for docker permissions
+exit
+ssh -i ~/.ssh/lightsail-key.pem ubuntu@YOUR_STATIC_IP
+```
+
+This installs Docker, Node.js, pnpm, adds swap (prevents OOM), and sets up automated database backups.
+
+### 3.3 Clone Repo
+
+```bash
+cd ~ && git clone https://github.com/ConekoAI/pekohub.git
+cd pekohub
+```
+
+---
+
+## Step 4: Cloudflare DNS
+
+1. Go to [Cloudflare Dashboard](https://dash.cloudflare.com) → your domain
+2. **DNS → Records**
+   - **A record**: `pekohub.org` → `YOUR_LIGHTSAIL_STATIC_IP`
+   - **A record**: `www` → `YOUR_LIGHTSAIL_STATIC_IP` (optional)
+   - **CNAME**: `app` → `pekohub.pages.dev` (if using Pages custom domain)
+3. **Proxy status**: Toggle to 🟠 **Proxied** (orange cloud)
+
+### SSL/TLS
+
+1. **SSL/TLS → Overview**
    - Encryption mode: **Full (strict)**
-   - TLS 1.3: Enabled
-   - Always Use HTTPS: On
+2. **SSL/TLS → Edge Certificates**
+   - Always Use HTTPS: **On**
+   - TLS 1.3: **On**
+   - Automatic HTTPS Rewrites: **On**
 
-3. **Page Rules** (free tier: 3 rules)
-   - `pekohub.org/api/*` → Cache Level: Bypass
-   - `pekohub.org/v2/*` → Cache Level: Bypass
-   - `pekohub.org/*.js` / `*.css` → Cache Level: Cache Everything, Edge TTL: 1 month
+### Page Rules (Free Tier: 3 Rules)
 
-4. **Security**
-   - Security Level: Medium
-   - Bot Fight Mode: On
-   - Rate limiting: 100 requests / 10 seconds (adjust as needed)
+1. **Rules → Page Rules**
+   - `pekohub.org/api/*` → Cache Level: **Bypass**
+   - `pekohub.org/v2/*` → Cache Level: **Bypass**
+   - `pekohub.org/docs` → Cache Level: **Bypass**
 
----
+### Security
 
-## Step 5: GitHub Actions Secrets
-
-Add these secrets to your GitHub repository (Settings → Secrets and variables → Actions):
-
-| Secret | Description |
-|--------|-------------|
-| `AWS_ACCESS_KEY_ID` | IAM user with ECR push + ECS deploy permissions |
-| `AWS_SECRET_ACCESS_KEY` | Matching secret key |
-| `AWS_REGION` | e.g. `us-east-1` |
-| `AWS_ACCOUNT_ID` | Your 12-digit AWS account ID |
-| `REGISTRY_BASE_URL` | `https://pekohub.org` |
-| `CLOUDFLARE_API_TOKEN` | With `Zone:Edit` permission |
-| `CLOUDFLARE_ZONE_ID` | From Cloudflare dashboard |
-| `EC2_HOST` | (EC2 path only) Public IP or DNS |
-| `EC2_USER` | (EC2 path only) Usually `ubuntu` |
-| `EC2_SSH_KEY` | (EC2 path only) Private key contents |
-
-### IAM Policy for GitHub Actions
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "ecr:GetAuthorizationToken",
-        "ecr:BatchCheckLayerAvailability",
-        "ecr:GetDownloadUrlForLayer",
-        "ecr:BatchGetImage",
-        "ecr:InitiateLayerUpload",
-        "ecr:UploadLayerPart",
-        "ecr:CompleteLayerUpload",
-        "ecr:PutImage"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Effect": "Allow",
-      "Action": [
-        "ecs:DescribeTaskDefinition",
-        "ecs:RegisterTaskDefinition",
-        "ecs:DescribeServices",
-        "ecs:UpdateService"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Effect": "Allow",
-      "Action": "iam:PassRole",
-      "Resource": "arn:aws:iam::*:role/ecsTaskExecutionRole"
-    }
-  ]
-}
-```
+1. **Security → Settings**
+   - Security Level: **Medium**
+   - Bot Fight Mode: **On**
 
 ---
 
-## Step 6: Database Migrations
+## Step 5: GitHub Secrets
 
-Run migrations manually on first deploy:
+Go to [Repository Settings → Secrets](https://github.com/ConekoAI/pekohub/settings/secrets/actions)
+
+Add these **Repository secrets**:
+
+| Secret | Value | How to Get |
+|--------|-------|------------|
+| `LIGHTSAIL_HOST` | Your static IP | Lightsail console |
+| `LIGHTSAIL_USER` | `ubuntu` | Default for Ubuntu |
+| `LIGHTSAIL_SSH_KEY` | Private key contents | `cat ~/.ssh/lightsail-key.pem` |
+| `REGISTRY_BASE_URL` | `https://pekohub.org` | Your domain |
+| `GITHUB_CLIENT_ID` | GitHub OAuth client ID | GitHub Developer Settings |
+| `GITHUB_CLIENT_SECRET` | GitHub OAuth client secret | GitHub Developer Settings |
+| `GOOGLE_CLIENT_ID` | (optional) | Google Cloud Console |
+| `GOOGLE_CLIENT_SECRET` | (optional) | Google Cloud Console |
+| `JWT_SECRET` | Random 64-char string | `openssl rand -base64 48` |
+| `POSTGRES_PASSWORD` | Strong password | Generate and save securely |
+| `MEILISEARCH_API_KEY` | Meilisearch master key | Generate and save securely |
+| `R2_ACCOUNT_ID` | Cloudflare Account ID | Cloudflare dashboard |
+| `R2_ACCESS_KEY_ID` | R2 API token access key | R2 API Tokens page |
+| `R2_SECRET_ACCESS_KEY` | R2 API token secret | R2 API Tokens page |
+| `R2_BUCKET` | `pekohub-blobs` | Your bucket name |
+| `R2_ENDPOINT` | `https://ACCOUNT_ID.r2.cloudflarestorage.com` | R2 bucket settings |
+
+Optional (for Cloudflare Pages via Actions instead of direct Git):
+
+| Secret | Value |
+|--------|-------|
+| `CLOUDFLARE_API_TOKEN` | With `Cloudflare Pages:Edit` permission |
+| `CLOUDFLARE_ACCOUNT_ID` | From Cloudflare dashboard |
+| `CLOUDFLARE_PROJECT_NAME` | `pekohub` |
+
+---
+
+## Step 6: First Deploy
+
+### 6.1 Update Backend for R2
+
+The backend currently uses S3/MinIO. For R2, update the storage config or set these environment variables (the S3 SDK is compatible with R2):
 
 ```bash
-# Option A/B (EC2)
-docker compose exec backend npx drizzle-kit migrate
-
-# Option C (ECS) — run a one-off task
-aws ecs run-task \
-  --cluster pekohub \
-  --task-definition pekohub-backend \
-  --launch-type FARGATE \
-  --network-configuration "awsvpcConfiguration={subnets=[subnet-xxx],securityGroups=[sg-xxx],assignPublicIp=ENABLED}" \
-  --overrides '{"containerOverrides": [{"name": "backend", "command": ["npx", "drizzle-kit", "migrate"]}]}'
+# In your Lightsail .env or GitHub Secrets:
+S3_ENDPOINT=https://ACCOUNT_ID.r2.cloudflarestorage.com
+S3_REGION=auto
+S3_ACCESS_KEY=your-r2-access-key
+S3_SECRET_KEY=your-r2-secret-key
+S3_BUCKET=pekohub-blobs
+S3_FORCE_PATH_STYLE=false
 ```
 
----
+> The existing `@aws-sdk/client-s3` code works with R2 out of the box. No code changes needed.
 
-## Step 7: Verify Deployment
+### 6.2 Trigger Deploy
+
+Push to `master`:
 
 ```bash
-# Health check
+git commit --allow-empty -m "trigger deploy"
+git push origin master
+```
+
+GitHub Actions will:
+1. Run tests (typecheck, lint, unit tests)
+2. SSH into Lightsail
+3. Pull latest code
+4. Write `.env` from secrets
+5. Build and restart Docker containers
+6. Run database migrations
+7. Health check
+
+### 6.3 Verify
+
+```bash
+# Backend health
 curl https://pekohub.org/health
 
 # API docs
 curl https://pekohub.org/docs
 
-# Search
-curl "https://pekohub.org/api/v1/search?q=test"
-
 # OCI catalog
 curl https://pekohub.org/v2/_catalog
+
+# Search
+curl "https://pekohub.org/api/v1/search?q=test"
 ```
+
+Visit your frontend URL:
+- `https://pekohub.pages.dev` (default)
+- or `https://app.pekohub.org` (if custom domain configured)
 
 ---
 
-## Architecture Diagrams
+## Step 7: Instance Management
 
-### Recommended: Cloudflare Pages + EC2 (Low Cost)
+### SSH Access
 
-```
-Cloudflare                                           AWS EC2 (~$17/mo)
-┌──────────────────────────────────┐                ┌─────────────────────────┐
-│ pekohub.org                      │                │ t3.small                │
-│ ├── Pages (Frontend - FREE)       │   requests     │ ┌─────────────────────┐│
-│ │   └── React static builds      │ ─────────────> │ │ Backend :3000       ││
-│ ├── R2 (Blobs - FREE 10GB)       │                │ │ PostgreSQL           ││
-│ │   └── OCI blobs, extensions    │                │ │ Meilisearch          ││
-│ └── DNS → EC2 public IP          │                │ └─────────────────────┘│
-└──────────────────────────────────┘                └─────────────────────────┘
+```bash
+ssh -i ~/.ssh/lightsail-key.pem ubuntu@YOUR_STATIC_IP
 ```
 
-### Full AWS: ECS Fargate
+### Logs
 
+```bash
+# All services
+docker compose -f docker-compose.lightsail.yml logs -f
+
+# Specific service
+docker compose -f docker-compose.lightsail.yml logs -f backend
+docker compose -f docker-compose.lightsail.yml logs -f db
 ```
-Cloudflare                                    AWS ECS Fargate
-┌──────────────────────────────┐             ┌──────────────────────────────┐
-│ pekohub.org                  │             │ ALB                          │
-│ ├── DNS → ALB                │             │ ├── /api/* → Backend :3000   │
-│ ├── SSL (Full Strict)       │             │ └── /* → Frontend :80        │
-│ └── CDN caching              │             └──────────────┬───────────────┘
-└──────────────────────────────┘                            │
-                                                            ├─ ECS Backend (Node 22)
-                                                            ├─ ECS Frontend (Nginx)
-                                                            ├─ RDS PostgreSQL
-                                                            └─ S3 (Blobs)
+
+### Restart / Update
+
+```bash
+cd ~/pekohub
+
+# Restart a service
+docker compose -f docker-compose.lightsail.yml restart backend
+
+# Pull latest and rebuild
+git pull
+docker compose -f docker-compose.lightsail.yml up -d --build
+
+# Database shell
+docker compose -f docker-compose.lightsail.yml exec db psql -U pekohub -d pekohub
+
+# Manual migration
+docker compose -f docker-compose.lightsail.yml exec backend npx drizzle-kit migrate
 ```
+
+### Backups
+
+Automated daily backups are configured by `setup-instance.sh`:
+
+```bash
+# Backups stored in ~/backups/
+ls ~/backups/
+
+# Manual backup
+docker exec pekohub-db pg_dump -U pekohub pekohub > ~/backups/pekohub-manual.sql
+```
+
+### Upgrade Instance
+
+1. Create snapshot in Lightsail console
+2. Create new instance from snapshot with larger plan
+3. Detach static IP from old, attach to new
+4. Old instance remains as rollback option
+
+---
+
+## CI/CD: GitHub Actions Workflows
+
+### What Runs on Every Push
+
+| Workflow | Trigger | What It Does |
+|----------|---------|-------------|
+| `ci.yml` | Every PR + push | Test, typecheck, lint |
+| `deploy-lightsail.yml` | Push to `master` (backend changes) | Test → SSH deploy → health check |
+| `deploy-frontend.yml` | Push to `master` (frontend changes) | Build → deploy to Cloudflare Pages |
+
+### Should You Care About CI/CD Now?
+
+**Yes, absolutely.** Here's why:
+
+| Without CI/CD | With CI/CD |
+|---------------|-----------|
+| SSH into server, run commands manually | Push to git, everything deploys automatically |
+| Easy to forget steps, deploy broken code | Tests must pass before deploy |
+| No rollback if deploy breaks | Previous Docker image is cached, instant rollback |
+| Team members need server access | Anyone with git access can deploy |
+| ~30 min per deploy | ~5 min per deploy, zero manual work |
+
+**For a public registry, CI/CD is not optional.** You need:
+- Tests passing before deploy
+- Automated deploys so you can iterate fast
+- Health checks to catch failures
+- The ability to roll back
+
+The workflows I've set up are **minimal but complete**:
+- They run your existing test suite (59 tests passing)
+- They deploy only on `master` pushes
+- They verify health before marking deploy as successful
+- They cost **$0** (GitHub Actions is free for public repos)
+
+### Workflow Files
+
+| File | Purpose |
+|------|---------|
+| `.github/workflows/deploy-lightsail.yml` | Backend deploy to Lightsail |
+| `.github/workflows/deploy-frontend.yml` | Frontend deploy to Cloudflare Pages |
+| `.github/workflows/deploy.yml` | ECS Fargate deploy (future use) |
+| `.github/workflows/deploy-ec2.yml` | EC2 deploy (alternative path) |
+
+**Recommendation:** Keep `deploy-lightsail.yml` and `deploy-frontend.yml`. The ECS/EC2 workflows are there for when you migrate later — they won't run unless triggered.
 
 ---
 
 ## Troubleshooting
 
-| Issue | Solution |
-|-------|----------|
-| `UNAUTHORIZED` on push | Check OAuth callback URLs match exactly |
-| `BLOB_UNKNOWN` | Verify R2/S3 credentials and bucket permissions |
-| Search returns empty | Check Meilisearch URL and API key |
-| Frontend 404s on refresh | Cloudflare Pages: enable "Serve static assets" |
-| ECS tasks won't start | Check CloudWatch logs at `/ecs/pekohub-backend` |
+| Issue | Cause | Fix |
+|-------|-------|-----|
+| `Connection refused` on `/health` | Backend not started | Check `docker compose logs backend` |
+| `502 Bad Gateway` | Nginx can't reach backend | Verify backend container is running: `docker ps` |
+| OAuth callback fails | URL mismatch | Verify callback URL exactly matches GitHub/Google settings |
+| Search returns empty | Meilisearch not indexed | Push a bundle — auto-index triggers on manifest PUT |
+| Database connection error | Wrong password in `.env` | Re-run deploy to rewrite `.env` from secrets |
+| Out of memory | $5 plan too small | Upgrade to $10 plan or add swap (already done by setup script) |
+| R2 upload fails | Wrong credentials | Verify `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` |
+| Frontend shows old version | Cloudflare cache | Purge cache from Cloudflare dashboard or wait 5 min |
 
 ---
 
-## Cost Estimate (Monthly)
+## Migration Path to Production
 
-| Service | Cloudflare Pages + EC2 | Full AWS EC2 | ECS Fargate |
-|---------|----------------------|--------------|-------------|
-| Compute | $17 (t3.small) | $30 (t3.medium) | $50 (Fargate) |
-| PostgreSQL | — (self-hosted) | — (self-hosted) | $15 (RDS) |
-| Blob Storage | Free (R2) | $5 (S3) | $5 (S3) |
-| Data Transfer | $5 | $10 | $10 |
-| Cloudflare Pages | Free | — | — |
-| Meilisearch | Self-hosted | Self-hosted | $15 (Cloud) |
-| **Total** | **~$22-25** | **~$45** | **~$95** |
+When you're ready to scale:
+
+| Current | Migrate To | When |
+|---------|-----------|------|
+| Lightsail $5 | Lightsail $10 or EC2 t3.medium | > 500 MAU |
+| Self-hosted Postgres | RDS PostgreSQL | Need automated backups / HA |
+| Cloudflare R2 | S3 (if leaving Cloudflare ecosystem) | Rarely needed — R2 scales well |
+| Self-hosted Meilisearch | Meilisearch Cloud | Need managed search |
+| Single Lightsail instance | ECS Fargate + ALB | Need auto-scaling, multi-AZ |
+
+Everything runs in Docker. Migration = move containers, not rewrite code.
 
 ---
 
-## Next Steps After Deploy
+## Quick Reference
 
-1. Set up monitoring (CloudWatch / Datadog / UptimeRobot)
-2. Configure automated backups for PostgreSQL
-3. Set up log aggregation
-4. Run load tests against staging
-5. Publish the first official bundles
+```bash
+# SSH
+ssh -i lightsail-key.pem ubuntu@YOUR_IP
+
+# Logs
+docker compose -f docker-compose.lightsail.yml logs -f
+
+# Restart
+docker compose -f docker-compose.lightsail.yml restart
+
+# Update
+cd ~/pekohub && git pull && docker compose -f docker-compose.lightsail.yml up -d --build
+
+# Database shell
+docker compose -f docker-compose.lightsail.yml exec db psql -U pekohub -d pekohub
+
+# Manual migration
+docker compose -f docker-compose.lightsail.yml exec backend npx drizzle-kit migrate
+
+# Backup
+docker exec pekohub-db pg_dump -U pekohub pekohub > ~/backups/pekohub-$(date +%Y%m%d).sql
+```

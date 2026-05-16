@@ -1,7 +1,7 @@
-name: Build & Deploy to Lightsail
+name: Deploy Backend to Lightsail
 
 # Deploys backend to AWS Lightsail via SSH + docker-compose
-# Frontend is deployed separately to Cloudflare Pages (see deploy-frontend.yml)
+# Triggered only on pushes to master that touch backend code
 #
 # Required GitHub Secrets:
 #   LIGHTSAIL_HOST          - Static IP of your Lightsail instance
@@ -14,8 +14,12 @@ name: Build & Deploy to Lightsail
 #   GOOGLE_CLIENT_SECRET    - (optional)
 #   JWT_SECRET              - Long random string (min 32 chars)
 #   POSTGRES_PASSWORD       - PostgreSQL password
-#   S3_SECRET_KEY           - MinIO secret key
 #   MEILISEARCH_API_KEY     - Meilisearch master key
+#   R2_ACCOUNT_ID           - Cloudflare R2 account ID
+#   R2_ACCESS_KEY_ID        - R2 API token access key
+#   R2_SECRET_ACCESS_KEY    - R2 API token secret key
+#   R2_BUCKET               - R2 bucket name (e.g. pekohub-blobs)
+#   R2_ENDPOINT             - R2 endpoint URL
 
 on:
   push:
@@ -25,15 +29,13 @@ on:
       - 'packages/shared/**'
       - 'docker-compose.lightsail.yml'
       - 'nginx/lightsail.conf'
+      - 'infra/lightsail/**'
       - '.github/workflows/deploy-lightsail.yml'
 
 env:
   COMPOSE_FILE: docker-compose.lightsail.yml
 
 jobs:
-  # ─────────────────────────────────────────────────────────────
-  # 1. Test
-  # ─────────────────────────────────────────────────────────────
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -64,9 +66,6 @@ jobs:
       - name: Test
         run: pnpm test -- --run
 
-  # ─────────────────────────────────────────────────────────────
-  # 2. Deploy Backend to Lightsail
-  # ─────────────────────────────────────────────────────────────
   deploy:
     name: Deploy to Lightsail
     runs-on: ubuntu-latest
@@ -76,7 +75,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.LIGHTSAIL_HOST }}
           username: ${{ secrets.LIGHTSAIL_USER }}
@@ -110,9 +109,6 @@ jobs:
             POSTGRES_USER=pekohub
             POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
             POSTGRES_DB=pekohub
-            S3_ACCESS_KEY=pekohub
-            S3_SECRET_KEY=${{ secrets.S3_SECRET_KEY }}
-            S3_BUCKET=pekohub-blobs
             MEILISEARCH_API_KEY=${{ secrets.MEILISEARCH_API_KEY }}
             JWT_SECRET=${{ secrets.JWT_SECRET }}
             GITHUB_CLIENT_ID=${{ secrets.GITHUB_CLIENT_ID }}
@@ -120,6 +116,12 @@ jobs:
             GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
             GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
             REGISTRY_BASE_URL=${{ secrets.REGISTRY_BASE_URL }}
+            S3_ENDPOINT=${{ secrets.R2_ENDPOINT }}
+            S3_REGION=auto
+            S3_ACCESS_KEY=${{ secrets.R2_ACCESS_KEY_ID }}
+            S3_SECRET_KEY=${{ secrets.R2_SECRET_ACCESS_KEY }}
+            S3_BUCKET=${{ secrets.R2_BUCKET }}
+            S3_FORCE_PATH_STYLE=false
             RATE_LIMIT_MAX=1000
             RATE_LIMIT_WINDOW_MS=60000
             GC_ENABLED=true
@@ -153,13 +155,13 @@ jobs:
             }
 
             echo "=== PekoHub Deploy Complete ==="
-            echo "Backend: http://${{ secrets.LIGHTSAIL_HOST }}"
-            echo "API Docs: http://${{ secrets.LIGHTSAIL_HOST }}/docs"
+            echo "Backend: ${{ secrets.REGISTRY_BASE_URL }}"
+            echo "API Docs: ${{ secrets.REGISTRY_BASE_URL }}/docs"
 
-      - name: Verify deployment
+      - name: Verify public endpoint
         run: |
           echo "Checking public health endpoint..."
-          curl -sf https://pekohub.org/health || {
+          curl -sf ${{ secrets.REGISTRY_BASE_URL }}/health || {
             echo "WARNING: Public health check failed — Cloudflare may still be propagating"
             exit 0
           }
