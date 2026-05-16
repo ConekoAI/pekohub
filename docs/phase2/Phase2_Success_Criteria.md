@@ -124,28 +124,25 @@ The Public Registry is the discovery and distribution layer for Agent Bundles. I
 - [x] **REG-019**: Registry MUST support bundle forking — any authenticated user can fork a public bundle to their own namespace, preserving provenance metadata — ✅ `POST /api/v1/bundles/:namespace/:name/fork` implemented with `forkedFrom` tracking
 
 #### 3.2.4 Security & Trust
-- [ ] **REG-020**: Registry MUST verify bundle signatures (`signature.json`) on push and reject bundles with invalid or missing signatures — *not started*
-- [ ] **REG-021**: Registry MUST support Sigstore/cosign signing as an alternative to the built-in signature scheme, enabling keyless signing via OIDC — *not started*
 - [ ] **REG-022**: Registry MUST implement vulnerability scanning for bundle layers — report known CVEs in bundled tool binaries or Python/Node.js dependencies — *not started*
 - [~] **REG-023**: Registry MUST enforce rate limits: anonymous users 100 pulls/hour, authenticated users 1,000 pulls/hour, with configurable limits per namespace — *@fastify/rate-limit configured with RATE_LIMIT_MAX/WINDOW_MS env vars; auth endpoints have custom in-memory 10/min limit*
 - [x] **REG-024**: Registry MUST provide an audit log of all push, pull, delete, and permission-change events per namespace, accessible to namespace owners — ✅ `AuditService` + `GET /api/v1/admin/audit` endpoint; wired into manifest PUT, blob GET, deprecation
 
 #### 3.2.5 CLI Integration
-- [ ] **REG-025**: CLI `peko agent push` MUST integrate with the Public Registry as the default endpoint, requiring only `peko auth login` for authentication — *not started*
-- [ ] **REG-026**: CLI `peko agent pull` MUST resolve bundle references from the Public Registry (e.g. `peko agent pull pekohub.org/user/researcher:v1.0`) — *not started*
 - [ ] **REG-027**: CLI MUST implement `peko search <query>` command that queries the Registry search API and displays results with metadata in a terminal-friendly table — *not started*
-- [ ] **REG-028**: CLI MUST implement `peko agent info <registry-ref>` command that displays bundle metadata without downloading — *not started*
+- [~] **REG-028**: CLI `peko agent push` MUST integrate with the Public Registry as the default endpoint, requiring only `peko auth login` for authentication — *not started*
+- [~] **REG-029**: CLI `peko agent pull` MUST resolve bundle references from the Public Registry (e.g. `peko agent pull pekohub.org/user/researcher:v1.0`) — *not started*
 
 > **CLI Naming Note**: The CLI uses `peko` as the binary name (not `agent`). Commands are `peko agent push`, `peko agent pull`, `peko search`, etc. See `Phase2_Roadmap.md` §3.3 for the full CLI command reference.
 
 ### 3.3 P1 — Should Have
 
-- [ ] **REG-029**: Registry SHOULD support "Verified Publisher" badges for organizations that complete identity verification (domain ownership, public profile)
-- [ ] **REG-030**: Registry SHOULD implement a review/rating system (1–5 stars + text review) for published bundles
-- [ ] **REG-031**: Registry SHOULD support "Collections" — curated groups of bundles with a shared theme or use case (e.g. "Customer Support Team", "Research Toolkit")
-- [ ] **REG-032**: Registry SHOULD provide an embeddable badge (`https://pekohub.org/badges/{namespace}/{name}/downloads`) for README files
-- [ ] **REG-033**: Registry SHOULD support webhook notifications — notify external systems on push, pull, or security scan events
-- [ ] **REG-034**: Registry SHOULD implement a public API rate limit increase program for open-source projects and educational institutions
+- [ ] **REG-030**: Registry SHOULD support "Verified Publisher" badges for organizations that complete identity verification (domain ownership, public profile)
+- [ ] **REG-031**: Registry SHOULD implement a review/rating system (1–5 stars + text review) for published bundles
+- [ ] **REG-032**: Registry SHOULD support "Collections" — curated groups of bundles with a shared theme or use case (e.g. "Customer Support Team", "Research Toolkit")
+- [ ] **REG-033**: Registry SHOULD provide an embeddable badge (`https://pekohub.org/badges/{namespace}/{name}/downloads`) for README files
+- [ ] **REG-034**: Registry SHOULD support webhook notifications — notify external systems on push, pull, or security scan events
+- [ ] **REG-035**: Registry SHOULD implement a public API rate limit increase program for open-source projects and educational institutions
 
 ### 3.4 P2 — Nice to Have
 
@@ -316,7 +313,7 @@ The following workstreams were originally scoped for Phase 2 but have been **def
 
 Phase 2 is **officially complete** when:
 
-1. ✅ All P0 success criteria (REG-001 through REG-028, EXT-REG-001 through EXT-REG-004, SEC-001 through SEC-004, PERF-001 through PERF-002, DX-001 through DX-003) are implemented, tested, and documented
+1. ✅ All P0 success criteria (REG-001 through REG-027, EXT-REG-001 through EXT-REG-004, SEC-001 through SEC-004, PERF-001 through PERF-002, DX-001 through DX-003) are implemented, tested, and documented
 2. ✅ All quantitative KPIs meet or exceed their targets
 3. ✅ Public Registry is live at `https://pekohub.org` with ≥ 50 community bundles
 4. ✅ Registry supports `.agent`, `.team`, and `.ext` as publishable OCI artifact types

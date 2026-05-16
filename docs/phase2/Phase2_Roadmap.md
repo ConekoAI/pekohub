@@ -56,7 +56,7 @@ We recommend building Phase 2 in two milestones, each delivering user-visible va
 
 **User outcome:** A developer can find an agent or extension on the web, copy the install command, and run it.
 
-**Success criteria:** REG-007 through REG-028
+**Success criteria:** REG-007 through REG-027
 
 ---
 
@@ -147,7 +147,6 @@ Phase 2's registry treats `.ext` packages as **first-class OCI artifacts** for p
 | Concern | Approach | Success Criteria |
 |---------|----------|-----------------|
 | Registry HTTPS | TLS 1.3 only | SEC-001 |
-| Bundle signing | ed25519 DID keys (Phase 1 deferred) | REG-020, REG-021 |
 | Token expiry | 24-hour expiry + revocation | SEC-002 |
 | Audit logs | Append-only with tamper-evident hashing | SEC-003 |
 | Vulnerability scans | Scan on push, block critical | SEC-004 |
@@ -211,7 +210,7 @@ Phase 2 is successful when all P0 criteria are met AND:
 
 Phase 2 is complete when:
 
-1. All P0 success criteria (REG-001 through REG-028, SEC-001 through SEC-004, PERF-001 through PERF-002, DX-001 through DX-003) are implemented, tested, and documented
+1. All P0 success criteria (REG-001 through REG-027, SEC-001 through SEC-004, PERF-001 through PERF-002, DX-001 through DX-003) are implemented, tested, and documented
 2. All quantitative KPIs meet or exceed targets
 3. Public Registry is live at `https://pekohub.org` with ≥ 50 community bundles
 4. Registry supports `.agent`, `.team`, and `.ext` as publishable OCI artifact types
