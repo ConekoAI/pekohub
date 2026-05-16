@@ -1,6 +1,7 @@
 import type { SearchQuery, SearchResponse, BundleDetail, UserProfile } from '@pekohub/shared';
 
-const API_BASE = '';
+declare const __API_BASE__: string;
+const API_BASE = typeof __API_BASE__ !== 'undefined' ? __API_BASE__ : '';
 
 const TOKEN_KEY = 'pekohub_token';
 
@@ -100,5 +101,21 @@ export const api = {
   logout: () =>
     fetchJson<void>('/api/v1/auth/logout', { method: 'POST' }).finally(() => {
       clearAuthToken();
+    }),
+
+  forkBundle: (namespace: string, name: string, targetName?: string) =>
+    fetchJson<{ namespace: string; name: string; forkedFrom: string | null; versionsCopied: number }>(
+      `/api/v1/bundles/${namespace}/${name}/fork${targetName ? `?targetName=${encodeURIComponent(targetName)}` : ''}`,
+      { method: 'POST' }
+    ),
+
+  deleteBundle: (namespace: string, name: string) =>
+    fetch(`/api/v1/bundles/${namespace}/${name}`, { method: 'DELETE' }).then((r) => {
+      if (!r.ok) throw new Error('Failed to delete bundle');
+    }),
+
+  deleteVersion: (namespace: string, name: string, version: string) =>
+    fetch(`/api/v1/bundles/${namespace}/${name}/versions/${version}`, { method: 'DELETE' }).then((r) => {
+      if (!r.ok) throw new Error('Failed to delete version');
     }),
 };

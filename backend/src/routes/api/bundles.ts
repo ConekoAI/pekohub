@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { db } from '../../db/index.js';
-import { bundles, bundleVersions, pullStats } from '../../db/schema.js';
-import { eq, and, sql } from 'drizzle-orm';
+import { bundles, bundleVersions, pullStats, blobs } from '../../db/schema.js';
+import { eq, and, sql, inArray } from 'drizzle-orm';
 import { BundleDetail } from '@pekohub/shared';
 import { auditService } from '../../services/audit.js';
 
@@ -179,6 +179,117 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
       deprecated: updated.deprecated,
       deprecatedMessage: updated.deprecatedMessage,
     };
+  });
+
+  // DELETE a bundle and all its versions (owner only)
+  fastify.delete('/bundles/:namespace/:name', async (request, reply) => {
+    const { namespace, name } = request.params as { namespace: string; name: string };
+
+    let user: { namespace: string };
+    try {
+      user = await fastify.authenticate(request);
+    } catch {
+      if (fastify.config.NODE_ENV === 'development' && fastify.config.ALLOW_DEV_AUTH_BYPASS === 'true') {
+        user = { namespace };
+      } else {
+        return reply.status(401).send({ error: 'Authentication required' });
+      }
+    }
+
+    if (user.namespace !== namespace) {
+      return reply.status(403).send({ error: 'Namespace ownership mismatch' });
+    }
+
+    const bundle = await db.query.bundles.findFirst({
+      where: and(eq(bundles.namespace, namespace), eq(bundles.name, name)),
+    });
+
+    if (!bundle) {
+      return reply.status(404).send({ error: 'Bundle not found' });
+    }
+
+    // Collect all digests referenced by this bundle's versions to check for orphaned blobs
+    const versions = await db.query.bundleVersions.findMany({
+      where: eq(bundleVersions.bundleId, bundle.id),
+    });
+
+    const referencedDigests = new Set<string>();
+    for (const v of versions) {
+      const manifest = v.manifestJson as Record<string, unknown>;
+      const layers = (manifest.layers ?? []) as Array<{ digest: string }>;
+      const config = manifest.config as { digest?: string } | undefined;
+      if (config?.digest) referencedDigests.add(config.digest);
+      for (const layer of layers) referencedDigests.add(layer.digest);
+    }
+
+    // Delete versions, pull stats, and bundle (cascades where configured)
+    await db.delete(pullStats).where(eq(pullStats.bundleId, bundle.id));
+    await db.delete(bundleVersions).where(eq(bundleVersions.bundleId, bundle.id));
+    await db.delete(bundles).where(eq(bundles.id, bundle.id));
+
+    // Remove from search index
+    try {
+      await fastify.search.deleteBundle(`${namespace}-${name}`);
+    } catch (err) {
+      fastify.log.warn({ err }, 'Failed to delete bundle from Meilisearch');
+    }
+
+    // Fire-and-forget audit log
+    const userId = (user as { id?: number }).id;
+    await auditService.logDelete(namespace, userId, `${namespace}/${name}`, {
+      versionsDeleted: versions.length,
+      digestsReferenced: Array.from(referencedDigests),
+    });
+
+    return reply.status(204).send();
+  });
+
+  // DELETE a specific version (owner only)
+  fastify.delete('/bundles/:namespace/:name/versions/:version', async (request, reply) => {
+    const { namespace, name, version } = request.params as {
+      namespace: string;
+      name: string;
+      version: string;
+    };
+
+    let user: { namespace: string };
+    try {
+      user = await fastify.authenticate(request);
+    } catch {
+      if (fastify.config.NODE_ENV === 'development' && fastify.config.ALLOW_DEV_AUTH_BYPASS === 'true') {
+        user = { namespace };
+      } else {
+        return reply.status(401).send({ error: 'Authentication required' });
+      }
+    }
+
+    if (user.namespace !== namespace) {
+      return reply.status(403).send({ error: 'Namespace ownership mismatch' });
+    }
+
+    const bundle = await db.query.bundles.findFirst({
+      where: and(eq(bundles.namespace, namespace), eq(bundles.name, name)),
+    });
+
+    if (!bundle) {
+      return reply.status(404).send({ error: 'Bundle not found' });
+    }
+
+    const [deleted] = await db.delete(bundleVersions)
+      .where(and(eq(bundleVersions.bundleId, bundle.id), eq(bundleVersions.version, version)))
+      .returning();
+
+    if (!deleted) {
+      return reply.status(404).send({ error: 'Version not found' });
+    }
+
+    // Fire-and-forget audit log
+    const userId = (user as { id?: number }).id;
+    await auditService.logDelete(namespace, userId, `${namespace}/${name}:${version}`, {
+      digest: deleted.digest,
+    });
+
+    return reply.status(204).send();
   });
 
   // POST fork a bundle to the authenticated user's namespace

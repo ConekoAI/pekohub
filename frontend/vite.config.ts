@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite';
 import path from 'node:path';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [TanStackRouterVite(), react()],
   resolve: {
     alias: {
@@ -21,4 +21,7 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: true,
   },
-});
+  define: {
+    __API_BASE__: JSON.stringify(mode === 'production' ? process.env.VITE_API_BASE_URL ?? '' : ''),
+  },
+}));

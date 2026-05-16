@@ -80,8 +80,7 @@ export class AuditService {
   async logDelete(
     namespace: string,
     userId: number | undefined,
-    bundleName: string,
-    version: string,
+    resource: string,
     details?: Record<string, unknown>,
   ): Promise<void> {
     try {
@@ -89,7 +88,7 @@ export class AuditService {
         namespace,
         userId: userId ?? null,
         action: 'delete',
-        resource: `${namespace}/${bundleName}:${version}`,
+        resource,
         details: details ?? null,
       });
     } catch (err) {

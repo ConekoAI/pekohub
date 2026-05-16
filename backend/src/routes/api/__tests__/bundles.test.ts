@@ -60,9 +60,28 @@ async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
 
   app.decorate('config', {
+    PORT: '3000',
+    HOST: '0.0.0.0',
     NODE_ENV: 'development',
+    DATABASE_URL: 'postgres://test',
+    S3_ENDPOINT: 'http://localhost:9000',
+    S3_REGION: 'us-east-1',
+    S3_ACCESS_KEY: 'test',
+    S3_SECRET_KEY: 'test',
+    S3_BUCKET: 'pekohub-blobs',
+    S3_FORCE_PATH_STYLE: 'true',
+    MEILISEARCH_URL: 'http://localhost:7700',
+    MEILISEARCH_API_KEY: 'test',
+    JWT_SECRET: 'test-secret-that-is-at-least-32-characters-long',
+    REGISTRY_BASE_URL: 'http://localhost:3000',
     ALLOW_DEV_AUTH_BYPASS: 'true',
-  });
+    RATE_LIMIT_MAX: 100,
+    RATE_LIMIT_WINDOW_MS: 60000,
+    GC_ENABLED: 'true',
+    GC_INTERVAL_MS: 86400000,
+    GC_RETENTION_DAYS: 7,
+    GC_BATCH_SIZE: 1000,
+  } as any);
 
   app.decorate('authenticate', vi.fn().mockResolvedValue({ id: 42, namespace: 'forker' }));
 

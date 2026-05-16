@@ -115,7 +115,7 @@ describe('AuditService', () => {
         values: vi.fn().mockReturnThis(),
       }));
 
-      await service.logDelete('acme', 3, 'my-bundle', '1.0.0', { reason: 'cleanup' });
+      await service.logDelete('acme', 3, 'acme/my-bundle:1.0.0', { reason: 'cleanup' });
 
       const valuesCall = mockDbInsert.mock.results[0].value.values;
       expect(valuesCall).toHaveBeenCalledWith(
@@ -135,7 +135,7 @@ describe('AuditService', () => {
       });
 
       await expect(
-        service.logDelete('acme', 1, 'my-bundle', '1.0.0'),
+        service.logDelete('acme', 1, 'acme/my-bundle:1.0.0'),
       ).resolves.toBeUndefined();
     });
   });

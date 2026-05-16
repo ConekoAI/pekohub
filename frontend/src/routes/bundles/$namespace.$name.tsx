@@ -1,10 +1,12 @@
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useBundle } from '~/hooks/useBundle';
 import { useAuth } from '~/hooks/useAuth';
-import { Download, Star, Copy, Check, AlertTriangle } from 'lucide-react';
+import { Download, Star, Copy, Check, AlertTriangle, GitFork, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { api } from '~/lib/api';
 import { useQueryClient } from '@tanstack/react-query';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 export const Route = createFileRoute('/bundles/$namespace/$name')({
   component: BundleDetailPage,
@@ -15,11 +17,15 @@ function BundleDetailPage() {
   const bundle = useBundle(namespace, name);
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [copied, setCopied] = useState(false);
   const [deprecating, setDeprecating] = useState<string | null>(null);
   const [deprecateMessage, setDeprecateMessage] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [forking, setForking] = useState(false);
 
   const isOwner = user?.namespace === namespace;
+  const isAuthenticated = !!user;
 
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -35,6 +41,48 @@ function BundleDetailPage() {
       setDeprecateMessage('');
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to update deprecation');
+    }
+  };
+
+  const handleDeleteVersion = async (version: string) => {
+    if (!confirm(`Delete version ${version}? This cannot be undone.`)) return;
+    setDeleting(true);
+    try {
+      await api.deleteVersion(namespace, name, version);
+      queryClient.invalidateQueries({ queryKey: ['bundle', namespace, name] });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete version');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleDeleteBundle = async () => {
+    if (!confirm(`Delete ${namespace}/${name} and all its versions? This cannot be undone.`)) return;
+    setDeleting(true);
+    try {
+      await api.deleteBundle(namespace, name);
+      navigate({ to: '/' });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete bundle');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleFork = async () => {
+    if (!isAuthenticated) {
+      alert('Please sign in to fork bundles');
+      return;
+    }
+    setForking(true);
+    try {
+      const result = await api.forkBundle(namespace, name);
+      navigate({ to: `/bundles/${result.namespace}/${result.name}` });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to fork bundle');
+    } finally {
+      setForking(false);
     }
   };
 
@@ -79,8 +127,36 @@ function BundleDetailPage() {
         </span>
         <span className="flex items-center gap-1">
           <Star className="h-4 w-4" />
-          {data.metadata.author}
+          {data.metadata.author ?? 'unknown'}
         </span>
+        {data.metadata.forkedFrom && (
+          <span className="flex items-center gap-1">
+            <GitFork className="h-4 w-4" />
+            forked from {data.metadata.forkedFrom}
+          </span>
+        )}
+      </div>
+
+      {/* Actions */}
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <button
+          onClick={handleFork}
+          disabled={forking || deleting}
+          className="btn-secondary text-sm py-1.5 inline-flex items-center gap-1 disabled:opacity-50"
+        >
+          <GitFork className="h-4 w-4" />
+          {forking ? 'Forking...' : 'Fork'}
+        </button>
+        {isOwner && (
+          <button
+            onClick={handleDeleteBundle}
+            disabled={deleting}
+            className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 transition-colors disabled:opacity-50"
+          >
+            <Trash2 className="h-4 w-4" />
+            {deleting ? 'Deleting...' : 'Delete'}
+          </button>
+        )}
       </div>
 
       {/* Install command */}
@@ -105,9 +181,11 @@ function BundleDetailPage() {
         <div className="mt-10">
           <h2 className="text-xl font-semibold text-gray-900">README</h2>
           <div className="mt-4 prose prose-gray max-w-none">
-            <pre className="whitespace-pre-wrap text-sm text-gray-700 bg-gray-50 rounded-lg p-4">
-              {data.readme}
-            </pre>
+            <div className="markdown-body bg-gray-50 rounded-lg p-4">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {data.readme}
+              </ReactMarkdown>
+            </div>
           </div>
         </div>
       )}
@@ -178,6 +256,14 @@ function BundleDetailPage() {
                           Deprecate
                         </button>
                       )}
+                      <button
+                        onClick={() => handleDeleteVersion(v.version)}
+                        className="rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-100"
+                        title="Delete version"
+                      >
+                        <Trash2 className="h-3 w-3 inline mr-1" />
+                        Delete
+                      </button>
                     </div>
                   )}
                 </>

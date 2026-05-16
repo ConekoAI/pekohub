@@ -64,14 +64,14 @@ export function Layout({ children }: LayoutProps) {
 
                   {dropdownOpen && (
                     <div className="absolute right-0 mt-2 w-48 rounded-lg border border-gray-200 bg-white shadow-lg">
-                      <a
-                        href="/profile"
+                      <Link
+                        to="/profile"
                         className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
                         onClick={() => setDropdownOpen(false)}
                       >
                         <User className="h-4 w-4" />
                         Profile
-                      </a>
+                      </Link>
                       <button
                         onClick={() => {
                           setDropdownOpen(false);
@@ -148,14 +148,14 @@ export function Layout({ children }: LayoutProps) {
                       )}
                       <span className="text-sm font-medium text-gray-700">{user.displayName}</span>
                     </div>
-                    <a
-                      href="/profile"
+                    <Link
+                      to="/profile"
                       className="flex items-center gap-2 text-sm text-gray-700"
                       onClick={() => setMobileMenuOpen(false)}
                     >
                       <User className="h-4 w-4" />
                       Profile
-                    </a>
+                    </Link>
                     <button
                       onClick={() => {
                         setMobileMenuOpen(false);
