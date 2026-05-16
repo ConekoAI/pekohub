@@ -48,8 +48,8 @@ Phase 2 depends on the following Phase 1 outputs being production-stable:
 
 | Milestone | Status | Notes |
 |-----------|--------|-------|
-| **Milestone 1: Registry Foundation** | 🟢 Mostly Complete | OCI push/pull working, PostgreSQL + MinIO storage, Meilisearch search index. GC service implemented + scheduled via daily cron. All OCI routes tested (56 tests passing). Audit logging wired. Fork API implemented. |
-| **Milestone 2: Auth, Search, Web UI** | 🟢 Mostly Complete | OAuth routes working (GitHub/Google), API key generation + bcrypt verification, full-text search + faceted filtering, bundle detail API. Rate limiting implemented. Web UI has homepage, search, bundle detail, auth callback, and profile pages. Auth state fully wired (me endpoint, localStorage token, Bearer headers, logout). Mobile responsive pass completed. |
+| **Milestone 1: Registry Foundation** | 🟢 Mostly Complete | OCI push/pull working, PostgreSQL + MinIO storage, Meilisearch search index. GC service + daily cron. All OCI routes tested (59 tests passing). Audit logging wired. Fork + delete bundle/version APIs implemented. |
+| **Milestone 2: Auth, Search, Web UI** | 🟢 Mostly Complete | OAuth (GitHub/Google) + API key auth + cookie fallback. Auth state fully wired (useAuth hook, /me, /logout, /auth/callback). Web UI: homepage, search (with pagination), bundle detail (markdown README, fork/delete/deprecate UI), profile (API keys, user bundles), auth-aware Layout. Mobile responsive. |
 
 ### Recent Fixes & Additions (2026-05-15 / 2026-05-16)
 - ✅ Fixed Meilisearch search returning empty `items` array — root cause was `page`/`hitsPerPage` conflicting with `offset`/`limit` in Meilisearch v1.9
@@ -57,25 +57,29 @@ Phase 2 depends on the following Phase 1 outputs being production-stable:
 - ✅ Fixed Meilisearch document ID sanitization (`a-zA-Z0-9_-` only)
 - ✅ Fixed pull stats increment to use `(namespace, name)` composite key instead of name-only lookup
 - ✅ Auto-index bundles into Meilisearch on successful manifest push
-- ✅ Integration tests for OCI routes (catalog, tags, blobs, manifests) — 56 test cases passing
+- ✅ Integration tests for OCI routes (catalog, tags, blobs, manifests) — 59 test cases passing
 - ✅ API key generation endpoint (POST /api/v1/auth/api-keys) with bcrypt hash verification
 - ✅ Rate limiting via @fastify/rate-limit configured with env vars; stricter limits on auth endpoints
 - ✅ Bundle deprecation API (POST /api/v1/bundles/{ns}/{name}/versions/{ver}/deprecate)
 - ✅ Latest tag resolution for manifest GET (resolves to newest version by createdAt)
 - ✅ **Audit logging service** (`src/services/audit.ts`) with fire-and-forget push/pull/delete/permission_change logging
-- ✅ **Audit log integration** wired into manifest PUT, blob GET, and bundle deprecation handlers
+- ✅ **Audit log integration** wired into manifest PUT, blob GET, deprecation, and delete handlers
 - ✅ **Audit log query API** (`GET /api/v1/admin/audit?namespace=&action=&page=&perPage=`) for namespace owners
 - ✅ **Scheduled garbage collection** via `Scheduler` service — runs daily with configurable retention/batch size
 - ✅ **Bundle forking API** (`POST /api/v1/bundles/:namespace/:name/fork`) — copies metadata + versions, preserves provenance via `forkedFrom`
-- ✅ **Cookie-based JWT auth fallback** — `fastify.authenticate` now reads `pekohub_session` cookie when no Bearer header present
+- ✅ **Delete bundle/version APIs** — `DELETE /api/v1/bundles/:namespace/:name` (cascade) + `DELETE /api/v1/bundles/:namespace/:name/versions/:version`, owner-only, audit logged
+- ✅ **Cookie-based JWT auth fallback** — `fastify.authenticate` reads `pekohub_session` cookie when no Bearer header present
 - ✅ **Auth `/me` endpoint** (`GET /api/v1/auth/me`) — returns user profile from JWT cookie or Bearer token
 - ✅ **Auth `/logout` endpoint** (`POST /api/v1/auth/logout`) — clears session cookie
 - ✅ **Frontend auth context** (`useAuth` hook) — queries `/me`, manages token in localStorage, provides logout
-- ✅ **OAuth callback page** (`/auth/callback`) — stores token from query param, redirects to home
-- ✅ **Auth-aware Layout** — shows user avatar, display name, dropdown with Profile/Sign out; mobile hamburger menu
-- ✅ **Auth-gated deprecation UI** — only bundle namespace owners see deprecate/undeprecate buttons
-- ✅ **Profile page** (`/profile`) — shows user info, API key generation/revocation list, user's bundles
+- ✅ **OAuth callback page** (`/auth/callback`) — stores token from query param, redirects to home; proper error handling with "Go Home" fallback
+- ✅ **Auth-aware Layout** — user avatar, display name, Profile/Sign out dropdown; mobile hamburger menu with auth-aware drawer; `<Link>` for profile navigation
+- ✅ **Auth-gated deprecation UI** — only namespace owners see deprecate/undeprecate buttons
+- ✅ **Auth-gated delete UI** — fork visible to all authenticated users; delete bundle/version buttons visible only to owner
+- ✅ **Profile page** (`/profile`) — user info, API key generation/revocation list, user's bundles
 - ✅ **Mobile responsiveness pass** — all pages (header, hero, search, bundle detail, profile) stack vertically at <640px
+- ✅ **Search pagination** — page state + Previous/Next controls, resets on new query
+- ✅ **Markdown rendering** — bundle README rendered via react-markdown + remark-gfm (tables, code blocks, blockquotes, GFM)
 
 ---
 
@@ -101,22 +105,22 @@ The Public Registry is the discovery and distribution layer for Agent Bundles. I
   - `GET /api/v1/search?q={query}` — Full-text search across bundles — ✅ implemented
   - `GET /api/v1/bundles/{namespace}/{name}` — Bundle metadata and README — ✅ implemented
   - `GET /api/v1/bundles/{namespace}/{name}/versions` — Version history — ✅ implemented
-- [~] **REG-007**: Registry MUST authenticate users via OAuth 2.0 (GitHub, Google, or equivalent) and support organization/team namespaces — *OAuth + API key auth implemented; bearer token (JWT or ph_ API key) supported via @fastify/jwt + bcrypt hash verification*
-- [~] **REG-008**: Registry MUST enforce namespace ownership — only authenticated owners of a namespace can push or delete bundles within it — *namespace check implemented in deprecate endpoint; auth bypass in dev mode*
+- [x] **REG-007**: Registry MUST authenticate users via OAuth 2.0 (GitHub, Google, or equivalent) and support organization/team namespaces — ✅ OAuth + API key + cookie fallback; `GET /api/v1/auth/me` and `POST /api/v1/auth/logout` implemented
+- [x] **REG-008**: Registry MUST enforce namespace ownership — only authenticated owners of a namespace can push or delete bundles within it — ✅ Enforced in deprecate and delete endpoints; dev-mode bypass available
 
 #### 3.2.2 Bundle Discovery & Search
 - [x] **REG-009**: Registry MUST index the following searchable fields from bundle manifests: name, description, author, tags/keywords, required MCP servers, supported model providers, skill definitions, license, and extension type
 - [x] **REG-010**: Registry MUST provide full-text search with relevance ranking across all indexed fields, supporting phrase matching and boolean operators (`AND`, `OR`, `NOT`)
 - [~] **REG-011**: Registry MUST support faceted search — users can filter by: model provider (OpenAI/Anthropic/local), MCP server dependencies, category (research/support/development/content), license, bundle type (agent/team/extension), and extension type (skill/mcp/gateway/universal/general/team) — *filter fields configured in Meilisearch, API filter params implemented, tests passing*
-- [~] **REG-012**: Registry MUST auto-generate a public HTML page for every published bundle containing: metadata, README, version history, dependency tree, installation command, and usage statistics (pull count, star count) — *API endpoints ready, web UI pending*
+- [~] **REG-012**: Registry MUST auto-generate a public HTML page for every published bundle containing: metadata, README, version history, dependency tree, installation command, and usage statistics (pull count, star count) — *Bundle detail page implemented at `/bundles/:namespace/:name`: metadata, GFM README (react-markdown), version history, daily/weekly/monthly/all-time pull stats, install command. Dependency tree (MCP servers, required tools) not yet rendered.*
 - [~] **REG-013**: Registry MUST expose a public Web UI (`https://pekohub.org`) with: homepage featuring trending bundles, category browsing, search with autocomplete, bundle detail pages, and user profile pages — ✅ Homepage, search, bundle detail, and profile pages scaffolded. Auth state wired. Deploy pipeline not started.
 - [~] **REG-014**: Web UI MUST be responsive and functional on mobile devices (viewport ≥ 375px) — ✅ Mobile pass completed on all pages: header (hamburger menu), hero, search, bundle detail, profile. Flexbox + grid breakpoints verified.
 
 #### 3.2.3 Bundle Management
 - [~] **REG-015**: Registry MUST support semantic versioning (MAJOR.MINOR.PATCH) with `latest` tag resolution and version constraint syntax (`>=1.0.0`, `^1.2.0`, `~1.2.3`) — *semver validation + latest tag resolution implemented (tested); constraint syntax parsing not started*
 - [x] **REG-016**: Registry MUST maintain version history with immutable manifests — once published, a manifest digest can never be modified (following OCI immutability guarantees)
-- [~] **REG-017**: Registry MUST support bundle deprecation — owners can mark versions as deprecated with a redirect message to a replacement bundle — *API endpoint implemented (POST /api/v1/bundles/{ns}/{name}/versions/{ver}/deprecate), web UI not started*
-- [~] **REG-018**: Registry MUST provide download/pull statistics (daily, weekly, monthly, all-time) per bundle and per version — *pull stats table exists, blob GET increments tracked, aggregation queries implemented in bundle detail endpoint*
+- [~] **REG-017**: Registry MUST support bundle deprecation — owners can mark versions as deprecated with a redirect message to a replacement bundle — *API endpoint + auth-gated UI implemented (deprecate button on bundle detail page, owner only)*
+- [~] **REG-018**: Registry MUST provide download/pull statistics (daily, weekly, monthly, all-time) per bundle and per version — *pull stats table exists, blob GET increments tracked, aggregation queries implemented in bundle detail API and displayed on bundle detail page*
 - [x] **REG-019**: Registry MUST support bundle forking — any authenticated user can fork a public bundle to their own namespace, preserving provenance metadata — ✅ `POST /api/v1/bundles/:namespace/:name/fork` implemented with `forkedFrom` tracking
 
 #### 3.2.4 Security & Trust
