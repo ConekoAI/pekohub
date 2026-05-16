@@ -1,0 +1,165 @@
+name: Build & Deploy to Lightsail
+
+# Deploys backend to AWS Lightsail via SSH + docker-compose
+# Frontend is deployed separately to Cloudflare Pages (see deploy-frontend.yml)
+#
+# Required GitHub Secrets:
+#   LIGHTSAIL_HOST          - Static IP of your Lightsail instance
+#   LIGHTSAIL_USER          - SSH user (usually 'ubuntu')
+#   LIGHTSAIL_SSH_KEY       - Private key contents for SSH access
+#   REGISTRY_BASE_URL       - https://pekohub.org
+#   GITHUB_CLIENT_ID        - OAuth app client ID
+#   GITHUB_CLIENT_SECRET    - OAuth app client secret
+#   GOOGLE_CLIENT_ID        - (optional)
+#   GOOGLE_CLIENT_SECRET    - (optional)
+#   JWT_SECRET              - Long random string (min 32 chars)
+#   POSTGRES_PASSWORD       - PostgreSQL password
+#   S3_SECRET_KEY           - MinIO secret key
+#   MEILISEARCH_API_KEY     - Meilisearch master key
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'backend/**'
+      - 'packages/shared/**'
+      - 'docker-compose.lightsail.yml'
+      - 'nginx/lightsail.conf'
+      - '.github/workflows/deploy-lightsail.yml'
+
+env:
+  COMPOSE_FILE: docker-compose.lightsail.yml
+
+jobs:
+  # ─────────────────────────────────────────────────────────────
+  # 1. Test
+  # ─────────────────────────────────────────────────────────────
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test
+        run: pnpm test -- --run
+
+  # ─────────────────────────────────────────────────────────────
+  # 2. Deploy Backend to Lightsail
+  # ─────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to Lightsail
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.LIGHTSAIL_HOST }}
+          username: ${{ secrets.LIGHTSAIL_USER }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+
+            APP_DIR="$HOME/pekohub"
+            COMPOSE_FILE="docker-compose.lightsail.yml"
+
+            echo "=== PekoHub Deploy Started ==="
+            echo "Time: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+            # Ensure repo is cloned
+            if [ ! -d "$APP_DIR/.git" ]; then
+              echo "Cloning repository..."
+              git clone https://github.com/ConekoAI/pekohub.git "$APP_DIR"
+            fi
+
+            cd "$APP_DIR"
+
+            # Pull latest code
+            echo "Pulling latest code..."
+            git fetch origin
+            git reset --hard origin/master
+
+            # Write environment file
+            echo "Writing environment config..."
+            cat > .env <<EOF
+            POSTGRES_USER=pekohub
+            POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+            POSTGRES_DB=pekohub
+            S3_ACCESS_KEY=pekohub
+            S3_SECRET_KEY=${{ secrets.S3_SECRET_KEY }}
+            S3_BUCKET=pekohub-blobs
+            MEILISEARCH_API_KEY=${{ secrets.MEILISEARCH_API_KEY }}
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            GITHUB_CLIENT_ID=${{ secrets.GITHUB_CLIENT_ID }}
+            GITHUB_CLIENT_SECRET=${{ secrets.GITHUB_CLIENT_SECRET }}
+            GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+            GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+            REGISTRY_BASE_URL=${{ secrets.REGISTRY_BASE_URL }}
+            RATE_LIMIT_MAX=1000
+            RATE_LIMIT_WINDOW_MS=60000
+            GC_ENABLED=true
+            GC_INTERVAL_MS=86400000
+            GC_RETENTION_DAYS=7
+            GC_BATCH_SIZE=1000
+            EOF
+
+            # Build and restart services
+            echo "Building and restarting services..."
+            docker compose -f "$COMPOSE_FILE" pull
+            docker compose -f "$COMPOSE_FILE" up -d --build
+
+            # Run database migrations
+            echo "Running database migrations..."
+            docker compose -f "$COMPOSE_FILE" exec -T backend npx drizzle-kit migrate || true
+
+            # Cleanup old images
+            echo "Cleaning up old Docker images..."
+            docker image prune -af --filter "until=168h" || true
+
+            # Health check
+            echo "Waiting for services to start..."
+            sleep 15
+
+            echo "Running health checks..."
+            curl -sf http://localhost:3000/health || {
+              echo "ERROR: Backend health check failed"
+              docker compose -f "$COMPOSE_FILE" logs --tail=50 backend
+              exit 1
+            }
+
+            echo "=== PekoHub Deploy Complete ==="
+            echo "Backend: http://${{ secrets.LIGHTSAIL_HOST }}"
+            echo "API Docs: http://${{ secrets.LIGHTSAIL_HOST }}/docs"
+
+      - name: Verify deployment
+        run: |
+          echo "Checking public health endpoint..."
+          curl -sf https://pekohub.org/health || {
+            echo "WARNING: Public health check failed — Cloudflare may still be propagating"
+            exit 0
+          }

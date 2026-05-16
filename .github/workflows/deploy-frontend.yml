@@ -1,0 +1,55 @@
+name: Deploy Frontend to Cloudflare Pages
+
+# Builds the React SPA and deploys to Cloudflare Pages (free CDN + SSL)
+# Runs on every push to main that touches frontend code
+#
+# Required GitHub Secrets:
+#   CLOUDFLARE_API_TOKEN    - Cloudflare API token with 'Cloudflare Pages:Edit' permission
+#   CLOUDFLARE_ACCOUNT_ID   - Your Cloudflare account ID
+#   CLOUDFLARE_PROJECT_NAME - Pages project name (e.g. 'pekohub')
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'frontend/**'
+      - 'packages/shared/**'
+      - '.github/workflows/deploy-frontend.yml'
+
+env:
+  VITE_API_BASE_URL: https://pekohub.org
+
+jobs:
+  deploy:
+    name: Build & Deploy to Cloudflare Pages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        run: pnpm --filter @pekohub/shared build
+
+      - name: Build frontend
+        run: pnpm --filter @pekohub/frontend build
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy frontend/dist --project-name=${{ secrets.CLOUDFLARE_PROJECT_NAME }} --branch=main

@@ -1,0 +1,130 @@
+# PekoHub Production Stack for AWS Lightsail
+# 
+# This single-file deployment runs everything on one Lightsail instance.
+# Cloudflare handles SSL termination and DDoS protection in front.
+# Cloudflare Pages serves the frontend SPA (free CDN).
+#
+# Prerequisites on the Lightsail instance:
+#   1. Docker + docker-compose installed
+#   2. Static IP attached
+#   3. Ports 22 (SSH), 80 (HTTP), 443 (optional for origin cert) open
+#   4. GitHub deploy key added (for Actions SSH access)
+#
+# Usage:
+#   docker compose -f docker-compose.lightsail.yml up -d
+
+services:
+  # ── PostgreSQL ──────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    container_name: pekohub-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pekohub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-CHANGE_ME_IN_PRODUCTION}
+      POSTGRES_DB: ${POSTGRES_DB:-pekohub}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pekohub}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - pekohub
+
+  # ── Meilisearch ─────────────────────────────────────────────
+  meilisearch:
+    image: getmeili/meilisearch:v1.9
+    container_name: pekohub-meilisearch
+    restart: unless-stopped
+    environment:
+      MEILI_MASTER_KEY: ${MEILISEARCH_API_KEY:-CHANGE_ME_MASTER_KEY}
+    volumes:
+      - meilisearchdata:/meili_data
+    networks:
+      - pekohub
+
+  # ── MinIO (S3-compatible blob storage) ──────────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: pekohub-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-pekohub}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-CHANGE_ME_MINIO_SECRET}
+    volumes:
+      - miniodata:/data
+    networks:
+      - pekohub
+
+  # ── Backend API ─────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: pekohub-backend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"  # Bound to localhost only — nginx proxies
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOST: 0.0.0.0
+      DATABASE_URL: postgres://${POSTGRES_USER:-pekohub}:${POSTGRES_PASSWORD:-CHANGE_ME_IN_PRODUCTION}@db:5432/${POSTGRES_DB:-pekohub}
+      S3_ENDPOINT: http://minio:9000
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-pekohub}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-CHANGE_ME_MINIO_SECRET}
+      S3_BUCKET: ${S3_BUCKET:-pekohub-blobs}
+      S3_FORCE_PATH_STYLE: "true"
+      MEILISEARCH_URL: http://meilisearch:7700
+      MEILISEARCH_API_KEY: ${MEILISEARCH_API_KEY:-CHANGE_ME_MASTER_KEY}
+      JWT_SECRET: ${JWT_SECRET:-CHANGE_ME_LONG_RANDOM_STRING_MIN_32_CHARS}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      REGISTRY_BASE_URL: ${REGISTRY_BASE_URL:-https://pekohub.org}
+      ALLOW_DEV_AUTH_BYPASS: "false"
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-1000}
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-60000}
+      GC_ENABLED: "true"
+      GC_INTERVAL_MS: ${GC_INTERVAL_MS:-86400000}
+      GC_RETENTION_DAYS: ${GC_RETENTION_DAYS:-7}
+      GC_BATCH_SIZE: ${GC_BATCH_SIZE:-1000}
+    depends_on:
+      db:
+        condition: service_healthy
+      meilisearch:
+        condition: service_started
+      minio:
+        condition: service_started
+    networks:
+      - pekohub
+
+  # ── Nginx Reverse Proxy ─────────────────────────────────────
+  # Cloudflare → Nginx (port 80) → Backend (port 3000)
+  # Frontend is served separately by Cloudflare Pages
+  nginx:
+    image: nginx:alpine
+    container_name: pekohub-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/lightsail.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - backend
+    networks:
+      - pekohub
+
+volumes:
+  pgdata:
+  meilisearchdata:
+  miniodata:
+
+networks:
+  pekohub:
+    driver: bridge
