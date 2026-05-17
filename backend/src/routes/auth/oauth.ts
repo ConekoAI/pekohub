@@ -136,7 +136,7 @@ export default async function oauthRoutes(fastify: FastifyInstance) {
     });
 
     // Redirect to frontend
-    return reply.redirect(`${fastify.config.REGISTRY_BASE_URL}/auth/callback?token=${token}`);
+    return reply.redirect(`${fastify.config.FRONTEND_URL ?? fastify.config.REGISTRY_BASE_URL}/auth/callback?token=${token}`);
   });
 
   // GET /api/v1/auth/me
