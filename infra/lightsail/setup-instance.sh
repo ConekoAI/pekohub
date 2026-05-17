@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# One-time setup script for AWS Lightsail instance
-# Run this after creating a fresh Ubuntu 24.04 Lightsail instance
+# One-time setup script for AWS Lightsail instance (Ubuntu 24.04)
+# Run this after creating a fresh Lightsail instance
+#
 # Usage: ssh into instance, then:
 #   curl -fsSL https://raw.githubusercontent.com/ConekoAI/pekohub/master/infra/lightsail/setup-instance.sh | bash
 
 set -euo pipefail
 
-LIGHTSAIL_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || echo "UNKNOWN")
+LIGHTSAIL_IP=$(curl -s ifconfig.me 2>/dev/null || echo "UNKNOWN")
 
 echo "========================================"
 echo "  PekoHub Lightsail Instance Setup"
@@ -20,7 +21,9 @@ sudo apt update && sudo apt upgrade -y
 
 # ── Install Docker ───────────────────────────────────────────
 echo "[2/7] Installing Docker..."
-sudo apt install -y docker.io docker-compose-plugin curl git
+# Ubuntu 24.04: docker-compose-plugin is not in default repos,
+# so we install docker.io + docker-compose (v1) which works fine.
+sudo apt install -y docker.io docker-compose curl git
 
 # Add current user to docker group
 sudo usermod -aG docker "$USER"
@@ -29,7 +32,7 @@ sudo usermod -aG docker "$USER"
 sudo systemctl enable docker
 sudo systemctl start docker
 
-# ── Install Node.js 22 (for pnpm) ────────────────────────────
+# ── Install Node.js 22 ───────────────────────────────────────
 echo "[3/7] Installing Node.js 22..."
 curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt install -y nodejs
@@ -67,7 +70,7 @@ echo "  Setup Complete!"
 echo "========================================"
 echo ""
 echo "Docker version: $(docker --version)"
-echo "Docker Compose: $(docker compose version)"
+echo "Docker Compose: $(docker-compose --version)"
 echo "Node.js: $(node --version)"
 echo "pnpm: $(pnpm --version)"
 echo ""
