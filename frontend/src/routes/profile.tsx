@@ -1,10 +1,10 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { useState } from 'react';
 import { useAuth } from '~/hooks/useAuth';
-import { API_BASE } from '~/lib/api';
+import { SignInModal } from '~/components/SignInModal';
 import { useSearch } from '~/hooks/useSearch';
 import { BundleCard } from '~/components/BundleCard';
 import { User, Key, Loader2, Package } from 'lucide-react';
-import { useState } from 'react';
 import { api } from '~/lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -14,6 +14,7 @@ export const Route = createFileRoute('/profile')({
 
 function ProfilePage() {
   const { user, isLoading, isAuthenticated } = useAuth();
+  const [signInOpen, setSignInOpen] = useState(false);
   const queryClient = useQueryClient();
   const [apiKeys, setApiKeys] = useState<Array<{ id: number; name: string; prefix: string; createdAt: string }>>([]);
   const [keysLoading, setKeysLoading] = useState(false);
@@ -71,17 +72,20 @@ function ProfilePage() {
 
   if (!isAuthenticated || !user) {
     return (
-      <div className="mx-auto max-w-4xl px-4 py-12 text-center">
-        <User className="mx-auto h-12 w-12 text-gray-400" />
-        <h1 className="mt-4 text-2xl font-bold text-gray-900">Sign in required</h1>
-        <p className="mt-2 text-gray-600">Please sign in to view your profile.</p>
-        <a
-          href={`${API_BASE}/api/v1/auth/github/authorize`}
-          className="btn-primary mt-6 inline-flex"
-        >
-          Sign In
-        </a>
-      </div>
+      <>
+        <div className="mx-auto max-w-4xl px-4 py-12 text-center">
+          <User className="mx-auto h-12 w-12 text-gray-400" />
+          <h1 className="mt-4 text-2xl font-bold text-gray-900">Sign in required</h1>
+          <p className="mt-2 text-gray-600">Please sign in to view your profile.</p>
+          <button
+            onClick={() => setSignInOpen(true)}
+            className="btn-primary mt-6 inline-flex"
+          >
+            Sign In
+          </button>
+        </div>
+        <SignInModal isOpen={signInOpen} onClose={() => setSignInOpen(false)} />
+      </>
     );
   }
 

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { Package, Github, Loader2, LogOut, User, Menu, X } from 'lucide-react';
 import { useAuth } from '~/hooks/useAuth';
-import { API_BASE } from '~/lib/api';
+import { SignInModal } from '~/components/SignInModal';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -12,6 +12,7 @@ export function Layout({ children }: LayoutProps) {
   const { user, isLoading, isAuthenticated, logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [signInOpen, setSignInOpen] = useState(false);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -87,12 +88,12 @@ export function Layout({ children }: LayoutProps) {
                   )}
                 </div>
               ) : (
-                <a
-                  href={`${API_BASE}/api/v1/auth/github/authorize`}
+                <button
+                  onClick={() => setSignInOpen(true)}
                   className="btn-primary text-sm py-1.5"
                 >
                   Sign In
-                </a>
+                </button>
               )}
             </div>
 
@@ -169,18 +170,23 @@ export function Layout({ children }: LayoutProps) {
                     </button>
                   </div>
                 ) : (
-                  <a
-                    href={`${API_BASE}/api/v1/auth/github/authorize`}
+                  <button
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      setSignInOpen(true);
+                    }}
                     className="btn-primary text-sm py-1.5 inline-flex w-fit"
                   >
                     Sign In
-                  </a>
+                  </button>
                 )}
               </div>
             </nav>
           </div>
         )}
       </header>
+
+      <SignInModal isOpen={signInOpen} onClose={() => setSignInOpen(false)} />
 
       {/* Main */}
       <main className="flex-1">{children}</main>
