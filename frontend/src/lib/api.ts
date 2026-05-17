@@ -1,7 +1,7 @@
 import type { SearchQuery, SearchResponse, BundleDetail, UserProfile } from '@pekohub/shared';
 
 declare const __API_BASE__: string;
-const API_BASE = typeof __API_BASE__ !== 'undefined' ? __API_BASE__ : '';
+export const API_BASE = typeof __API_BASE__ !== 'undefined' ? __API_BASE__ : '';
 
 const TOKEN_KEY = 'pekohub_token';
 

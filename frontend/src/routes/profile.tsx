@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useAuth } from '~/hooks/useAuth';
+import { API_BASE } from '~/lib/api';
 import { useSearch } from '~/hooks/useSearch';
 import { BundleCard } from '~/components/BundleCard';
 import { User, Key, Loader2, Package } from 'lucide-react';
@@ -75,7 +76,7 @@ function ProfilePage() {
         <h1 className="mt-4 text-2xl font-bold text-gray-900">Sign in required</h1>
         <p className="mt-2 text-gray-600">Please sign in to view your profile.</p>
         <a
-          href="/api/v1/auth/github/authorize"
+          href={`${API_BASE}/api/v1/auth/github/authorize`}
           className="btn-primary mt-6 inline-flex"
         >
           Sign In

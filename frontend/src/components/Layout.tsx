@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { Package, Github, Loader2, LogOut, User, Menu, X } from 'lucide-react';
 import { useAuth } from '~/hooks/useAuth';
+import { API_BASE } from '~/lib/api';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -87,7 +88,7 @@ export function Layout({ children }: LayoutProps) {
                 </div>
               ) : (
                 <a
-                  href="/api/v1/auth/github/authorize"
+                  href={`${API_BASE}/api/v1/auth/github/authorize`}
                   className="btn-primary text-sm py-1.5"
                 >
                   Sign In
@@ -169,7 +170,7 @@ export function Layout({ children }: LayoutProps) {
                   </div>
                 ) : (
                   <a
-                    href="/api/v1/auth/github/authorize"
+                    href={`${API_BASE}/api/v1/auth/github/authorize`}
                     className="btn-primary text-sm py-1.5 inline-flex w-fit"
                   >
                     Sign In
