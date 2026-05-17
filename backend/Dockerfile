@@ -6,7 +6,7 @@ WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
 
 # Copy workspace config and shared package first
-COPY package.json pnpm-workspace.yaml turbo.json ./
+COPY package.json pnpm-workspace.yaml turbo.json pnpm-lock.yaml ./
 COPY packages/shared/package.json packages/shared/
 COPY backend/package.json backend/
 
@@ -35,18 +35,15 @@ RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
 
 RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
 
-COPY package.json pnpm-workspace.yaml ./
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY packages/shared/package.json packages/shared/
 COPY backend/package.json backend/
 RUN pnpm install --frozen-lockfile --prod
 
 COPY --from=builder /app/packages/shared/dist packages/shared/dist
 COPY --from=builder /app/backend/dist backend/dist
-COPY --from=builder /app/backend/drizzle backend/drizzle
 
 # Run migrations on startup via entrypoint
-COPY backend/drizzle.config.ts backend/
-COPY --chown=nodejs:nodejs backend/drizzle backend/drizzle
 
 USER nodejs
 
