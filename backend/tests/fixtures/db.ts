@@ -1,0 +1,141 @@
+import { PGlite } from '@electric-sql/pglite';
+import { drizzle } from 'drizzle-orm/pglite';
+import * as schema from '../../src/db/schema.js';
+
+export interface TestDb {
+  db: ReturnType<typeof drizzle<typeof schema>>;
+  client: PGlite;
+}
+
+const DDL_STATEMENTS = [
+  `CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    external_id VARCHAR(256) NOT NULL UNIQUE,
+    provider VARCHAR(32) NOT NULL,
+    namespace VARCHAR(128) NOT NULL UNIQUE,
+    display_name VARCHAR(256),
+    email VARCHAR(256),
+    avatar_url TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+  );`,
+
+  `CREATE TABLE IF NOT EXISTS api_keys (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(128) NOT NULL,
+    prefix VARCHAR(8) NOT NULL,
+    hash VARCHAR(64) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    last_used_at TIMESTAMPTZ
+  );`,
+
+  `CREATE TABLE IF NOT EXISTS bundles (
+    id SERIAL PRIMARY KEY,
+    namespace VARCHAR(128) NOT NULL,
+    name VARCHAR(128) NOT NULL,
+    bundle_type VARCHAR(32) NOT NULL,
+    extension_type VARCHAR(32),
+    description TEXT,
+    author VARCHAR(256),
+    license VARCHAR(64),
+    tags JSONB DEFAULT '[]',
+    categories JSONB DEFAULT '[]',
+    model_providers JSONB DEFAULT '[]',
+    required_mcp_servers JSONB DEFAULT '[]',
+    homepage TEXT,
+    repository TEXT,
+    readme TEXT,
+    forked_from VARCHAR(256),
+    star_count INTEGER DEFAULT 0 NOT NULL,
+    pull_count INTEGER DEFAULT 0 NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+  );`,
+
+  `CREATE UNIQUE INDEX IF NOT EXISTS namespace_name_idx ON bundles(namespace, name);`,
+  `CREATE INDEX IF NOT EXISTS bundle_type_idx ON bundles(bundle_type);`,
+  `CREATE INDEX IF NOT EXISTS search_idx ON bundles(namespace, name, description);`,
+
+  `CREATE TABLE IF NOT EXISTS bundle_versions (
+    id SERIAL PRIMARY KEY,
+    bundle_id INTEGER NOT NULL REFERENCES bundles(id) ON DELETE CASCADE,
+    version VARCHAR(64) NOT NULL,
+    digest VARCHAR(71) NOT NULL,
+    manifest_json JSONB NOT NULL,
+    size INTEGER NOT NULL,
+    deprecated BOOLEAN DEFAULT FALSE,
+    deprecated_message TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+  );`,
+
+  `CREATE UNIQUE INDEX IF NOT EXISTS bundle_version_idx ON bundle_versions(bundle_id, version);`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS digest_idx ON bundle_versions(digest);`,
+
+  `CREATE TABLE IF NOT EXISTS blobs (
+    id SERIAL PRIMARY KEY,
+    digest VARCHAR(71) NOT NULL UNIQUE,
+    size INTEGER NOT NULL,
+    media_type VARCHAR(128),
+    storage_key VARCHAR(512) NOT NULL,
+    uploaded_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    last_accessed_at TIMESTAMPTZ
+  );`,
+
+  `CREATE UNIQUE INDEX IF NOT EXISTS blob_digest_idx ON blobs(digest);`,
+
+  `CREATE TABLE IF NOT EXISTS pull_stats (
+    id SERIAL PRIMARY KEY,
+    bundle_id INTEGER NOT NULL REFERENCES bundles(id) ON DELETE CASCADE,
+    version_id INTEGER REFERENCES bundle_versions(id) ON DELETE CASCADE,
+    date TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    count INTEGER DEFAULT 1 NOT NULL
+  );`,
+
+  `CREATE INDEX IF NOT EXISTS bundle_date_idx ON pull_stats(bundle_id, date);`,
+
+  `CREATE TABLE IF NOT EXISTS audit_logs (
+    id SERIAL PRIMARY KEY,
+    namespace VARCHAR(128) NOT NULL,
+    user_id INTEGER REFERENCES users(id),
+    action VARCHAR(64) NOT NULL,
+    resource VARCHAR(256) NOT NULL,
+    details JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+  );`,
+];
+
+/**
+ * Create a fresh in-memory PostgreSQL database using PGlite.
+ * Returns a Drizzle ORM instance connected to it.
+ */
+export async function createTestDb(): Promise<TestDb> {
+  const client = new PGlite();
+
+  const db = drizzle(client, { schema });
+
+  // Create tables one by one (PGlite doesn't support multiple statements)
+  for (const ddl of DDL_STATEMENTS) {
+    await client.query(ddl);
+  }
+
+  return { db, client };
+}
+
+/**
+ * Truncate all tables to reset data between tests.
+ */
+export async function resetTables(client: PGlite) {
+  const tables = [
+    'audit_logs',
+    'pull_stats',
+    'blobs',
+    'bundle_versions',
+    'bundles',
+    'api_keys',
+    'users',
+  ];
+  for (const table of tables) {
+    await client.query(`DELETE FROM ${table};`);
+  }
+}

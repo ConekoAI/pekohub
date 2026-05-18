@@ -8,3 +8,11 @@ const pool = new Pool({
 
 export const db = drizzle(pool, { schema });
 export type DB = typeof db;
+
+/**
+ * Replace the database instance (used in tests).
+ * This allows tests to inject an in-memory or test-specific database.
+ */
+export function setDb(newDb: typeof db) {
+  Object.assign(db, newDb);
+}
