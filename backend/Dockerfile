@@ -18,6 +18,7 @@ COPY packages/shared/src packages/shared/src
 COPY packages/shared/tsconfig.json packages/shared/
 COPY backend/src backend/src
 COPY backend/drizzle.config.ts backend/
+COPY backend/drizzle backend/drizzle
 COPY backend/tsconfig.json backend/
 
 # Build shared + backend
