@@ -146,7 +146,7 @@ jobs:
 
             # Run database migrations
             echo "Running database migrations..."
-            docker-compose -f "$COMPOSE_FILE" exec -T backend npx drizzle-kit migrate --config=drizzle.config.ts || true
+            docker-compose -f "$COMPOSE_FILE" exec -T backend npx drizzle-kit migrate --config=drizzle.config.ts
 
             # Cleanup old images
             echo "Cleaning up old Docker images..."

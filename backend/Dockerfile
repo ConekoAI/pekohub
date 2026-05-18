@@ -42,6 +42,7 @@ RUN pnpm install --frozen-lockfile --prod
 
 COPY --from=builder /app/packages/shared/dist packages/shared/dist
 COPY --from=builder /app/backend/dist backend/dist
+COPY --from=builder /app/backend/drizzle backend/drizzle
 
 # Run migrations on startup via entrypoint
 
