@@ -146,12 +146,7 @@ jobs:
 
             # Run database migrations
             echo "Running database migrations..."
-            # Source .env so POSTGRES_PASSWORD etc are available
-            set -a && source .env && set +a
-            # Run from host so drizzle-kit (devDependency) can be installed via npx
-            # DATABASE_URL is constructed from the same values used in docker-compose
-            DATABASE_URL="postgres://${POSTGRES_USER:-pekohub}:${POSTGRES_PASSWORD}@localhost:5432/${POSTGRES_DB:-pekohub}" \
-              npx drizzle-kit migrate --config=backend/drizzle.config.ts
+            docker-compose -f "$COMPOSE_FILE" exec -T backend npx drizzle-kit migrate --config=drizzle.config.ts
 
             # Cleanup old images
             echo "Cleaning up old Docker images..."
