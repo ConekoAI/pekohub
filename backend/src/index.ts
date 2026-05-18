@@ -29,6 +29,8 @@ async function main() {
     },
     // Increase body size limit for blob uploads (100MB)
     bodyLimit: 100 * 1024 * 1024,
+    // Trust X-Forwarded-For from nginx/Cloudflare so request.ip is the real client IP
+    trustProxy: true,
   });
 
   // Allow raw binary bodies for OCI blob uploads
