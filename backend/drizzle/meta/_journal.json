@@ -8,6 +8,13 @@
       "when": 1778919045032,
       "tag": "0000_initial_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1779081566224,
+      "tag": "0001_gifted_argent",
+      "breakpoints": true
     }
   ]
 }
