@@ -42,6 +42,10 @@ async function main() {
   app.addContentTypeParser('application/vnd.oci.image.index.v1+json', { parseAs: 'buffer' }, (_req, body, done) => {
     done(null, body);
   });
+  // Allow legacy CLI manifest content type (peko-runtime uses this)
+  app.addContentTypeParser('application/vnd.peko.manifest.v1+json', { parseAs: 'buffer' }, (_req, body, done) => {
+    done(null, body);
+  });
 
   // Register plugins
   await app.register(configPlugin);
