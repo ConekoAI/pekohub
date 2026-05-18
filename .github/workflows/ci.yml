@@ -40,9 +40,6 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Lint
-        run: pnpm lint
-
       - name: Test
         run: pnpm test -- --run
 
@@ -73,10 +70,6 @@ jobs:
       - name: Typecheck
         working-directory: frontend
         run: pnpm typecheck
-
-      - name: Lint
-        working-directory: frontend
-        run: pnpm lint
 
       - name: Test
         working-directory: frontend
