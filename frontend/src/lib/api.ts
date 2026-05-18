@@ -47,7 +47,7 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
     },
   });
 
-  if (response.status === 401 && !url.includes('/auth/refresh')) {
+  if (response.status === 401 && !url.includes('/auth/refresh') && !url.includes('/auth/me')) {
     // Attempt to refresh the access token
     if (!isRefreshing) {
       isRefreshing = true;
