@@ -55,6 +55,35 @@ describe('Bundle API', () => {
 
       expect(response.statusCode).toBe(404);
     });
+
+    it('should return extension metadata including hooks and compatibility', async () => {
+      const app = await buildTestApp({ testDb });
+      const bundle = await createBundle(testDb.client, {
+        namespace: 'acme',
+        name: 'my-extension',
+        bundleType: 'extension',
+        extensionType: 'skill',
+        description: 'A test extension',
+        hooks: [
+          { point: 'tool.register', handler: 'registerTools' },
+          { point: 'agent.init', handler: 'onInit' },
+        ],
+        compatibility: { runtime: 'peko', minVersion: '1.0.0', maxVersion: '2.0.0' },
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/v1/bundles/${bundle.namespace}/${bundle.name}`,
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.payload);
+      expect(body.metadata.bundleType).toBe('extension');
+      expect(body.metadata.extensionType).toBe('skill');
+      expect(body.metadata.hooks).toHaveLength(2);
+      expect(body.metadata.hooks[0]).toMatchObject({ point: 'tool.register', handler: 'registerTools' });
+      expect(body.metadata.compatibility).toMatchObject({ runtime: 'peko', minVersion: '1.0.0', maxVersion: '2.0.0' });
+    });
   });
 
   describe('GET /api/v1/bundles/:namespace/:name/versions', () => {

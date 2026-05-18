@@ -71,6 +71,8 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
         version: latestVersion?.version ?? '0.0.0',
         deprecated: false,
         forkedFrom: bundle.forkedFrom ?? undefined,
+        hooks: bundle.hooks ?? undefined,
+        compatibility: bundle.compatibility ?? undefined,
       },
       readme: bundle.readme,
       pullCount: {
@@ -345,6 +347,8 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
       homepage: sourceBundle.homepage,
       repository: sourceBundle.repository,
       readme: sourceBundle.readme,
+      hooks: sourceBundle.hooks,
+      compatibility: sourceBundle.compatibility,
       forkedFrom: `${namespace}/${name}`,
       starCount: 0,
       pullCount: 0,

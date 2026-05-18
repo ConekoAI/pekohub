@@ -16,12 +16,14 @@ export interface TestBundle {
   namespace: string;
   name: string;
   bundleType: 'agent' | 'team' | 'extension';
-  extensionType?: 'mcp' | 'skill' | 'tool';
+  extensionType?: 'mcp' | 'skill' | 'tool' | 'gateway' | 'universal' | 'general' | 'team';
   description: string;
   author: string;
   tags: string[];
   starCount: number;
   pullCount: number;
+  hooks?: Array<{ point: string; handler?: string; topicPattern?: string }>;
+  compatibility?: { runtime?: string; minVersion?: string; maxVersion?: string };
 }
 
 export interface TestBundleVersion {
@@ -73,9 +75,9 @@ export async function createBundle(
   const bundleType = overrides.bundleType ?? 'agent';
 
   const result = await client.query(
-    `INSERT INTO bundles (namespace, name, bundle_type, extension_type, description, author, tags, star_count, pull_count)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-     RETURNING id, namespace, name, bundle_type, extension_type, description, author, tags, star_count, pull_count`,
+    `INSERT INTO bundles (namespace, name, bundle_type, extension_type, description, author, tags, hooks, compatibility, star_count, pull_count)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+     RETURNING id, namespace, name, bundle_type, extension_type, description, author, tags, hooks, compatibility, star_count, pull_count`,
     [
       namespace,
       name,
@@ -84,6 +86,8 @@ export async function createBundle(
       overrides.description ?? faker.lorem.sentence(),
       overrides.author ?? faker.person.fullName(),
       JSON.stringify(overrides.tags ?? ['test']),
+      JSON.stringify(overrides.hooks ?? null),
+      JSON.stringify(overrides.compatibility ?? null),
       overrides.starCount ?? 0,
       overrides.pullCount ?? 0,
     ]

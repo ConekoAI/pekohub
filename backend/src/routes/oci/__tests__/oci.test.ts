@@ -604,5 +604,71 @@ describe('OCI Distribution Spec Routes', () => {
       const body = JSON.parse(res.body);
       expect(body.errors[0].code).toBe('MANIFEST_INVALID');
     });
+
+    it('creates extension bundle with hooks and compatibility metadata', async () => {
+      const manifest = {
+        schemaVersion: 2,
+        mediaType: 'application/vnd.oci.image.manifest.v1+json',
+        config: { mediaType: 'application/vnd.oci.image.config.v1+json', digest: sha256('{}'), size: 2 },
+        layers: [],
+        annotations: {
+          'dev.pekohub.metadata': JSON.stringify({
+            bundleType: 'extension',
+            extensionType: 'skill',
+            description: 'A skill extension',
+            author: 'alice',
+            hooks: [
+              { point: 'tool.register', handler: 'registerTools' },
+              { point: 'agent.init', handler: 'onInit' },
+            ],
+            compatibility: { runtime: 'peko', minVersion: '1.0.0', maxVersion: '2.0.0' },
+          }),
+        },
+      };
+      const manifestBytes = Buffer.from(JSON.stringify(manifest));
+      const digest = sha256(manifestBytes);
+
+      mockDbQueries.bundles.findFirst.mockResolvedValue(undefined);
+      mockDbQueries.bundleVersions.findFirst.mockResolvedValue(undefined);
+      mockDbInsert.mockImplementation(() => ({
+        values: vi.fn().mockReturnThis(),
+        returning: vi.fn().mockResolvedValue([{
+          id: 1,
+          namespace: 'ns',
+          name: 'ext',
+          bundleType: 'extension',
+          extensionType: 'skill',
+          description: 'A skill extension',
+          author: 'alice',
+          hooks: [{ point: 'tool.register', handler: 'registerTools' }],
+          compatibility: { runtime: 'peko', minVersion: '1.0.0' },
+        }]),
+        onConflictDoUpdate: vi.fn().mockReturnThis(),
+      }));
+
+      mockDbQueries.blobs.findFirst.mockResolvedValue({ digest: manifest.config.digest, size: 2 });
+
+      const res = await app.inject({
+        method: 'PUT',
+        url: '/v2/ns/ext/manifests/v1.0.0',
+        headers: { 'content-type': 'application/vnd.oci.image.manifest.v1+json' },
+        payload: manifestBytes,
+      });
+
+      expect(res.statusCode).toBe(201);
+      expect(res.headers['docker-content-digest']).toBe(digest);
+
+      // Verify search index was called with extension metadata
+      expect(app.search.indexBundle).toHaveBeenCalledWith(
+        expect.objectContaining({
+          bundleType: 'extension',
+          extensionType: 'skill',
+          hooks: expect.arrayContaining([
+            expect.objectContaining({ point: 'tool.register' }),
+          ]),
+          compatibility: expect.objectContaining({ runtime: 'peko' }),
+        })
+      );
+    });
   });
 });

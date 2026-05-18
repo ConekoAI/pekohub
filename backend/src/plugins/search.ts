@@ -17,7 +17,7 @@ export function sanitizeObjectID(id: string): string {
 }
 
 export interface SearchService {
-  indexBundle(doc: SearchResultItem & { objectID: string }): Promise<void>;
+  indexBundle(doc: SearchResultItem & { objectID: string; compatibility?: { runtime?: string; minVersion?: string; maxVersion?: string } }): Promise<void>;
   search(query: string, options?: SearchParams): Promise<{
     hits: SearchResultItem[];
     total: number;
@@ -51,6 +51,7 @@ async function searchPlugin(fastify: FastifyInstance) {
         'tags',
         'categories',
         'modelProviders',
+        'hookPoints',
       ],
       sortableAttributes: ['updatedAt', 'pullCount', 'starCount'],
       rankingRules: [
@@ -68,8 +69,17 @@ async function searchPlugin(fastify: FastifyInstance) {
 
   const search: SearchService = {
     async indexBundle(doc) {
-      const sanitizedDoc = { ...doc, id: sanitizeObjectID(doc.objectID) };
-      delete (sanitizedDoc as any).objectID;
+      const { objectID, compatibility, ...rest } = doc;
+      const sanitizedDoc: Record<string, unknown> = {
+        ...rest,
+        id: sanitizeObjectID(objectID),
+        hookPoints: doc.hooks?.map((h) => h.point) ?? [],
+      };
+      if (compatibility) {
+        sanitizedDoc.compatibilityRuntime = compatibility.runtime;
+        sanitizedDoc.compatibilityMinVersion = compatibility.minVersion;
+        sanitizedDoc.compatibilityMaxVersion = compatibility.maxVersion;
+      }
       await index.addDocuments([sanitizedDoc]);
     },
 

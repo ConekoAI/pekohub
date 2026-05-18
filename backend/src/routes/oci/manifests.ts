@@ -190,7 +190,7 @@ export default async function manifestRoutes(fastify: FastifyInstance) {
     // Extract Pekohub metadata from annotations if present
     const annotations = (manifest.annotations ?? {}) as Record<string, string>;
     const pekoMetadataRaw = annotations['dev.pekohub.metadata'];
-    let parsedMetadata: { bundleType?: string; extensionType?: string; tags?: string[]; description?: string; author?: string; license?: string; readme?: string; categories?: string[]; modelProviders?: string[]; requiredMcpServers?: string[] } | undefined;
+    let parsedMetadata: { bundleType?: string; extensionType?: string; tags?: string[]; description?: string; author?: string; license?: string; readme?: string; categories?: string[]; modelProviders?: string[]; requiredMcpServers?: string[]; hooks?: Array<{ point: string; handler?: string; topicPattern?: string }>; compatibility?: { runtime?: string; minVersion?: string; maxVersion?: string } } | undefined;
     if (pekoMetadataRaw) {
       try {
         parsedMetadata = JSON.parse(pekoMetadataRaw);
@@ -213,6 +213,8 @@ export default async function manifestRoutes(fastify: FastifyInstance) {
         modelProviders: parsedMetadata?.modelProviders ?? null,
         requiredMcpServers: parsedMetadata?.requiredMcpServers ?? null,
         readme: parsedMetadata?.readme ?? null,
+        hooks: parsedMetadata?.hooks ?? null,
+        compatibility: parsedMetadata?.compatibility ?? null,
       }).returning();
       bundle = inserted;
     }
@@ -248,6 +250,8 @@ export default async function manifestRoutes(fastify: FastifyInstance) {
         modelProviders: parsedMetadata?.modelProviders ?? bundle.modelProviders,
         requiredMcpServers: parsedMetadata?.requiredMcpServers ?? bundle.requiredMcpServers,
         readme: parsedMetadata?.readme ?? bundle.readme,
+        hooks: parsedMetadata?.hooks ?? bundle.hooks,
+        compatibility: parsedMetadata?.compatibility ?? bundle.compatibility,
         updatedAt: new Date(),
       })
       .where(eq(bundles.id, bundle.id));
@@ -267,6 +271,8 @@ export default async function manifestRoutes(fastify: FastifyInstance) {
         pullCount: bundle.pullCount,
         starCount: bundle.starCount,
         updatedAt: new Date().toISOString(),
+        hooks: parsedMetadata?.hooks ?? bundle.hooks ?? undefined,
+        compatibility: parsedMetadata?.compatibility ?? bundle.compatibility ?? undefined,
       });
     } catch (err) {
       fastify.log.warn({ err }, 'Failed to index bundle in Meilisearch');

@@ -7,6 +7,36 @@ import {
 } from './constants.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Extension-specific types (defined early for use in BundleMetadata)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const HookPoint = z.enum([
+  'agent.init',
+  'agent.shutdown',
+  'agent.iteration',
+  'tool.register',
+  'tool.execute',
+  'tool.executeAsync',
+  'tool.resultTransform',
+  'event.subscribe',
+  'event.emit',
+  'prompt.systemSection',
+  'prompt.userSection',
+  'prompt.assistantSection',
+  'session.stateChange',
+  'session.contextBuild',
+  'session.branch',
+  'session.overlay',
+  'memory.store',
+  'memory.retrieve',
+  'mcp.serverRegister',
+  'mcp.toolDiscover',
+  'cron.schedule',
+  'cron.tick',
+]);
+export type HookPoint = z.infer<typeof HookPoint>;
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Bundle Manifest (Pekohub-specific metadata embedded in OCI manifest)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -24,6 +54,20 @@ export const BundleMetadata = z.object({
   homepage: z.string().url().optional().nullable(),
   repository: z.string().url().optional().nullable(),
   readme: z.string().max(50000).optional().nullable(),
+  hooks: z.array(
+    z.object({
+      point: HookPoint,
+      handler: z.string().optional(),
+      topicPattern: z.string().optional(),
+    })
+  ).optional(),
+  compatibility: z
+    .object({
+      runtime: z.string().optional(),
+      minVersion: z.string().optional(),
+      maxVersion: z.string().optional(),
+    })
+    .optional(),
   version: z.string().regex(
     /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/,
     'Invalid semantic version'
@@ -66,6 +110,13 @@ export const SearchResultItem = z.object({
   pullCount: z.number().int().nonnegative(),
   starCount: z.number().int().nonnegative(),
   updatedAt: z.string().datetime(),
+  hooks: z.array(
+    z.object({
+      point: HookPoint,
+      handler: z.string().optional(),
+      topicPattern: z.string().optional(),
+    })
+  ).optional(),
 });
 export type SearchResultItem = z.infer<typeof SearchResultItem>;
 
@@ -130,34 +181,8 @@ export const ApiKey = z.object({
 export type ApiKey = z.infer<typeof ApiKey>;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Extension-specific Schemas
+// Extension Manifest Schema
 // ─────────────────────────────────────────────────────────────────────────────
-
-export const HookPoint = z.enum([
-  'agent.init',
-  'agent.shutdown',
-  'agent.iteration',
-  'tool.register',
-  'tool.execute',
-  'tool.executeAsync',
-  'tool.resultTransform',
-  'event.subscribe',
-  'event.emit',
-  'prompt.systemSection',
-  'prompt.userSection',
-  'prompt.assistantSection',
-  'session.stateChange',
-  'session.contextBuild',
-  'session.branch',
-  'session.overlay',
-  'memory.store',
-  'memory.retrieve',
-  'mcp.serverRegister',
-  'mcp.toolDiscover',
-  'cron.schedule',
-  'cron.tick',
-]);
-export type HookPoint = z.infer<typeof HookPoint>;
 
 export const ExtensionManifest = z.object({
   id: z.string().regex(/^[a-z0-9-]+$/, 'Extension ID must be kebab-case'),

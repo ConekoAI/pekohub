@@ -60,6 +60,8 @@ export const bundles = pgTable(
     homepage: text('homepage'),
     repository: text('repository'),
     readme: text('readme'),
+    hooks: jsonb('hooks').$type<Array<{ point: string; handler?: string; topicPattern?: string }>>(),
+    compatibility: jsonb('compatibility').$type<{ runtime?: string; minVersion?: string; maxVersion?: string }>(),
     forkedFrom: varchar('forked_from', { length: 256 }),
     starCount: integer('star_count').default(0).notNull(),
     pullCount: integer('pull_count').default(0).notNull(),

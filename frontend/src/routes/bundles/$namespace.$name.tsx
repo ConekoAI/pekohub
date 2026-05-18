@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useBundle } from '~/hooks/useBundle';
 import { useAuth } from '~/hooks/useAuth';
-import { Download, Star, Copy, Check, AlertTriangle, GitFork, Trash2 } from 'lucide-react';
+import { Download, Star, Copy, Check, AlertTriangle, GitFork, Trash2, Puzzle, Plug, Wrench } from 'lucide-react';
 import { useState } from 'react';
 import { api } from '~/lib/api';
 import { useQueryClient } from '@tanstack/react-query';
@@ -114,7 +114,11 @@ function BundleDetailPage() {
           </h1>
           <p className="mt-2 text-gray-600">{data.metadata.description}</p>
         </div>
-        <span className="inline-flex items-center self-start rounded-full bg-peko-50 px-3 py-1 text-sm font-medium text-peko-700">
+        <span className={`inline-flex items-center self-start rounded-full px-3 py-1 text-sm font-medium ${
+          data.metadata.bundleType === 'extension'
+            ? 'bg-purple-50 text-purple-700'
+            : 'bg-peko-50 text-peko-700'
+        }`}>
           {data.metadata.bundleType}
         </span>
       </div>
@@ -133,6 +137,12 @@ function BundleDetailPage() {
           <span className="flex items-center gap-1">
             <GitFork className="h-4 w-4" />
             forked from {data.metadata.forkedFrom}
+          </span>
+        )}
+        {data.metadata.extensionType && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700">
+            <Puzzle className="h-3 w-3" />
+            {data.metadata.extensionType}
           </span>
         )}
       </div>
@@ -161,10 +171,14 @@ function BundleDetailPage() {
 
       {/* Install command */}
       <div className="mt-8">
-        <label className="text-sm font-medium text-gray-700">Install</label>
+        <label className="text-sm font-medium text-gray-700">
+          {data.metadata.bundleType === 'extension' ? 'Download' : 'Install'}
+        </label>
         <div className="mt-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
           <code className="flex-1 rounded-lg bg-gray-900 px-4 py-3 text-sm text-gray-100 font-mono break-all">
-            {data.installCommand}
+            {data.metadata.bundleType === 'extension'
+              ? `peko agent pull ${namespace}/${name}:${data.metadata.version ?? 'latest'}`
+              : data.installCommand}
           </code>
           <button
             onClick={() => handleCopy(data.installCommand)}
@@ -175,6 +189,56 @@ function BundleDetailPage() {
           </button>
         </div>
       </div>
+
+      {/* Extension metadata */}
+      {data.metadata.bundleType === 'extension' && (
+        <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {data.metadata.hooks && data.metadata.hooks.length > 0 && (
+            <div className="rounded-lg border border-gray-200 p-4">
+              <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+                <Plug className="h-4 w-4 text-peko-600" />
+                Hook Points
+              </h3>
+              <ul className="mt-2 space-y-1">
+                {data.metadata.hooks.map((h) => (
+                  <li key={h.point} className="text-sm text-gray-600">
+                    <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs">{h.point}</code>
+                    {h.handler && <span className="ml-2 text-gray-400">→ {h.handler}</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {data.metadata.compatibility && (
+            <div className="rounded-lg border border-gray-200 p-4">
+              <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+                <Wrench className="h-4 w-4 text-peko-600" />
+                Compatibility
+              </h3>
+              <dl className="mt-2 space-y-1">
+                {data.metadata.compatibility.runtime && (
+                  <div className="flex justify-between text-sm">
+                    <dt className="text-gray-500">Runtime</dt>
+                    <dd className="text-gray-900">{data.metadata.compatibility.runtime}</dd>
+                  </div>
+                )}
+                {data.metadata.compatibility.minVersion && (
+                  <div className="flex justify-between text-sm">
+                    <dt className="text-gray-500">Min Version</dt>
+                    <dd className="text-gray-900">{data.metadata.compatibility.minVersion}</dd>
+                  </div>
+                )}
+                {data.metadata.compatibility.maxVersion && (
+                  <div className="flex justify-between text-sm">
+                    <dt className="text-gray-500">Max Version</dt>
+                    <dd className="text-gray-900">{data.metadata.compatibility.maxVersion}</dd>
+                  </div>
+                )}
+              </dl>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* README */}
       {data.readme && (

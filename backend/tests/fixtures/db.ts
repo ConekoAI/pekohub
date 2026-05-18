@@ -46,6 +46,8 @@ const DDL_STATEMENTS = [
     homepage TEXT,
     repository TEXT,
     readme TEXT,
+    hooks JSONB,
+    compatibility JSONB,
     forked_from VARCHAR(256),
     star_count INTEGER DEFAULT 0 NOT NULL,
     pull_count INTEGER DEFAULT 0 NOT NULL,
