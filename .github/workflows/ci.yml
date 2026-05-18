@@ -34,6 +34,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build shared package
+        run: pnpm --filter @pekohub/shared build
+
       - name: Typecheck
         run: pnpm typecheck
 
@@ -46,9 +49,6 @@ jobs:
   frontend:
     name: Frontend Tests
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -71,13 +71,17 @@ jobs:
         run: pnpm --filter @pekohub/shared build
 
       - name: Typecheck
+        working-directory: frontend
         run: pnpm typecheck
 
       - name: Lint
+        working-directory: frontend
         run: pnpm lint
 
       - name: Test
+        working-directory: frontend
         run: pnpm test -- --run
 
       - name: Build
+        working-directory: frontend
         run: pnpm build
