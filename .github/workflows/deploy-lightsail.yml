@@ -138,12 +138,12 @@ jobs:
 
             # Build and restart services
             echo "Building and restarting services..."
-            docker compose -f "$COMPOSE_FILE" pull
-            docker compose -f "$COMPOSE_FILE" up -d --build
+            docker-compose -f "$COMPOSE_FILE" pull
+            docker-compose -f "$COMPOSE_FILE" up -d --build
 
             # Run database migrations
             echo "Running database migrations..."
-            docker compose -f "$COMPOSE_FILE" exec -T backend npx drizzle-kit migrate || true
+            docker-compose -f "$COMPOSE_FILE" exec -T backend npx drizzle-kit migrate || true
 
             # Cleanup old images
             echo "Cleaning up old Docker images..."
@@ -156,7 +156,7 @@ jobs:
             echo "Running health checks..."
             curl -sf http://localhost:3000/health || {
               echo "ERROR: Backend health check failed"
-              docker compose -f "$COMPOSE_FILE" logs --tail=50 backend
+              docker-compose -f "$COMPOSE_FILE" logs --tail=50 backend
               exit 1
             }
 
