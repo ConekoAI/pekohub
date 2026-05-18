@@ -19,7 +19,6 @@ export const handlers = [
   // Search
   http.get('/api/v1/search', ({ request }) => {
     const url = new URL(request.url);
-    const _q = url.searchParams.get('q') ?? '';
 
     return HttpResponse.json({
       hits: [

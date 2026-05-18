@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render as rtlRender } from '@testing-library/react';
+import { render as rtlRender, type RenderResult } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
 /**
@@ -20,7 +20,7 @@ export function createTestQueryClient() {
 /**
  * Render a component with QueryClientProvider.
  */
-export function render(ui: ReactNode) {
+export function render(ui: ReactNode): RenderResult & { queryClient: QueryClient } {
   const queryClient = createTestQueryClient();
 
   const Wrapper = ({ children }: { children: ReactNode }) => (
@@ -36,6 +36,6 @@ export function render(ui: ReactNode) {
 /**
  * Render a component with just QueryClientProvider (alias for render).
  */
-export function renderWithQuery(ui: ReactNode) {
+export function renderWithQuery(ui: ReactNode): RenderResult & { queryClient: QueryClient } {
   return render(ui);
 }
