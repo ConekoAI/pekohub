@@ -82,7 +82,7 @@ async function main() {
   });
 
   // Health check
-  app.get('/health', async () => ({ status: 'ok', version: '0.1.0' }));
+  app.get('/health', async () => ({ status: 'ok', version: '0.1.0', deployedVia: 'github-actions' }));
 
   // OCI Distribution Spec routes — registered via single aggregator
   await app.register(ociRoutes);

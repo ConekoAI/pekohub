@@ -7,7 +7,7 @@ name: Deploy Backend to Lightsail
 #   LIGHTSAIL_HOST          - Static IP of your Lightsail instance
 #   LIGHTSAIL_USER          - SSH user (usually 'ubuntu')
 #   LIGHTSAIL_SSH_KEY       - Private key contents for SSH access
-#   REGISTRY_BASE_URL       - https://pekohub.org
+#   REGISTRY_BASE_URL       - https://api.pekohub.org (or https://pekohub.org if same domain)
 #   GH_CLIENT_ID            - GitHub OAuth app client ID (note: GITHUB_ prefix is reserved by Actions)
 #   GH_CLIENT_SECRET        - GitHub OAuth app client secret
 #   GOOGLE_CLIENT_ID        - (optional)
