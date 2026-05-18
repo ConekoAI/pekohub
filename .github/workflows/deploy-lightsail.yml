@@ -8,8 +8,8 @@ name: Deploy Backend to Lightsail
 #   LIGHTSAIL_USER          - SSH user (usually 'ubuntu')
 #   LIGHTSAIL_SSH_KEY       - Private key contents for SSH access
 #   REGISTRY_BASE_URL       - https://pekohub.org
-#   GITHUB_CLIENT_ID        - OAuth app client ID
-#   GITHUB_CLIENT_SECRET    - OAuth app client secret
+#   GH_CLIENT_ID            - GitHub OAuth app client ID (note: GITHUB_ prefix is reserved by Actions)
+#   GH_CLIENT_SECRET        - GitHub OAuth app client secret
 #   GOOGLE_CLIENT_ID        - (optional)
 #   GOOGLE_CLIENT_SECRET    - (optional)
 #   JWT_SECRET              - Long random string (min 32 chars)
@@ -111,8 +111,8 @@ jobs:
             POSTGRES_DB=pekohub
             MEILISEARCH_API_KEY=${{ secrets.MEILISEARCH_API_KEY }}
             JWT_SECRET=${{ secrets.JWT_SECRET }}
-            GITHUB_CLIENT_ID=${{ secrets.GITHUB_CLIENT_ID }}
-            GITHUB_CLIENT_SECRET=${{ secrets.GITHUB_CLIENT_SECRET }}
+            GITHUB_CLIENT_ID=${{ secrets.GH_CLIENT_ID }}
+            GITHUB_CLIENT_SECRET=${{ secrets.GH_CLIENT_SECRET }}
             GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
             GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
             REGISTRY_BASE_URL=${{ secrets.REGISTRY_BASE_URL }}

@@ -1,7 +1,7 @@
 name: CI
 
-# Runs on every PR and push to ensure code quality
-# Fast feedback loop: test + typecheck + lint
+# Runs tests, typecheck, and lint on every PR and push to master
+# This is the quality gate — deploy workflows depend on this passing
 
 on:
   push:
@@ -10,9 +10,12 @@ on:
     branches: [main, master]
 
 jobs:
-  test:
-    name: Test & Lint
+  backend:
+    name: Backend Tests
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,3 +42,42 @@ jobs:
 
       - name: Test
         run: pnpm test -- --run
+
+  frontend:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        run: pnpm --filter @pekohub/shared build
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test
+        run: pnpm test -- --run
+
+      - name: Build
+        run: pnpm build
