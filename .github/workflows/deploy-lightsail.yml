@@ -31,6 +31,7 @@ on:
       - 'nginx/lightsail.conf'
       - 'infra/lightsail/**'
       - '.github/workflows/deploy-lightsail.yml'
+      - 'pnpm-lock.yaml'
 
 env:
   COMPOSE_FILE: docker-compose.lightsail.yml
