@@ -60,11 +60,17 @@ jobs:
       - name: Build shared package
         run: pnpm --filter @pekohub/shared build
 
-      - name: Typecheck
-        run: pnpm typecheck
+      - name: Backend typecheck
+        run: pnpm --filter @pekohub/backend typecheck
 
-      - name: Test
-        run: pnpm test -- --run
+      - name: Frontend typecheck
+        run: pnpm --filter @pekohub/frontend typecheck
+
+      - name: Backend test
+        run: pnpm --filter @pekohub/backend test -- --run
+
+      - name: Frontend test
+        run: pnpm --filter @pekohub/frontend test -- --run
 
   deploy:
     name: Deploy to Lightsail
