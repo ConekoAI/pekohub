@@ -115,6 +115,25 @@ export class AuditService {
     }
   }
 
+  async logSecurityEvent(
+    action: string,
+    userId: number | undefined,
+    resource: string,
+    details?: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      await db.insert(auditLogs).values({
+        namespace: 'security',
+        userId: userId ?? null,
+        action,
+        resource,
+        details: details ?? null,
+      });
+    } catch (err) {
+      this.logError('logSecurityEvent', err);
+    }
+  }
+
   async listByNamespace(
     namespace: string,
     options: ListAuditOptions = {},

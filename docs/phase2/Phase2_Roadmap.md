@@ -147,7 +147,7 @@ Phase 2's registry treats `.ext` packages as **first-class OCI artifacts** for p
 | Concern | Approach | Success Criteria |
 |---------|----------|-----------------|
 | Registry HTTPS | TLS 1.3 only | SEC-001 |
-| Token expiry | 24-hour expiry + revocation | SEC-002 |
+| Token expiry | 15-min access JWT + 30-day refresh token with rotation + revocation | SEC-002 (see ADR-001) |
 | Audit logs | Append-only with tamper-evident hashing | SEC-003 |
 | Vulnerability scans | Scan on push, block critical | SEC-004 |
 
@@ -226,6 +226,7 @@ Phase 2 is complete when:
 | `Phase2_Success_Criteria.md` | Complete, detailed success criteria with numbered requirements |
 | `Phase2_Roadmap.md` (this document) | Implementation roadmap: execution order, milestones, architecture diagrams, design decisions |
 | ADR-027 (`docs/architecture/adr/ADR-027-unified-packaging.md`) | Packaging format for `.agent`/`.team`/`.ext` |
+| ADR-001 (`docs/architecture/adr/ADR-001-refresh-token-rotation.md`) | Refresh token rotation for long-lived sessions (SEC-002) |
 
 ---
 

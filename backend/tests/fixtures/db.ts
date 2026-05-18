@@ -105,6 +105,20 @@ const DDL_STATEMENTS = [
     details JSONB,
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
   );`,
+
+  `CREATE TABLE IF NOT EXISTS refresh_tokens (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_prefix VARCHAR(16) NOT NULL,
+    token_hash VARCHAR(256) NOT NULL,
+    device_info TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    revoked_at TIMESTAMPTZ,
+    rotated_from TEXT REFERENCES refresh_tokens(id)
+  );`,
+  `CREATE INDEX IF NOT EXISTS refresh_tokens_user_active_idx ON refresh_tokens(user_id, revoked_at, expires_at);`,
+  `CREATE INDEX IF NOT EXISTS refresh_tokens_prefix_idx ON refresh_tokens(token_prefix);`,
 ];
 
 /**
@@ -130,6 +144,7 @@ export async function createTestDb(): Promise<TestDb> {
 export async function resetTables(client: PGlite) {
   const tables = [
     'audit_logs',
+    'refresh_tokens',
     'pull_stats',
     'blobs',
     'bundle_versions',

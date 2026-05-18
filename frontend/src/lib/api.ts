@@ -5,6 +5,9 @@ export const API_BASE = typeof __API_BASE__ !== 'undefined' ? __API_BASE__ : '';
 
 const TOKEN_KEY = 'pekohub_token';
 
+let isRefreshing = false;
+let refreshPromise: Promise<string> | null = null;
+
 export function getAuthToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
@@ -17,16 +20,68 @@ export function clearAuthToken(): void {
   localStorage.removeItem(TOKEN_KEY);
 }
 
+async function doRefresh(): Promise<string> {
+  const res = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+
+  if (!res.ok) {
+    throw new Error('Refresh failed');
+  }
+
+  const data = await res.json() as { token: string };
+  setAuthToken(data.token);
+  return data.token;
+}
+
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   const token = getAuthToken();
   const response = await fetch(`${API_BASE}${url}`, {
     ...options,
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options?.headers,
     },
   });
+
+  if (response.status === 401 && !url.includes('/auth/refresh')) {
+    // Attempt to refresh the access token
+    if (!isRefreshing) {
+      isRefreshing = true;
+      refreshPromise = doRefresh().finally(() => {
+        isRefreshing = false;
+        refreshPromise = null;
+      });
+    }
+
+    try {
+      const newToken = await refreshPromise!;
+      // Retry original request with new token
+      const retryResponse = await fetch(`${API_BASE}${url}`, {
+        ...options,
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${newToken}`,
+          ...options?.headers,
+        },
+      });
+
+      if (!retryResponse.ok) {
+        const error = await retryResponse.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(error.error ?? `HTTP ${retryResponse.status}`);
+      }
+
+      return retryResponse.json() as Promise<T>;
+    } catch {
+      clearAuthToken();
+      window.location.href = '/';
+      throw new Error('Session expired');
+    }
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Unknown error' }));
@@ -91,7 +146,7 @@ export const api = {
     ),
 
   revokeApiKey: (id: number) =>
-    fetch(`/api/v1/auth/api-keys/${id}`, { method: 'DELETE' }).then((r) => {
+    fetch(`${API_BASE}/api/v1/auth/api-keys/${id}`, { method: 'DELETE', credentials: 'include' }).then((r) => {
       if (!r.ok) throw new Error('Failed to revoke key');
     }),
 
@@ -110,12 +165,12 @@ export const api = {
     ),
 
   deleteBundle: (namespace: string, name: string) =>
-    fetch(`/api/v1/bundles/${namespace}/${name}`, { method: 'DELETE' }).then((r) => {
+    fetch(`${API_BASE}/api/v1/bundles/${namespace}/${name}`, { method: 'DELETE', credentials: 'include' }).then((r) => {
       if (!r.ok) throw new Error('Failed to delete bundle');
     }),
 
   deleteVersion: (namespace: string, name: string, version: string) =>
-    fetch(`/api/v1/bundles/${namespace}/${name}/versions/${version}`, { method: 'DELETE' }).then((r) => {
+    fetch(`${API_BASE}/api/v1/bundles/${namespace}/${name}/versions/${version}`, { method: 'DELETE', credentials: 'include' }).then((r) => {
       if (!r.ok) throw new Error('Failed to delete version');
     }),
 };

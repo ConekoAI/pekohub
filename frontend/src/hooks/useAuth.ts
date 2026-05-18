@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from '~/lib/api';
+import { api, clearAuthToken } from '~/lib/api';
 
 export function useAuth() {
   const queryClient = useQueryClient();
@@ -14,9 +14,13 @@ export function useAuth() {
   const isAuthenticated = !!user;
 
   const logout = async () => {
-    await api.logout();
-    queryClient.removeQueries({ queryKey: ['auth'] });
-    queryClient.invalidateQueries();
+    try {
+      await api.logout();
+    } finally {
+      clearAuthToken();
+      queryClient.removeQueries({ queryKey: ['auth'] });
+      queryClient.invalidateQueries();
+    }
   };
 
   return { user, isLoading, isAuthenticated, logout };

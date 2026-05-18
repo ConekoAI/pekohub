@@ -10,6 +10,7 @@ import {
   uniqueIndex,
   index,
 } from 'drizzle-orm/pg-core';
+import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { BundleTypes, ExtensionTypes } from '@pekohub/shared';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -37,6 +38,25 @@ export const apiKeys = pgTable('api_keys', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
 });
+
+export const refreshTokens = pgTable(
+  'refresh_tokens',
+  {
+    id: text('id').primaryKey(),
+    userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    tokenPrefix: varchar('token_prefix', { length: 16 }).notNull(),
+    tokenHash: varchar('token_hash', { length: 256 }).notNull(),
+    deviceInfo: text('device_info'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    rotatedFrom: text('rotated_from').references((): AnyPgColumn => refreshTokens.id),
+  },
+  (table) => ({
+    userActiveIdx: index('refresh_tokens_user_active_idx').on(table.userId, table.revokedAt, table.expiresAt),
+    prefixIdx: index('refresh_tokens_prefix_idx').on(table.tokenPrefix),
+  })
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Bundles

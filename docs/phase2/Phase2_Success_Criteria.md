@@ -193,7 +193,7 @@ All extension runtime features are deferred to Phase 3. See "Phase 3 Preview" be
 ### 6.1 P0 — Must Have
 
 - [x] **SEC-001**: Registry MUST enforce HTTPS-only communication with TLS 1.3 — ✅ Cloudflare **Always Use HTTPS** enabled; all HTTP requests receive 301 redirect to HTTPS. TLS 1.3 terminated at Cloudflare edge. WAF currently set to block non-dev traffic (intentional pre-production restriction).
-- [ ] **SEC-002**: Registry access tokens MUST expire within 24 hours and support revocation
+- [~] **SEC-002**: Registry access tokens MUST expire within 24 hours and support revocation — *ADR-001 defines refresh token rotation approach: 15-min access JWT + 30-day HTTP-only refresh cookie with rotation; implementation pending*
 - [ ] **SEC-003**: All audit logs MUST be append-only with tamper-evident hashing (Merkle tree or equivalent)
 - [ ] **SEC-004**: Bundle vulnerability scans MUST complete within 5 minutes of push and block pull of critical-severity bundles until acknowledged
 

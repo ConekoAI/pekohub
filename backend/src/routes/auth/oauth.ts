@@ -1,13 +1,15 @@
 import type { FastifyInstance } from 'fastify';
 import { GitHub, Google } from 'arctic';
 import { db } from '../../db/index.js';
-import { users } from '../../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { users, refreshTokens } from '../../db/schema.js';
+import { eq, and, isNull, gt } from 'drizzle-orm';
+import bcrypt from 'bcryptjs';
 
 /**
  * OAuth 2.0 login flow + session endpoints
  * GET /api/v1/auth/:provider/authorize
  * GET /api/v1/auth/:provider/callback
+ * POST /api/v1/auth/refresh
  * GET /api/v1/auth/me
  * POST /api/v1/auth/logout
  */
@@ -122,21 +124,70 @@ export default async function oauthRoutes(fastify: FastifyInstance) {
       user = inserted;
     }
 
-    // Issue JWT
-    const token = await reply.jwtSign({
-      sub: String(user.id),
-      namespace: user.namespace,
-    });
+    // Issue short-lived access JWT (15 minutes)
+    const accessToken = await reply.jwtSign(
+      { sub: String(user.id), namespace: user.namespace },
+      { expiresIn: '15m' }
+    );
 
-    reply.setCookie('pekohub_session', token, {
+    // Issue refresh token (30 days, HTTP-only cookie)
+    const deviceInfo = request.headers['user-agent'] ?? undefined;
+    const refreshToken = await fastify.issueRefreshToken(user.id, deviceInfo);
+
+    reply.setCookie('pekohub_refresh', refreshToken, {
       path: '/',
       httpOnly: true,
       secure: fastify.config.NODE_ENV === 'production',
-      maxAge: 86400, // 24 hours
+      sameSite: 'lax',
+      maxAge: 30 * 24 * 60 * 60, // 30 days in seconds
     });
 
+    // Clear legacy session cookie if present
+    reply.clearCookie('pekohub_session', { path: '/' });
+
     // Redirect to frontend
-    return reply.redirect(`${fastify.config.FRONTEND_URL ?? fastify.config.REGISTRY_BASE_URL}/auth/callback?token=${token}`);
+    return reply.redirect(`${fastify.config.FRONTEND_URL ?? fastify.config.REGISTRY_BASE_URL}/auth/callback?token=${accessToken}`);
+  });
+
+  // POST /api/v1/auth/refresh
+  fastify.post('/refresh', async (request, reply) => {
+    const refreshCookie = request.cookies.pekohub_refresh;
+    if (!refreshCookie) {
+      return reply.status(401).send({ error: 'Missing refresh token' });
+    }
+
+    const validated = await fastify.validateRefreshToken(refreshCookie);
+    if (!validated) {
+      return reply.status(401).send({ error: 'Invalid or expired refresh token' });
+    }
+
+    // Rotate refresh token
+    const deviceInfo = request.headers['user-agent'] ?? undefined;
+    const newRefreshToken = await fastify.rotateRefreshToken(validated.id, validated.userId, deviceInfo);
+
+    reply.setCookie('pekohub_refresh', newRefreshToken, {
+      path: '/',
+      httpOnly: true,
+      secure: fastify.config.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 30 * 24 * 60 * 60,
+    });
+
+    // Issue new access JWT
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, validated.userId),
+    });
+
+    if (!user) {
+      return reply.status(401).send({ error: 'User not found' });
+    }
+
+    const accessToken = await reply.jwtSign(
+      { sub: String(user.id), namespace: user.namespace },
+      { expiresIn: '15m' }
+    );
+
+    return { token: accessToken };
   });
 
   // GET /api/v1/auth/me
@@ -156,7 +207,18 @@ export default async function oauthRoutes(fastify: FastifyInstance) {
   });
 
   // POST /api/v1/auth/logout
-  fastify.post('/logout', async (_request, reply) => {
+  fastify.post('/logout', async (request, reply) => {
+    const refreshCookie = request.cookies.pekohub_refresh;
+
+    if (refreshCookie) {
+      // Find and revoke the token in DB (best-effort)
+      const validated = await fastify.validateRefreshToken(refreshCookie);
+      if (validated) {
+        await fastify.revokeRefreshToken(validated.id);
+      }
+    }
+
+    reply.clearCookie('pekohub_refresh', { path: '/' });
     reply.clearCookie('pekohub_session', { path: '/' });
     return { success: true };
   });
