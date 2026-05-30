@@ -65,6 +65,17 @@ export default async function manifestRoutes(fastify: FastifyInstance) {
     reply.header('Docker-Content-Digest', version.digest);
     reply.header('Content-Length', JSON.stringify(manifest).length);
 
+    // Fire-and-forget audit log (must not throw)
+    const userId = (request as unknown as { user?: { id?: number } }).user?.id;
+    await auditService.logPull(
+      namespace,
+      userId,
+      name,
+      version.version,
+      version.digest,
+      { manifestSize: JSON.stringify(manifest).length },
+    );
+
     return manifest;
   });
 

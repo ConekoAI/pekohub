@@ -78,19 +78,6 @@ export default async function blobRoutes(fastify: FastifyInstance) {
       fastify.log.warn({ err }, 'Failed to increment pull stats');
     }
 
-    // Fire-and-forget audit log (must not throw)
-    if (bundleForAudit) {
-      const userId = (request as unknown as { user?: { id?: number } }).user?.id;
-      await auditService.logPull(
-        bundleForAudit.namespace,
-        userId,
-        bundleForAudit.name,
-        'unknown',
-        digest,
-        { blobSize: blob.size },
-      );
-    }
-
     const data = await fastify.storage.get(blob.storageKey);
 
     reply.header('Content-Length', blob.size);
