@@ -187,15 +187,17 @@ export default async function manifestRoutes(fastify: FastifyInstance) {
       where: and(eq(bundles.namespace, namespace), eq(bundles.name, name)),
     });
 
-    // Extract Pekohub metadata from annotations if present
+    // Extract Pekohub metadata from flat annotations
     const annotations = (manifest.annotations ?? {}) as Record<string, string>;
-    const pekoMetadataRaw = annotations['dev.pekohub.metadata'];
-    let parsedMetadata: { bundleType?: string; extensionType?: string; tags?: string[]; description?: string; author?: string; license?: string; readme?: string; categories?: string[]; modelProviders?: string[]; requiredMcpServers?: string[]; hooks?: Array<{ point: string; handler?: string; topicPattern?: string }>; compatibility?: { runtime?: string; minVersion?: string; maxVersion?: string } } | undefined;
-    if (pekoMetadataRaw) {
+
+    // Helper to parse JSON annotation values (arrays/objects)
+    function parseJsonAnnotation<T>(key: string): T | undefined {
+      const raw = annotations[key];
+      if (!raw) return undefined;
       try {
-        parsedMetadata = JSON.parse(pekoMetadataRaw);
+        return JSON.parse(raw) as T;
       } catch {
-        // ignore invalid metadata
+        return undefined;
       }
     }
 
@@ -203,18 +205,18 @@ export default async function manifestRoutes(fastify: FastifyInstance) {
       const [inserted] = await db.insert(bundles).values({
         namespace,
         name,
-        bundleType: (parsedMetadata?.bundleType ?? annotations['dev.pekohub.bundleType'] ?? 'agent') as 'agent' | 'team' | 'extension',
-        extensionType: parsedMetadata?.extensionType as any,
-        description: parsedMetadata?.description ?? annotations['org.opencontainers.image.description'] ?? null,
-        author: parsedMetadata?.author ?? annotations['org.opencontainers.image.authors'] ?? null,
+        bundleType: (annotations['dev.pekohub.bundleType'] ?? 'agent') as 'agent' | 'team' | 'extension',
+        extensionType: annotations['dev.pekohub.extensionType'] as any,
+        description: annotations['org.opencontainers.image.description'] ?? null,
+        author: annotations['org.opencontainers.image.authors'] ?? null,
         license: annotations['org.opencontainers.image.licenses'] ?? null,
-        tags: parsedMetadata?.tags ?? null,
-        categories: parsedMetadata?.categories ?? null,
-        modelProviders: parsedMetadata?.modelProviders ?? null,
-        requiredMcpServers: parsedMetadata?.requiredMcpServers ?? null,
-        readme: parsedMetadata?.readme ?? null,
-        hooks: parsedMetadata?.hooks ?? null,
-        compatibility: parsedMetadata?.compatibility ?? null,
+        tags: parseJsonAnnotation<string[]>('dev.pekohub.tags'),
+        categories: parseJsonAnnotation<string[]>('dev.pekohub.categories'),
+        modelProviders: parseJsonAnnotation<string[]>('dev.pekohub.modelProviders'),
+        requiredMcpServers: parseJsonAnnotation<string[]>('dev.pekohub.requiredMcpServers'),
+        readme: annotations['dev.pekohub.readme'] ?? null,
+        hooks: parseJsonAnnotation<Array<{ point: string; handler?: string; topicPattern?: string }>>('dev.pekohub.hooks'),
+        compatibility: parseJsonAnnotation<{ runtime?: string; minVersion?: string; maxVersion?: string }>('dev.pekohub.compatibility'),
       }).returning();
       bundle = inserted;
     }
@@ -242,16 +244,16 @@ export default async function manifestRoutes(fastify: FastifyInstance) {
     // Update bundle metadata from annotations if present
     await db.update(bundles)
       .set({
-        description: parsedMetadata?.description ?? annotations['org.opencontainers.image.description'] ?? bundle.description,
-        author: parsedMetadata?.author ?? annotations['org.opencontainers.image.authors'] ?? bundle.author,
+        description: annotations['org.opencontainers.image.description'] ?? bundle.description,
+        author: annotations['org.opencontainers.image.authors'] ?? bundle.author,
         license: annotations['org.opencontainers.image.licenses'] ?? bundle.license,
-        tags: parsedMetadata?.tags ?? bundle.tags,
-        categories: parsedMetadata?.categories ?? bundle.categories,
-        modelProviders: parsedMetadata?.modelProviders ?? bundle.modelProviders,
-        requiredMcpServers: parsedMetadata?.requiredMcpServers ?? bundle.requiredMcpServers,
-        readme: parsedMetadata?.readme ?? bundle.readme,
-        hooks: parsedMetadata?.hooks ?? bundle.hooks,
-        compatibility: parsedMetadata?.compatibility ?? bundle.compatibility,
+        tags: parseJsonAnnotation<string[]>('dev.pekohub.tags') ?? bundle.tags,
+        categories: parseJsonAnnotation<string[]>('dev.pekohub.categories') ?? bundle.categories,
+        modelProviders: parseJsonAnnotation<string[]>('dev.pekohub.modelProviders') ?? bundle.modelProviders,
+        requiredMcpServers: parseJsonAnnotation<string[]>('dev.pekohub.requiredMcpServers') ?? bundle.requiredMcpServers,
+        readme: annotations['dev.pekohub.readme'] ?? bundle.readme,
+        hooks: parseJsonAnnotation<Array<{ point: string; handler?: string; topicPattern?: string }>>('dev.pekohub.hooks') ?? bundle.hooks,
+        compatibility: parseJsonAnnotation<{ runtime?: string; minVersion?: string; maxVersion?: string }>('dev.pekohub.compatibility') ?? bundle.compatibility,
         updatedAt: new Date(),
       })
       .where(eq(bundles.id, bundle.id));
@@ -271,8 +273,8 @@ export default async function manifestRoutes(fastify: FastifyInstance) {
         pullCount: bundle.pullCount,
         starCount: bundle.starCount,
         updatedAt: new Date().toISOString(),
-        hooks: (parsedMetadata?.hooks ?? bundle.hooks ?? undefined) as Array<{ point: import('@pekohub/shared').HookPoint; handler?: string; topicPattern?: string }> | undefined,
-        compatibility: parsedMetadata?.compatibility ?? bundle.compatibility ?? undefined,
+        hooks: bundle.hooks as Array<{ point: import('@pekohub/shared').HookPoint; handler?: string; topicPattern?: string }> | undefined,
+        compatibility: (parseJsonAnnotation<{ runtime?: string; minVersion?: string; maxVersion?: string }>('dev.pekohub.compatibility') ?? bundle.compatibility ?? undefined),
       });
     } catch (err) {
       fastify.log.warn({ err }, 'Failed to index bundle in Meilisearch');

@@ -605,24 +605,22 @@ describe('OCI Distribution Spec Routes', () => {
       expect(body.errors[0].code).toBe('MANIFEST_INVALID');
     });
 
-    it('creates extension bundle with hooks and compatibility metadata', async () => {
+    it('creates extension bundle with hooks and compatibility metadata from flat annotations', async () => {
       const manifest = {
         schemaVersion: 2,
         mediaType: 'application/vnd.oci.image.manifest.v1+json',
         config: { mediaType: 'application/vnd.oci.image.config.v1+json', digest: sha256('{}'), size: 2 },
         layers: [],
         annotations: {
-          'dev.pekohub.metadata': JSON.stringify({
-            bundleType: 'extension',
-            extensionType: 'skill',
-            description: 'A skill extension',
-            author: 'alice',
-            hooks: [
-              { point: 'tool.register', handler: 'registerTools' },
-              { point: 'agent.init', handler: 'onInit' },
-            ],
-            compatibility: { runtime: 'peko', minVersion: '1.0.0', maxVersion: '2.0.0' },
-          }),
+          'dev.pekohub.bundleType': 'extension',
+          'dev.pekohub.extensionType': 'skill',
+          'org.opencontainers.image.description': 'A skill extension',
+          'org.opencontainers.image.authors': 'alice',
+          'dev.pekohub.hooks': JSON.stringify([
+            { point: 'tool.register', handler: 'registerTools' },
+            { point: 'agent.init', handler: 'onInit' },
+          ]),
+          'dev.pekohub.compatibility': JSON.stringify({ runtime: 'peko', minVersion: '1.0.0', maxVersion: '2.0.0' }),
         },
       };
       const manifestBytes = Buffer.from(JSON.stringify(manifest));
