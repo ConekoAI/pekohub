@@ -22,7 +22,11 @@ export function BundleCard({ bundle }: BundleCardProps) {
             {bundle.description ?? 'No description'}
           </p>
         </div>
-        <span className="ml-3 inline-flex items-center rounded-full bg-peko-50 px-2.5 py-0.5 text-xs font-medium text-peko-700">
+        <span className={`ml-3 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+          bundle.bundleType === 'extension'
+            ? 'bg-purple-50 text-purple-700'
+            : 'bg-peko-50 text-peko-700'
+        }`}>
           {bundle.bundleType}
         </span>
       </div>
