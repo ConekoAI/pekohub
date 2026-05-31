@@ -91,7 +91,7 @@ async function buildApp(): Promise<FastifyInstance> {
     deleteBundle: vi.fn().mockResolvedValue(undefined),
   });
 
-  await app.register(bundleRoutes, { prefix: '/api/v1' });
+  await app.register(bundleRoutes, { prefix: '/v1' });
   await app.ready();
   return app;
 }
@@ -113,7 +113,7 @@ describe('Bundle API Routes', () => {
     resetMocks();
   });
 
-  describe('POST /api/v1/bundles/:namespace/:name/fork', () => {
+  describe('POST /v1/bundles/:namespace/:name/fork', () => {
     it('forks a bundle to the authenticated namespace', async () => {
       const sourceBundle = {
         id: 1,
@@ -159,7 +159,7 @@ describe('Bundle API Routes', () => {
 
       const res = await app.inject({
         method: 'POST',
-        url: '/api/v1/bundles/acme/alpha/fork',
+        url: '/v1/bundles/acme/alpha/fork',
       });
 
       expect(res.statusCode).toBe(201);
@@ -175,7 +175,7 @@ describe('Bundle API Routes', () => {
 
       const res = await app.inject({
         method: 'POST',
-        url: '/api/v1/bundles/acme/missing/fork',
+        url: '/v1/bundles/acme/missing/fork',
       });
 
       expect(res.statusCode).toBe(404);
@@ -211,7 +211,7 @@ describe('Bundle API Routes', () => {
 
       const res = await app.inject({
         method: 'POST',
-        url: '/api/v1/bundles/acme/alpha/fork',
+        url: '/v1/bundles/acme/alpha/fork',
       });
 
       expect(res.statusCode).toBe(409);
@@ -259,7 +259,7 @@ describe('Bundle API Routes', () => {
 
       const res = await app.inject({
         method: 'POST',
-        url: '/api/v1/bundles/acme/alpha/fork?targetName=beta',
+        url: '/v1/bundles/acme/alpha/fork?targetName=beta',
       });
 
       expect(res.statusCode).toBe(201);

@@ -20,7 +20,7 @@ describe('Bundle API', () => {
     await testDb.client.close();
   });
 
-  describe('GET /api/v1/bundles/:namespace/:name', () => {
+  describe('GET /v1/bundles/:namespace/:name', () => {
     it('should return a bundle by namespace and name', async () => {
       const app = await buildTestApp({ testDb });
       const bundle = await createBundle(testDb.client, {
@@ -31,7 +31,7 @@ describe('Bundle API', () => {
 
       const response = await app.inject({
         method: 'GET',
-        url: `/api/v1/bundles/${bundle.namespace}/${bundle.name}`,
+        url: `/v1/bundles/${bundle.namespace}/${bundle.name}`,
       });
 
       expect(response.statusCode).toBe(200);
@@ -50,7 +50,7 @@ describe('Bundle API', () => {
 
       const response = await app.inject({
         method: 'GET',
-        url: '/api/v1/bundles/nonexistent/missing',
+        url: '/v1/bundles/nonexistent/missing',
       });
 
       expect(response.statusCode).toBe(404);
@@ -73,7 +73,7 @@ describe('Bundle API', () => {
 
       const response = await app.inject({
         method: 'GET',
-        url: `/api/v1/bundles/${bundle.namespace}/${bundle.name}`,
+        url: `/v1/bundles/${bundle.namespace}/${bundle.name}`,
       });
 
       expect(response.statusCode).toBe(200);
@@ -86,7 +86,7 @@ describe('Bundle API', () => {
     });
   });
 
-  describe('GET /api/v1/bundles/:namespace/:name/versions', () => {
+  describe('GET /v1/bundles/:namespace/:name/versions', () => {
     it('should return all versions for a bundle', async () => {
       const app = await buildTestApp({ testDb });
       const { bundle, versions } = await createBundleWithVersions(testDb.client, 3, {
@@ -95,7 +95,7 @@ describe('Bundle API', () => {
 
       const response = await app.inject({
         method: 'GET',
-        url: `/api/v1/bundles/${bundle.namespace}/${bundle.name}/versions`,
+        url: `/v1/bundles/${bundle.namespace}/${bundle.name}/versions`,
       });
 
       expect(response.statusCode).toBe(200);
@@ -107,7 +107,7 @@ describe('Bundle API', () => {
     });
   });
 
-  describe('POST /api/v1/bundles/:namespace/:name/versions/:version/deprecate', () => {
+  describe('POST /v1/bundles/:namespace/:name/versions/:version/deprecate', () => {
     it('should deprecate a version when authenticated', async () => {
       const app = await buildTestApp({ testDb });
       const user = await createUser(testDb.client, { namespace: 'acme' });
@@ -118,7 +118,7 @@ describe('Bundle API', () => {
 
       const response = await app.inject({
         method: 'POST',
-        url: `/api/v1/bundles/${bundle.namespace}/${bundle.name}/versions/${versions[0].version}/deprecate`,
+        url: `/v1/bundles/${bundle.namespace}/${bundle.name}/versions/${versions[0].version}/deprecate`,
         headers,
         payload: {
           deprecated: true,
@@ -140,7 +140,7 @@ describe('Bundle API', () => {
 
       const response = await app.inject({
         method: 'POST',
-        url: `/api/v1/bundles/${bundle.namespace}/${bundle.name}/versions/${versions[0].version}/deprecate`,
+        url: `/v1/bundles/${bundle.namespace}/${bundle.name}/versions/${versions[0].version}/deprecate`,
         payload: {
           deprecated: true,
           message: 'Deprecated',
@@ -151,7 +151,7 @@ describe('Bundle API', () => {
     });
   });
 
-  describe('DELETE /api/v1/bundles/:namespace/:name', () => {
+  describe('DELETE /v1/bundles/:namespace/:name', () => {
     it('should delete a bundle when authenticated as owner', async () => {
       const app = await buildTestApp({ testDb });
       const user = await createUser(testDb.client, { namespace: 'acme' });
@@ -163,7 +163,7 @@ describe('Bundle API', () => {
 
       const response = await app.inject({
         method: 'DELETE',
-        url: `/api/v1/bundles/${bundle.namespace}/${bundle.name}`,
+        url: `/v1/bundles/${bundle.namespace}/${bundle.name}`,
         headers,
       });
 
@@ -179,7 +179,7 @@ describe('Bundle API', () => {
 
       const response = await app.inject({
         method: 'DELETE',
-        url: `/api/v1/bundles/${bundle.namespace}/${bundle.name}`,
+        url: `/v1/bundles/${bundle.namespace}/${bundle.name}`,
       });
 
       expect(response.statusCode).toBe(401);
