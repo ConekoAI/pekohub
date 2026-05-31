@@ -127,11 +127,11 @@ async function main() {
 
   // Register routes
   await app.register(ociRoutes);
-  await app.register(searchApiRoutes, { prefix: '/api/v1' });
-  await app.register(bundleApiRoutes, { prefix: '/api/v1' });
-  await app.register(adminRoutes, { prefix: '/api/v1/admin' });
-  await app.register(oauthRoutes, { prefix: '/api/v1/auth' });
-  await app.register(apiKeyRoutes, { prefix: '/api/v1/auth' });
+  await app.register(searchApiRoutes, { prefix: '/v1' });
+  await app.register(bundleApiRoutes, { prefix: '/v1' });
+  await app.register(adminRoutes, { prefix: '/v1/admin' });
+  await app.register(oauthRoutes, { prefix: '/v1/auth' });
+  await app.register(apiKeyRoutes, { prefix: '/v1/auth' });
 
   // Health check
   app.get('/health', async () => ({ status: 'ok', version: '0.1.0' }));

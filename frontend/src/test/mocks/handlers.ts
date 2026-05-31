@@ -2,7 +2,7 @@ import { http, HttpResponse } from 'msw';
 
 export const handlers = [
   // Auth
-  http.get('/api/v1/auth/me', () => {
+  http.get('/v1/auth/me', () => {
     return HttpResponse.json({
       id: 1,
       namespace: 'testuser',
@@ -12,12 +12,12 @@ export const handlers = [
     });
   }),
 
-  http.post('/api/v1/auth/logout', () => {
+  http.post('/v1/auth/logout', () => {
     return HttpResponse.json({ success: true });
   }),
 
   // Search
-  http.get('/api/v1/search', ({ request }) => {
+  http.get('/v1/search', ({ request }) => {
     const url = new URL(request.url);
 
     return HttpResponse.json({
@@ -42,7 +42,7 @@ export const handlers = [
   }),
 
   // Bundles
-  http.get('/api/v1/bundles/:namespace/:name', ({ params }) => {
+  http.get('/v1/bundles/:namespace/:name', ({ params }) => {
     return HttpResponse.json({
       namespace: params.namespace,
       name: params.name,
@@ -85,7 +85,7 @@ export const handlers = [
     });
   }),
 
-  http.get('/api/v1/bundles/:namespace/:name/versions', ({ params }) => {
+  http.get('/v1/bundles/:namespace/:name/versions', ({ params }) => {
     return HttpResponse.json({
       namespace: params.namespace,
       name: params.name,
@@ -111,7 +111,7 @@ export const handlers = [
   }),
 
   // API Keys
-  http.get('/api/v1/auth/api-keys', () => {
+  http.get('/v1/auth/api-keys', () => {
     return HttpResponse.json({
       keys: [
         {
@@ -125,7 +125,7 @@ export const handlers = [
     });
   }),
 
-  http.post('/api/v1/auth/api-keys', async ({ request }) => {
+  http.post('/v1/auth/api-keys', async ({ request }) => {
     const body = (await request.json()) as { name: string };
     return HttpResponse.json({
       id: 2,

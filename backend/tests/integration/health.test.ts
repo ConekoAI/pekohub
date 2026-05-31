@@ -47,19 +47,19 @@ describe('Auth Endpoints', () => {
     await testDb.client.close();
   });
 
-  it('GET /api/v1/auth/me should return 401 without token', async () => {
+  it('GET /v1/auth/me should return 401 without token', async () => {
     const app = await buildTestApp({ testDb });
 
     const response = await app.inject({
       method: 'GET',
-      url: '/api/v1/auth/me',
+      url: '/v1/auth/me',
     });
 
     expect(response.statusCode).toBe(401);
     expect(JSON.parse(response.payload)).toHaveProperty('error');
   });
 
-  it('GET /api/v1/auth/me should return user with valid token', async () => {
+  it('GET /v1/auth/me should return user with valid token', async () => {
     const user = await createUser(testDb.client, {
       namespace: 'testuser',
       displayName: 'Test User',
@@ -71,7 +71,7 @@ describe('Auth Endpoints', () => {
 
     const response = await app.inject({
       method: 'GET',
-      url: '/api/v1/auth/me',
+      url: '/v1/auth/me',
       headers,
     });
 
@@ -85,12 +85,12 @@ describe('Auth Endpoints', () => {
     });
   });
 
-  it('POST /api/v1/auth/logout should clear cookies and return success', async () => {
+  it('POST /v1/auth/logout should clear cookies and return success', async () => {
     const app = await buildTestApp({ testDb });
 
     const response = await app.inject({
       method: 'POST',
-      url: '/api/v1/auth/logout',
+      url: '/v1/auth/logout',
     });
 
     expect(response.statusCode).toBe(200);
@@ -104,24 +104,24 @@ describe('Auth Endpoints', () => {
     expect(refreshCookie).toMatch(/Expires=Thu, 01 Jan 1970 00:00:00 GMT|Max-Age=0/);
   });
 
-  it('GET /api/v1/auth/github/authorize should redirect when OAuth is enabled', async () => {
+  it('GET /v1/auth/github/authorize should redirect when OAuth is enabled', async () => {
     const app = await buildTestApp({ testDb, enableOAuth: true });
 
     const response = await app.inject({
       method: 'GET',
-      url: '/api/v1/auth/github/authorize',
+      url: '/v1/auth/github/authorize',
     });
 
     expect(response.statusCode).toBe(302);
     expect(response.headers.location).toContain('github.com');
   });
 
-  it('GET /api/v1/auth/github/authorize should return 400 when OAuth is disabled', async () => {
+  it('GET /v1/auth/github/authorize should return 400 when OAuth is disabled', async () => {
     const app = await buildTestApp({ testDb, enableOAuth: false });
 
     const response = await app.inject({
       method: 'GET',
-      url: '/api/v1/auth/github/authorize',
+      url: '/v1/auth/github/authorize',
     });
 
     expect(response.statusCode).toBe(400);
@@ -144,24 +144,24 @@ describe('Refresh Token Flow', () => {
     await testDb.client.close();
   });
 
-  it('POST /api/v1/auth/refresh returns 401 when cookie is missing', async () => {
+  it('POST /v1/auth/refresh returns 401 when cookie is missing', async () => {
     const app = await buildTestApp({ testDb });
 
     const response = await app.inject({
       method: 'POST',
-      url: '/api/v1/auth/refresh',
+      url: '/v1/auth/refresh',
     });
 
     expect(response.statusCode).toBe(401);
     expect(JSON.parse(response.payload)).toEqual({ error: 'Missing refresh token' });
   });
 
-  it('POST /api/v1/auth/refresh returns 401 with invalid token', async () => {
+  it('POST /v1/auth/refresh returns 401 with invalid token', async () => {
     const app = await buildTestApp({ testDb });
 
     const response = await app.inject({
       method: 'POST',
-      url: '/api/v1/auth/refresh',
+      url: '/v1/auth/refresh',
       cookies: { pekohub_refresh: 'totally-invalid-token' },
     });
 
@@ -169,7 +169,7 @@ describe('Refresh Token Flow', () => {
     expect(JSON.parse(response.payload)).toEqual({ error: 'Invalid or expired refresh token' });
   });
 
-  it('POST /api/v1/auth/refresh rotates token and returns new access token', async () => {
+  it('POST /v1/auth/refresh rotates token and returns new access token', async () => {
     const user = await createUser(testDb.client, {
       namespace: 'alice',
       displayName: 'Alice',
@@ -183,7 +183,7 @@ describe('Refresh Token Flow', () => {
 
     const response = await app.inject({
       method: 'POST',
-      url: '/api/v1/auth/refresh',
+      url: '/v1/auth/refresh',
       cookies: { pekohub_refresh: refreshToken },
     });
 
@@ -201,7 +201,7 @@ describe('Refresh Token Flow', () => {
     expect(refreshCookie).not.toContain('pekohub_refresh=;');
   });
 
-  it('POST /api/v1/auth/refresh detects token reuse and revokes all tokens', async () => {
+  it('POST /v1/auth/refresh detects token reuse and revokes all tokens', async () => {
     const user = await createUser(testDb.client, {
       namespace: 'alice',
       displayName: 'Alice',
@@ -216,7 +216,7 @@ describe('Refresh Token Flow', () => {
     // First refresh (legitimate)
     const res1 = await app.inject({
       method: 'POST',
-      url: '/api/v1/auth/refresh',
+      url: '/v1/auth/refresh',
       cookies: { pekohub_refresh: refreshToken1 },
     });
     expect(res1.statusCode).toBe(200);
@@ -224,7 +224,7 @@ describe('Refresh Token Flow', () => {
     // Second refresh with same token (reuse / theft simulation)
     const res2 = await app.inject({
       method: 'POST',
-      url: '/api/v1/auth/refresh',
+      url: '/v1/auth/refresh',
       cookies: { pekohub_refresh: refreshToken1 },
     });
     expect(res2.statusCode).toBe(401);
@@ -241,13 +241,13 @@ describe('Refresh Token Flow', () => {
 
     const res3 = await app.inject({
       method: 'POST',
-      url: '/api/v1/auth/refresh',
+      url: '/v1/auth/refresh',
       cookies: { pekohub_refresh: rotatedToken },
     });
     expect(res3.statusCode).toBe(401);
   });
 
-  it('POST /api/v1/auth/logout revokes refresh token when cookie present', async () => {
+  it('POST /v1/auth/logout revokes refresh token when cookie present', async () => {
     const user = await createUser(testDb.client, {
       namespace: 'alice',
       displayName: 'Alice',
@@ -259,7 +259,7 @@ describe('Refresh Token Flow', () => {
 
     const logoutRes = await app.inject({
       method: 'POST',
-      url: '/api/v1/auth/logout',
+      url: '/v1/auth/logout',
       cookies: { pekohub_refresh: refreshToken },
     });
     expect(logoutRes.statusCode).toBe(200);
@@ -267,7 +267,7 @@ describe('Refresh Token Flow', () => {
     // After logout, the refresh token should be invalid
     const refreshRes = await app.inject({
       method: 'POST',
-      url: '/api/v1/auth/refresh',
+      url: '/v1/auth/refresh',
       cookies: { pekohub_refresh: refreshToken },
     });
     expect(refreshRes.statusCode).toBe(401);

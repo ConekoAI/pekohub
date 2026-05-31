@@ -30,13 +30,13 @@ describe('SignInModal', () => {
     render(<SignInModal isOpen={true} onClose={vi.fn()} />);
 
     const githubLink = screen.getByText('Continue with GitHub').closest('a');
-    expect(githubLink).toHaveAttribute('href', '/api/v1/auth/github/authorize');
+    expect(githubLink).toHaveAttribute('href', '/v1/auth/github/authorize');
   });
 
   it('should have correct Google OAuth link', () => {
     render(<SignInModal isOpen={true} onClose={vi.fn()} />);
 
     const googleLink = screen.getByText('Continue with Google').closest('a');
-    expect(googleLink).toHaveAttribute('href', '/api/v1/auth/google/authorize');
+    expect(googleLink).toHaveAttribute('href', '/v1/auth/google/authorize');
   });
 });

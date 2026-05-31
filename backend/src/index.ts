@@ -90,15 +90,15 @@ async function main() {
   await app.register(ociRoutes);
 
   // Custom API routes
-  await app.register(searchApiRoutes, { prefix: '/api/v1' });
-  await app.register(bundleApiRoutes, { prefix: '/api/v1' });
-  await app.register(adminRoutes, { prefix: '/api/v1/admin' });
-  await app.register(oauthRoutes, { prefix: '/api/v1/auth' });
-  await app.register(apiKeyRoutes, { prefix: '/api/v1/auth' });
+  await app.register(searchApiRoutes, { prefix: '/v1' });
+  await app.register(bundleApiRoutes, { prefix: '/v1' });
+  await app.register(adminRoutes, { prefix: '/v1/admin' });
+  await app.register(oauthRoutes, { prefix: '/v1/auth' });
+  await app.register(apiKeyRoutes, { prefix: '/v1/auth' });
 
   // Stricter rate limits for auth endpoints
   app.addHook('onRequest', async (request, reply) => {
-    if (request.url.startsWith('/api/v1/auth/')) {
+    if (request.url.startsWith('/v1/auth/')) {
       // Use a simple in-memory rate limiter for auth endpoints
       // @fastify/rate-limit doesn't support prefix-based scoping,
       // so we apply a custom hook here.

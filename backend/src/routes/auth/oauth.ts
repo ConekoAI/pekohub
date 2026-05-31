@@ -18,7 +18,7 @@ export default async function oauthRoutes(fastify: FastifyInstance) {
     ? new GitHub(
         fastify.config.GITHUB_CLIENT_ID,
         fastify.config.GITHUB_CLIENT_SECRET!,
-        { redirectURI: `${fastify.config.REGISTRY_BASE_URL}/api/v1/auth/github/callback` }
+        { redirectURI: `${fastify.config.REGISTRY_BASE_URL}/v1/auth/github/callback` }
       )
     : null;
 
@@ -26,7 +26,7 @@ export default async function oauthRoutes(fastify: FastifyInstance) {
     ? new Google(
         fastify.config.GOOGLE_CLIENT_ID,
         fastify.config.GOOGLE_CLIENT_SECRET!,
-        `${fastify.config.REGISTRY_BASE_URL}/api/v1/auth/google/callback`
+        `${fastify.config.REGISTRY_BASE_URL}/v1/auth/google/callback`
       )
     : null;
 

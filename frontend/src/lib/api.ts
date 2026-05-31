@@ -21,7 +21,7 @@ export function clearAuthToken(): void {
 }
 
 async function doRefresh(): Promise<string> {
-  const res = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
+  const res = await fetch(`${API_BASE}/v1/auth/refresh`, {
     method: 'POST',
     credentials: 'include',
   });
@@ -102,15 +102,15 @@ export const api = {
         if (value) searchParams.set(`filters.${key}`, String(value));
       }
     }
-    return fetchJson<SearchResponse>(`/api/v1/search?${searchParams}`);
+    return fetchJson<SearchResponse>(`/v1/search?${searchParams}`);
   },
 
   getBundle: (namespace: string, name: string) =>
-    fetchJson<BundleDetail>(`/api/v1/bundles/${namespace}/${name}`),
+    fetchJson<BundleDetail>(`/v1/bundles/${namespace}/${name}`),
 
   getBundleVersions: (namespace: string, name: string) =>
     fetchJson<{ namespace: string; name: string; versions: Array<{ version: string; digest: string; size: number; createdAt: string; deprecated: boolean | null; deprecatedMessage: string | null }> }>(
-      `/api/v1/bundles/${namespace}/${name}/versions`
+      `/v1/bundles/${namespace}/${name}/versions`
     ),
 
   getCatalog: () =>
@@ -129,48 +129,48 @@ export const api = {
       version: string;
       deprecated: boolean | null;
       deprecatedMessage: string | null;
-    }>(`/api/v1/bundles/${namespace}/${name}/versions/${version}/deprecate`, {
+    }>(`/v1/bundles/${namespace}/${name}/versions/${version}/deprecate`, {
       method: 'POST',
       body: JSON.stringify({ deprecated, message }),
     }),
 
   generateApiKey: (name: string) =>
     fetchJson<{ id: number; name: string; prefix: string; key: string; createdAt: string }>(
-      '/api/v1/auth/api-keys',
+      '/v1/auth/api-keys',
       { method: 'POST', body: JSON.stringify({ name }) }
     ),
 
   listApiKeys: () =>
     fetchJson<{ keys: Array<{ id: number; name: string; prefix: string; createdAt: string; lastUsedAt: string | null }> }>(
-      '/api/v1/auth/api-keys'
+      '/v1/auth/api-keys'
     ),
 
   revokeApiKey: (id: number) =>
-    fetch(`${API_BASE}/api/v1/auth/api-keys/${id}`, { method: 'DELETE', credentials: 'include' }).then((r) => {
+    fetch(`${API_BASE}/v1/auth/api-keys/${id}`, { method: 'DELETE', credentials: 'include' }).then((r) => {
       if (!r.ok) throw new Error('Failed to revoke key');
     }),
 
   getMe: () =>
-    fetchJson<UserProfile>('/api/v1/auth/me'),
+    fetchJson<UserProfile>('/v1/auth/me'),
 
   logout: () =>
-    fetchJson<void>('/api/v1/auth/logout', { method: 'POST' }).finally(() => {
+    fetchJson<void>('/v1/auth/logout', { method: 'POST' }).finally(() => {
       clearAuthToken();
     }),
 
   forkBundle: (namespace: string, name: string, targetName?: string) =>
     fetchJson<{ namespace: string; name: string; forkedFrom: string | null; versionsCopied: number }>(
-      `/api/v1/bundles/${namespace}/${name}/fork${targetName ? `?targetName=${encodeURIComponent(targetName)}` : ''}`,
+      `/v1/bundles/${namespace}/${name}/fork${targetName ? `?targetName=${encodeURIComponent(targetName)}` : ''}`,
       { method: 'POST' }
     ),
 
   deleteBundle: (namespace: string, name: string) =>
-    fetch(`${API_BASE}/api/v1/bundles/${namespace}/${name}`, { method: 'DELETE', credentials: 'include' }).then((r) => {
+    fetch(`${API_BASE}/v1/bundles/${namespace}/${name}`, { method: 'DELETE', credentials: 'include' }).then((r) => {
       if (!r.ok) throw new Error('Failed to delete bundle');
     }),
 
   deleteVersion: (namespace: string, name: string, version: string) =>
-    fetch(`${API_BASE}/api/v1/bundles/${namespace}/${name}/versions/${version}`, { method: 'DELETE', credentials: 'include' }).then((r) => {
+    fetch(`${API_BASE}/v1/bundles/${namespace}/${name}/versions/${version}`, { method: 'DELETE', credentials: 'include' }).then((r) => {
       if (!r.ok) throw new Error('Failed to delete version');
     }),
 };
