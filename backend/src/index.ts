@@ -14,6 +14,7 @@ import searchPlugin from './plugins/search.js';
 import ociRoutes from './routes/oci/index.js';
 import searchApiRoutes from './routes/api/search.js';
 import bundleApiRoutes from './routes/api/bundles.js';
+import instanceRoutes from './routes/api/instances.js';
 import adminRoutes from './routes/api/admin.js';
 import oauthRoutes from './routes/auth/oauth.js';
 import apiKeyRoutes from './routes/auth/api-keys.js';
@@ -92,6 +93,7 @@ async function main() {
   // Custom API routes
   await app.register(searchApiRoutes, { prefix: '/v1' });
   await app.register(bundleApiRoutes, { prefix: '/v1' });
+  await app.register(instanceRoutes, { prefix: '/v1' });
   await app.register(adminRoutes, { prefix: '/v1/admin' });
   await app.register(oauthRoutes, { prefix: '/v1/auth' });
   await app.register(apiKeyRoutes, { prefix: '/v1/auth' });

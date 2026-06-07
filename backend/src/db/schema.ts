@@ -9,8 +9,10 @@ import {
   jsonb,
   uniqueIndex,
   index,
+  uuid,
 } from 'drizzle-orm/pg-core';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
+import { relations } from 'drizzle-orm';
 import { BundleTypes, ExtensionTypes } from '@pekohub/shared';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -155,6 +157,40 @@ export const pullStats = pgTable(
     bundleDateIdx: index('bundle_date_idx').on(table.bundleId, table.date),
   })
 );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Instances (Remote Instance Management)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const instances = pgTable(
+  'instances',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    type: varchar('type', { length: 10 }).notNull(), // 'agent' | 'team'
+    name: varchar('name', { length: 255 }).notNull(),
+    ownerId: integer('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    runtimeId: varchar('runtime_id', { length: 255 }).notNull(),
+    runtimeDisplayName: varchar('runtime_display_name', { length: 255 }),
+    bundleRef: varchar('bundle_ref', { length: 255 }),
+    status: varchar('status', { length: 20 }).notNull().default('offline'),
+    exposure: varchar('exposure', { length: 20 }).notNull().default('unexposed'),
+    allowedUsers: jsonb('allowed_users').default('[]'),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    capabilities: jsonb('capabilities').default('[]'),
+    metadata: jsonb('metadata').default('{}'),
+  },
+  (table) => ({
+    ownerIdIdx: index('idx_instances_owner_id').on(table.ownerId),
+    runtimeIdIdx: index('idx_instances_runtime_id').on(table.runtimeId),
+    exposureStatusIdx: index('idx_instances_exposure_status').on(table.exposure, table.status),
+    lastSeenAtIdx: index('idx_instances_last_seen_at').on(table.lastSeenAt),
+  })
+);
+
+export const instanceRelations = relations(instances, ({ one }) => ({
+  owner: one(users, { fields: [instances.ownerId], references: [users.id] }),
+}));
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Audit Log

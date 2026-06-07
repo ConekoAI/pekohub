@@ -114,6 +114,9 @@ async function buildApp(): Promise<FastifyInstance> {
     indexBundle: vi.fn().mockResolvedValue(undefined),
     search: vi.fn().mockResolvedValue({ hits: [], total: 0, page: 1, perPage: 20 }),
     deleteBundle: vi.fn().mockResolvedValue(undefined),
+    indexInstance: vi.fn().mockResolvedValue(undefined),
+    searchInstances: vi.fn().mockResolvedValue({ hits: [], total: 0, page: 1, perPage: 20 }),
+    deleteInstance: vi.fn().mockResolvedValue(undefined),
   });
 
   // Mock auth — throws in test mode so manifest PUT falls back to dev mode (NODE_ENV=development)

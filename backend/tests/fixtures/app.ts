@@ -8,6 +8,7 @@ import { setDb } from '../../src/db/index.js';
 
 import searchApiRoutes from '../../src/routes/api/search.js';
 import bundleApiRoutes from '../../src/routes/api/bundles.js';
+import instanceRoutes from '../../src/routes/api/instances.js';
 import adminRoutes from '../../src/routes/api/admin.js';
 import oauthRoutes from '../../src/routes/auth/oauth.js';
 import apiKeyRoutes from '../../src/routes/auth/api-keys.js';
@@ -90,6 +91,7 @@ export async function buildTestApp(options: TestAppOptions) {
   await app.register(ociRoutes);
   await app.register(searchApiRoutes, { prefix: '/v1' });
   await app.register(bundleApiRoutes, { prefix: '/v1' });
+  await app.register(instanceRoutes, { prefix: '/v1' });
   await app.register(adminRoutes, { prefix: '/v1/admin' });
   await app.register(oauthRoutes, { prefix: '/v1/auth' });
   await app.register(apiKeyRoutes, { prefix: '/v1/auth' });
@@ -138,6 +140,7 @@ function createMockStorage() {
 
 function createMockSearch() {
   const docs = new Map<string, any>();
+  const instanceDocs = new Map<string, any>();
   return {
     async indexBundle(doc: any) {
       docs.set(doc.objectID, doc);
@@ -150,6 +153,18 @@ function createMockSearch() {
     },
     async deleteBundle(objectID: string) {
       docs.delete(objectID);
+    },
+    async indexInstance(doc: any) {
+      instanceDocs.set(doc.objectID, doc);
+    },
+    async searchInstances(query: string) {
+      const hits = Array.from(instanceDocs.values()).filter((d: any) =>
+        JSON.stringify(d).toLowerCase().includes(query.toLowerCase())
+      );
+      return { hits, total: hits.length, page: 1, perPage: 20 };
+    },
+    async deleteInstance(objectID: string) {
+      instanceDocs.delete(objectID);
     },
   };
 }

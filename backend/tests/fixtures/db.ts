@@ -119,6 +119,27 @@ const DDL_STATEMENTS = [
   );`,
   `CREATE INDEX IF NOT EXISTS refresh_tokens_user_active_idx ON refresh_tokens(user_id, revoked_at, expires_at);`,
   `CREATE INDEX IF NOT EXISTS refresh_tokens_prefix_idx ON refresh_tokens(token_prefix);`,
+
+  `CREATE TABLE IF NOT EXISTS instances (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    type VARCHAR(10) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    runtime_id VARCHAR(255) NOT NULL,
+    runtime_display_name VARCHAR(255),
+    bundle_ref VARCHAR(255),
+    status VARCHAR(20) DEFAULT 'offline' NOT NULL,
+    exposure VARCHAR(20) DEFAULT 'unexposed' NOT NULL,
+    allowed_users JSONB DEFAULT '[]',
+    last_seen_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    capabilities JSONB DEFAULT '[]',
+    metadata JSONB DEFAULT '{}'
+  );`,
+  `CREATE INDEX IF NOT EXISTS idx_instances_owner_id ON instances(owner_id);`,
+  `CREATE INDEX IF NOT EXISTS idx_instances_runtime_id ON instances(runtime_id);`,
+  `CREATE INDEX IF NOT EXISTS idx_instances_exposure_status ON instances(exposure, status);`,
+  `CREATE INDEX IF NOT EXISTS idx_instances_last_seen_at ON instances(last_seen_at);`,
 ];
 
 /**
@@ -149,6 +170,7 @@ export async function resetTables(client: PGlite) {
     'blobs',
     'bundle_versions',
     'bundles',
+    'instances',
     'api_keys',
     'users',
   ];

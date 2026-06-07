@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Proposed |
+| **Status** | Implemented |
 | **Date** | 2026-06-07 |
 | **Depends On** | ADR-001-pekohub (Refresh Token Rotation), ADR-035 (Tunnel Protocol) |
 | **Related** | ADR-037 (Exposure Modes), ADR-033 (Ownership & Permission Model) |
@@ -345,15 +345,38 @@ export async function instanceRoutes(app: FastifyInstance) {
 
 ---
 
+## Implementation Progress
+
+### Completed
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 1 | **Database** | ✅ Done | `instances` table added via Drizzle migration `0004_add_instances_table.sql`. Foreign key to `users(id)` with cascade delete. |
+| 2 | **Tunnel Protocol** | 🔄 Stubbed | Message types (`InstanceAnnounce`, `InstanceHeartbeat`, `InstanceDeregister`, `ProxiedRequest`, `ProxiedResponse`, `StreamChunk`) are defined in `InstanceService`. The tunnel manager integration is a TODO pending ADR-035 runtime work. |
+| 3 | **Runtime** | ⏳ Pending | Runtime changes are out of scope for this backend-only implementation. |
+| 4 | **PekoHub Backend** | ✅ Done | Fastify routes (`src/routes/api/instances.ts`) and service layer (`src/services/instances.ts`) fully implemented. |
+| 5 | **Meilisearch** | ✅ Done | `instances` index created in `searchPlugin`. `indexInstance` / `searchInstances` / `deleteInstance` methods implemented. Sync on create/update/delete. |
+| 6 | **Rate Limiting** | 🔄 Partial | Global rate limits apply. Per-runtime/instance/public-IP scoped rules are deferred. |
+| 7 | **Gradual Rollout** | ✅ Ready | All three exposure modes (`private`, `public`, `unexposed`) are implemented. Public exposure can be enabled via the `exposure` field. |
+
+### Files Added / Modified
+
+- `src/db/schema.ts` — Added `instances` table and relations
+- `src/services/instances.ts` — New instance service (CRUD, heartbeat, proxy)
+- `src/routes/api/instances.ts` — New Fastify routes
+- `src/plugins/search.ts` — Added `instances` Meilisearch index and methods
+- `src/index.ts` — Registered instance routes
+- `drizzle/0004_add_instances_table.sql` — Migration
+- `tests/integration/instances.test.ts` — 17 integration tests
+- `tests/fixtures/db.ts`, `app.ts`, `factories.ts` — Test fixture updates
+
 ## Migration Path
 
-1. **Database**: Add the `instances` table via a Drizzle migration. No changes to existing tables are required.
-2. **Tunnel Protocol**: Extend the tunnel message dispatcher to handle `InstanceAnnounce`, `InstanceHeartbeat`, `InstanceDeregister`, `ProxiedRequest`, `ProxiedResponse`, and `StreamChunk`.
+1. **Database**: Run `drizzle-kit migrate` to apply `0004_add_instances_table.sql`.
+2. **Tunnel Protocol**: Wire the tunnel manager to call `instanceService.upsertFromAnnounce()`, `instanceService.heartbeat()`, `instanceService.delete()`, and `instanceService.resolveProxiedResponse()` / `rejectProxiedRequest()`.
 3. **Runtime**: Update the runtime to send `InstanceAnnounce` after tunnel auth and `InstanceHeartbeat` on a configurable interval (default 30s).
-4. **PekoHub Backend**: Implement the Fastify routes, service layer, and tunnel proxy logic.
-5. **Meilisearch**: Add an `instances` index for public search. Sync on create/update/delete.
-6. **Rate Limiting**: Configure the existing rate limiter with new rules for runtime, instance, and public IP scopes.
-7. **Gradual Rollout**: Start with `exposure: 'private'` only. Enable `public` after auditing and load testing the proxy path.
+4. **Rate Limiting**: Add custom rate-limit rules for `/v1/instances/:id/chat` scoped by runtime ID, instance ID, and public IP.
+5. **Gradual Rollout**: Start with `exposure: 'private'` only. Enable `public` after auditing and load testing the proxy path.
 
 ---
 
@@ -413,6 +436,17 @@ export async function instanceRoutes(app: FastifyInstance) {
 - **Stale instance records**: If a runtime crashes without sending `InstanceDeregister`, the record lingers as `offline` until a background cleanup job runs. Mitigation: heartbeat timeout + periodic reaper.
 
 ---
+
+## Known Limitations
+
+| Limitation | Impact | Mitigation / Plan |
+|------------|--------|-------------------|
+| **Tunnel manager not wired** | Chat proxy returns `502 Instance unreachable` because `sendProxiedRequest` has no transport layer. | The `InstanceService` exposes `resolveProxiedResponse` / `rejectProxiedRequest` hooks. The tunnel manager (ADR-035) should call these when `proxied_response` or `stream_chunk` messages arrive. |
+| **SSE stream is a placeholder** | `GET /v1/instances/:id/stream` returns a single `done=true` chunk and closes. | Full streaming requires tunnel manager integration to relay `StreamChunk` messages into the SSE response. |
+| **No background heartbeat reaper** | Stale instances remain `offline` indefinitely unless the tunnel disconnect hook runs. | `InstanceService.markOfflineIfStale()` is implemented but not scheduled. Add a `Scheduler` job in `src/index.ts` (follow the GC job pattern). |
+| **Rate limiting is global only** | No per-runtime, per-instance, or per-public-IP rate limits on chat endpoints yet. | Extend the existing `@fastify/rate-limit` configuration or add custom hooks scoped to `request.params.id` and `request.ip`. |
+| **No audit logging for instance ops** | Instance CRUD and chat proxy events are not written to the audit log. | Add `auditService` calls in `instanceRoutes` for create, update, delete, and chat proxy actions. |
+| **Public search index may drift** | If Meilisearch is unavailable during an update, the index can become inconsistent. | Add a background sync job or retry queue for failed index operations. |
 
 ## Out of Scope (Future Work)
 

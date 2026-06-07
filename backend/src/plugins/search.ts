@@ -3,7 +3,8 @@ import { MeiliSearch, type SearchParams } from 'meilisearch';
 import type { FastifyInstance } from 'fastify';
 import type { SearchResultItem } from '@pekohub/shared';
 
-const INDEX_NAME = 'bundles';
+const BUNDLES_INDEX = 'bundles';
+const INSTANCES_INDEX = 'instances';
 
 /**
  * Sanitize a document ID for Meilisearch.
@@ -25,6 +26,25 @@ export interface SearchService {
     perPage: number;
   }>;
   deleteBundle(objectID: string): Promise<void>;
+  indexInstance(doc: {
+    objectID: string;
+    id: string;
+    name: string;
+    type: string;
+    bundleRef?: string;
+    status: string;
+    capabilities: string[];
+    ownerId: number;
+    runtimeDisplayName?: string;
+    createdAt: string;
+  }): Promise<void>;
+  searchInstances(query: string, options?: SearchParams): Promise<{
+    hits: Array<Record<string, unknown>>;
+    total: number;
+    page: number;
+    perPage: number;
+  }>;
+  deleteInstance(objectID: string): Promise<void>;
 }
 
 async function searchPlugin(fastify: FastifyInstance) {
@@ -33,11 +53,12 @@ async function searchPlugin(fastify: FastifyInstance) {
     apiKey: fastify.config.MEILISEARCH_API_KEY,
   });
 
-  const index = client.index(INDEX_NAME);
+  const bundlesIndex = client.index(BUNDLES_INDEX);
+  const instancesIndex = client.index(INSTANCES_INDEX);
 
-  // Ensure index settings on startup
+  // Ensure bundles index settings on startup
   try {
-    await index.updateSettings({
+    await bundlesIndex.updateSettings({
       searchableAttributes: [
         'name',
         'namespace',
@@ -64,7 +85,19 @@ async function searchPlugin(fastify: FastifyInstance) {
       ],
     });
   } catch (err) {
-    fastify.log.warn({ err }, 'Failed to update Meilisearch settings');
+    fastify.log.warn({ err }, 'Failed to update Meilisearch bundle settings');
+  }
+
+  // Ensure instances index settings on startup
+  try {
+    await instancesIndex.updateSettings({
+      searchableAttributes: ['name', 'bundleRef', 'capabilities', 'runtimeDisplayName'],
+      filterableAttributes: ['type', 'status', 'capabilities'],
+      sortableAttributes: ['createdAt'],
+      rankingRules: ['words', 'typo', 'proximity', 'attribute', 'sort', 'exactness'],
+    });
+  } catch (err) {
+    fastify.log.warn({ err }, 'Failed to update Meilisearch instance settings');
   }
 
   const search: SearchService = {
@@ -80,15 +113,14 @@ async function searchPlugin(fastify: FastifyInstance) {
         sanitizedDoc.compatibilityMinVersion = compatibility.minVersion;
         sanitizedDoc.compatibilityMaxVersion = compatibility.maxVersion;
       }
-      await index.addDocuments([sanitizedDoc]);
+      await bundlesIndex.addDocuments([sanitizedDoc]);
     },
 
     async search(query, options = {}) {
-      // Use offset/limit instead of page/hitsPerPage for consistent results across Meilisearch versions
       const page = options.page ?? 0;
       const perPage = options.hitsPerPage ?? 20;
 
-      const result = await index.search<SearchResultItem>(query, {
+      const result = await bundlesIndex.search<SearchResultItem>(query, {
         filter: options.filter,
         sort: options.sort,
         attributesToRetrieve: options.attributesToRetrieve,
@@ -113,7 +145,44 @@ async function searchPlugin(fastify: FastifyInstance) {
     },
 
     async deleteBundle(objectID) {
-      await index.deleteDocument(sanitizeObjectID(objectID));
+      await bundlesIndex.deleteDocument(sanitizeObjectID(objectID));
+    },
+
+    async indexInstance(doc) {
+      await instancesIndex.addDocuments([{
+        id: doc.objectID,
+        name: doc.name,
+        type: doc.type,
+        bundleRef: doc.bundleRef,
+        status: doc.status,
+        capabilities: doc.capabilities,
+        ownerId: doc.ownerId,
+        runtimeDisplayName: doc.runtimeDisplayName,
+        createdAt: doc.createdAt,
+      }]);
+    },
+
+    async searchInstances(query, options = {}) {
+      const page = options.page ?? 0;
+      const perPage = options.hitsPerPage ?? 20;
+
+      const result = await instancesIndex.search<Record<string, unknown>>(query, {
+        filter: options.filter,
+        sort: options.sort,
+        offset: page * perPage,
+        limit: perPage,
+      });
+
+      return {
+        hits: result.hits,
+        total: result.estimatedTotalHits ?? 0,
+        page: page + 1,
+        perPage,
+      };
+    },
+
+    async deleteInstance(objectID) {
+      await instancesIndex.deleteDocument(objectID);
     },
   };
 

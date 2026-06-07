@@ -89,6 +89,9 @@ async function buildApp(): Promise<FastifyInstance> {
     indexBundle: vi.fn().mockResolvedValue(undefined),
     search: vi.fn().mockResolvedValue({ hits: [], total: 0, page: 1, perPage: 20 }),
     deleteBundle: vi.fn().mockResolvedValue(undefined),
+    indexInstance: vi.fn().mockResolvedValue(undefined),
+    searchInstances: vi.fn().mockResolvedValue({ hits: [], total: 0, page: 1, perPage: 20 }),
+    deleteInstance: vi.fn().mockResolvedValue(undefined),
   });
 
   await app.register(bundleRoutes, { prefix: '/v1' });

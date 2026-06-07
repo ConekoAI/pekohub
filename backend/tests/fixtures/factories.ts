@@ -35,6 +35,23 @@ export interface TestBundleVersion {
   size: number;
 }
 
+export interface TestInstance {
+  id: string;
+  type: 'agent' | 'team';
+  name: string;
+  ownerId: number;
+  runtimeId: string;
+  runtimeDisplayName: string | null;
+  bundleRef: string | null;
+  status: 'online' | 'offline' | 'busy' | 'error';
+  exposure: 'private' | 'public' | 'unexposed';
+  allowedUsers: string[];
+  lastSeenAt: Date | null;
+  createdAt: Date;
+  capabilities: string[];
+  metadata: Record<string, unknown>;
+}
+
 /**
  * Create a test user in the database.
  */
@@ -143,4 +160,55 @@ export async function createBundleWithVersions(
   }
 
   return { bundle, versions };
+}
+
+/**
+ * Create a test instance in the database.
+ */
+export async function createInstance(
+  client: PGlite,
+  overrides: Partial<TestInstance> & { ownerId: number }
+): Promise<TestInstance> {
+  const id = overrides.id ?? crypto.randomUUID();
+  const type = overrides.type ?? 'agent';
+  const name = overrides.name ?? faker.word.noun().toLowerCase();
+  const runtimeId = overrides.runtimeId ?? `runtime-${faker.string.alphanumeric(8)}`;
+
+  const result = await client.query(
+    `INSERT INTO instances (id, type, name, owner_id, runtime_id, runtime_display_name, bundle_ref, status, exposure, allowed_users, capabilities, metadata)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+     RETURNING id, type, name, owner_id, runtime_id, runtime_display_name, bundle_ref, status, exposure, allowed_users, last_seen_at, created_at, capabilities, metadata`,
+    [
+      id,
+      type,
+      name,
+      overrides.ownerId,
+      runtimeId,
+      overrides.runtimeDisplayName ?? null,
+      overrides.bundleRef ?? null,
+      overrides.status ?? 'offline',
+      overrides.exposure ?? 'unexposed',
+      JSON.stringify(overrides.allowedUsers ?? []),
+      JSON.stringify(overrides.capabilities ?? []),
+      JSON.stringify(overrides.metadata ?? {}),
+    ]
+  );
+
+  const row = result.rows[0];
+  return {
+    id: row.id,
+    type: row.type,
+    name: row.name,
+    ownerId: row.owner_id,
+    runtimeId: row.runtime_id,
+    runtimeDisplayName: row.runtime_display_name,
+    bundleRef: row.bundle_ref,
+    status: row.status,
+    exposure: row.exposure,
+    allowedUsers: row.allowed_users ?? [],
+    lastSeenAt: row.last_seen_at,
+    createdAt: row.created_at,
+    capabilities: row.capabilities ?? [],
+    metadata: row.metadata ?? {},
+  } as TestInstance;
 }
