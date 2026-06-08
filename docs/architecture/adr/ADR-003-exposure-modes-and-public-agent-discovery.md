@@ -511,5 +511,5 @@ Rejected. Public access is intentionally anonymous. For future paid agents, we m
 - ADR-002: Remote Instance Management API
 - ADR-035: Tunnel Protocol
 - ADR-033: Ownership & Permission Model
-- ADR-036: Remote Instance Management
+- ADR-002-pekohub: Remote Instance Management API
 - [Meilisearch Documentation](https://www.meilisearch.com/docs)
