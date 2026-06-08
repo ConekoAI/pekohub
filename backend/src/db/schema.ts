@@ -179,12 +179,32 @@ export const instances = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     capabilities: jsonb('capabilities').default('[]'),
     metadata: jsonb('metadata').default('{}'),
+
+    // Public profile fields (ADR-003)
+    publicName: varchar('public_name', { length: 255 }),
+    description: text('description'),
+    tags: jsonb('tags').default('[]'),
+    category: varchar('category', { length: 32 }),
+    tosRequired: boolean('tos_required').default(false),
+    tosText: text('tos_text'),
+    dailyQuota: integer('daily_quota'),
+    weeklyQuota: integer('weekly_quota'),
+
+    // Discovery & curation
+    publishedAt: timestamp('published_at', { withTimezone: true }),
+    featured: boolean('featured').default(false),
+
+    // Monetization hooks (future)
+    monetization: jsonb('monetization').default('{"enabled":false}'),
   },
   (table) => ({
     ownerIdIdx: index('idx_instances_owner_id').on(table.ownerId),
     runtimeIdIdx: index('idx_instances_runtime_id').on(table.runtimeId),
     exposureStatusIdx: index('idx_instances_exposure_status').on(table.exposure, table.status),
     lastSeenAtIdx: index('idx_instances_last_seen_at').on(table.lastSeenAt),
+    publishedAtIdx: index('idx_instances_published_at').on(table.publishedAt),
+    featuredIdx: index('idx_instances_featured').on(table.featured),
+    categoryIdx: index('idx_instances_category').on(table.category),
   })
 );
 

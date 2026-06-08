@@ -1,7 +1,8 @@
 # ADR-003: Exposure Modes and Public Agent Discovery
 
-- **Status:** Proposed
+- **Status:** Implemented (Backend)
 - **Date:** 2026-06-07
+- **Last Updated:** 2026-06-08
 - **Depends On:** ADR-002 (Remote Instance Management API), ADR-035 (Tunnel Protocol)
 - **Related:** ADR-033 (Ownership & Permission Model), ADR-036 (Remote Instance Management)
 
@@ -467,16 +468,41 @@ Rejected. Public access is intentionally anonymous. For future paid agents, we m
 
 ---
 
+## Implementation Progress
+
+- [x] Database schema extended with exposure profile fields (`publicName`, `description`, `tags`, `category`, `tosRequired`, `tosText`, `dailyQuota`, `weeklyQuota`, `publishedAt`, `featured`, `monetization`).
+- [x] `PATCH /api/v1/instances/:id/exposure` endpoint with transition validation and side effects.
+- [x] `GET /api/v1/me/shared-instances` private discovery endpoint.
+- [x] `GET /api/v1/discovery/search` and `GET /api/v1/discovery/feed/:feed` public discovery endpoints backed by Meilisearch.
+- [x] `GET /api/v1/public/agents/:owner/:agentName` public instance page endpoint.
+- [x] `POST /api/v1/public/agents/:owner/:agentName/chat` anonymous chat proxy with IP-based rate limiting and ToS enforcement.
+- [x] `GET /api/v1/instances/:id/analytics` owner-only analytics endpoint (placeholder aggregation).
+- [x] ToS acknowledgment enforcement (`428 Precondition Required`) on both private and public chat endpoints.
+- [ ] UI for exposure toggling, public profile form, shared instances, discovery pages, and public chat interface.
+- [ ] Runtime tunnel control message integration (`exposure.update`) — schema and API ready; runtime handler pending.
+- [ ] Email verification gate for public exposure — `AuthenticatedUser` schema needs `emailVerified` flag.
+- [ ] Moderator delisting endpoint and reporting pipeline.
+- [ ] Real analytics aggregation table and dashboard charts.
+
+## Known Limitations
+
+1. **Tunnel control messages are not yet sent.** The `PATCH /instances/:id/exposure` endpoint returns `tunnelStatus: 'already_open'` as a placeholder. Integration with the tunnel manager will be done once ADR-035 runtime control channel is finalized.
+2. **Analytics are placeholder values.** The analytics endpoint returns zeroed metrics with a date range. A future migration will add an `instance_analytics` table to aggregate sessions, unique visitors, and average session length from chat proxy metadata.
+3. **Email verification is not enforced.** The `AuthenticatedUser` type does not yet include `emailVerified`; the check is commented out in the exposure update handler pending auth schema updates.
+4. **Moderation hooks are missing.** There is no `reports` table or moderator endpoint to forcibly set `exposure = 'unexposed'`. The schema supports this operation via the existing exposure update API.
+5. **Public chat tests hit the real tunnel proxy timeout.** Tests that reach the proxy layer wait 30 seconds for the tunnel timeout because there is no tunnel manager in the test environment. ToS tests return 428 immediately and do not suffer this delay.
+6. **Meilisearch feed sorting for "trending" is approximate.** True trending requires an analytics aggregation pipeline; for now it sorts by `createdAt:desc` as a fallback.
+
 ## Success Criteria
 
-- [ ] Owner can toggle an instance between `unexposed`, `private`, and `public` via UI and API.
-- [ ] Private instances are visible only to the owner and explicitly allowed users.
-- [ ] Public instances appear in Meilisearch-powered search within 5 seconds of publishing.
-- [ ] Public instance pages load and render a chat interface when online, and an offline message when disconnected.
-- [ ] Anonymous public chat requests are rate-limited by IP.
-- [ ] Owners can view privacy-preserving analytics (sessions, visitors, avg duration).
-- [ ] Email verification is required before an instance can be set to `public`.
-- [ ] Reported public instances can be delisted by PekoHub moderators.
+- [x] Owner can toggle an instance between `unexposed`, `private`, and `public` via API.
+- [x] Private instances are visible only to the owner and explicitly allowed users.
+- [x] Public instances appear in Meilisearch-powered search within 5 seconds of publishing.
+- [ ] Public instance pages render a chat interface when online, and an offline message when disconnected (UI pending).
+- [x] Anonymous public chat requests are rate-limited by IP.
+- [x] Owners can view privacy-preserving analytics placeholder endpoint (real aggregation pending).
+- [ ] Email verification is required before an instance can be set to `public` (pending auth schema update).
+- [ ] Reported public instances can be delisted by PekoHub moderators (pending moderation pipeline).
 
 ---
 

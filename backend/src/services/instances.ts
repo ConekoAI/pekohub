@@ -5,7 +5,16 @@ import type { SQL } from 'drizzle-orm';
 
 export type InstanceType = 'agent' | 'team';
 export type InstanceStatus = 'online' | 'offline' | 'busy' | 'error';
-export type InstanceExposure = 'private' | 'public' | 'unexposed';
+export type InstanceExposure = 'unexposed' | 'private' | 'public';
+
+export type PublicCategory =
+  | 'productivity'
+  | 'coding'
+  | 'creative'
+  | 'business'
+  | 'entertainment'
+  | 'education'
+  | 'other';
 
 export interface InstanceRecord {
   id: string;
@@ -22,6 +31,28 @@ export interface InstanceRecord {
   createdAt: Date;
   capabilities: string[];
   metadata: Record<string, unknown>;
+
+  // Public profile (ADR-003)
+  publicName: string | null;
+  description: string | null;
+  tags: string[];
+  category: PublicCategory | null;
+  tosRequired: boolean;
+  tosText: string | null;
+  dailyQuota: number | null;
+  weeklyQuota: number | null;
+
+  // Discovery & curation
+  publishedAt: Date | null;
+  featured: boolean;
+
+  // Monetization hooks
+  monetization: {
+    enabled: boolean;
+    pricingModel: 'free' | 'subscription' | 'usage' | null;
+    priceCents: number | null;
+    stripeProductId: string | null;
+  };
 }
 
 export interface CreateInstanceInput {
@@ -37,6 +68,16 @@ export interface CreateInstanceInput {
   allowedUsers?: string[];
   capabilities?: string[];
   metadata?: Record<string, unknown>;
+
+  // Public profile
+  publicName?: string;
+  description?: string;
+  tags?: string[];
+  category?: PublicCategory;
+  tosRequired?: boolean;
+  tosText?: string;
+  dailyQuota?: number;
+  weeklyQuota?: number;
 }
 
 export interface UpdateInstanceInput {
@@ -47,6 +88,18 @@ export interface UpdateInstanceInput {
   allowedUsers?: string[];
   capabilities?: string[];
   metadata?: Record<string, unknown>;
+
+  // Public profile
+  publicName?: string;
+  description?: string;
+  tags?: string[];
+  category?: PublicCategory;
+  tosRequired?: boolean;
+  tosText?: string;
+  dailyQuota?: number;
+  weeklyQuota?: number;
+  publishedAt?: Date | null;
+  featured?: boolean;
 }
 
 export interface ListInstancesOptions {
@@ -121,6 +174,14 @@ export class InstanceService {
         capabilities: input.capabilities ?? [],
         metadata: input.metadata ?? {},
         lastSeenAt: input.status === 'online' ? new Date() : null,
+        publicName: input.publicName ?? null,
+        description: input.description ?? null,
+        tags: input.tags ?? [],
+        category: input.category ?? null,
+        tosRequired: input.tosRequired ?? false,
+        tosText: input.tosText ?? null,
+        dailyQuota: input.dailyQuota ?? null,
+        weeklyQuota: input.weeklyQuota ?? null,
       })
       .returning();
 
@@ -177,6 +238,16 @@ export class InstanceService {
     if (input.allowedUsers !== undefined) values.allowedUsers = input.allowedUsers;
     if (input.capabilities !== undefined) values.capabilities = input.capabilities;
     if (input.metadata !== undefined) values.metadata = input.metadata;
+    if (input.publicName !== undefined) values.publicName = input.publicName;
+    if (input.description !== undefined) values.description = input.description;
+    if (input.tags !== undefined) values.tags = input.tags;
+    if (input.category !== undefined) values.category = input.category;
+    if (input.tosRequired !== undefined) values.tosRequired = input.tosRequired;
+    if (input.tosText !== undefined) values.tosText = input.tosText;
+    if (input.dailyQuota !== undefined) values.dailyQuota = input.dailyQuota;
+    if (input.weeklyQuota !== undefined) values.weeklyQuota = input.weeklyQuota;
+    if (input.publishedAt !== undefined) values.publishedAt = input.publishedAt;
+    if (input.featured !== undefined) values.featured = input.featured;
 
     if (Object.keys(values).length === 0) {
       return this.getById(id);
@@ -291,6 +362,12 @@ export class InstanceService {
   // ── Helpers ────────────────────────────────────────────────────────────────
 
   private toRecord(row: typeof instances.$inferSelect): InstanceRecord {
+    const monetization = (row.monetization as Record<string, unknown> | null) ?? {
+      enabled: false,
+      pricingModel: null,
+      priceCents: null,
+      stripeProductId: null,
+    };
     return {
       id: row.id,
       type: row.type as InstanceType,
@@ -306,6 +383,22 @@ export class InstanceService {
       createdAt: row.createdAt,
       capabilities: (row.capabilities as string[]) ?? [],
       metadata: (row.metadata as Record<string, unknown>) ?? {},
+      publicName: row.publicName ?? null,
+      description: row.description ?? null,
+      tags: (row.tags as string[]) ?? [],
+      category: (row.category as PublicCategory | null) ?? null,
+      tosRequired: row.tosRequired ?? false,
+      tosText: row.tosText ?? null,
+      dailyQuota: row.dailyQuota ?? null,
+      weeklyQuota: row.weeklyQuota ?? null,
+      publishedAt: row.publishedAt ?? null,
+      featured: row.featured ?? false,
+      monetization: {
+        enabled: (monetization.enabled as boolean) ?? false,
+        pricingModel: (monetization.pricingModel as 'free' | 'subscription' | 'usage' | null) ?? null,
+        priceCents: (monetization.priceCents as number | null) ?? null,
+        stripeProductId: (monetization.stripeProductId as string | null) ?? null,
+      },
     };
   }
 }

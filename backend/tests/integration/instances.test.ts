@@ -322,5 +322,280 @@ describe('Instance API', () => {
       // Will 502 because no tunnel, but should pass auth/exposure checks
       expect(response.statusCode).toBe(502);
     }, 35000);
+
+    it('should require ToS acknowledgment when tos_required is true', async () => {
+      const app = await buildTestApp({ testDb });
+      const user = await createUser(testDb.client, { namespace: 'alice' });
+      const instance = await createInstance(testDb.client, {
+        ownerId: user.id,
+        name: 'tos-agent',
+        exposure: 'public',
+        tosRequired: true,
+        tosText: 'Please agree to our terms.',
+      });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: `/v1/instances/${instance.id}/chat`,
+        payload: { message: 'hello' },
+      });
+
+      expect(response.statusCode).toBe(428);
+      const body = JSON.parse(response.payload);
+      expect(body.error).toBe('Terms of Service acknowledgment required');
+      expect(body.tosText).toBe('Please agree to our terms.');
+    });
+  });
+
+  describe('PATCH /v1/instances/:id/exposure', () => {
+    it('should update exposure to public with public profile', async () => {
+      const app = await buildTestApp({ testDb });
+      const user = await createUser(testDb.client, { namespace: 'alice' });
+      const headers = await authHeaders(user);
+      const instance = await createInstance(testDb.client, { ownerId: user.id, name: 'my-agent' });
+
+      const response = await app.inject({
+        method: 'PATCH',
+        url: `/v1/instances/${instance.id}/exposure`,
+        headers,
+        payload: {
+          exposure: 'public',
+          public_profile: {
+            public_name: 'My Public Agent',
+            description: 'A helpful agent',
+            tags: ['ai', 'productivity'],
+            category: 'productivity',
+            tos_required: true,
+            tos_text: 'Agree to terms',
+            daily_quota: 100,
+            weekly_quota: 500,
+          },
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.payload);
+      expect(body.instance.exposure).toBe('public');
+      expect(body.instance.publicName).toBe('My Public Agent');
+      expect(body.instance.description).toBe('A helpful agent');
+      expect(body.instance.tags).toEqual(['ai', 'productivity']);
+      expect(body.instance.category).toBe('productivity');
+      expect(body.instance.tosRequired).toBe(true);
+      expect(body.instance.dailyQuota).toBe(100);
+      expect(body.instance.weeklyQuota).toBe(500);
+      expect(body.instance.publishedAt).toBeDefined();
+    });
+
+    it('should reject invalid exposure transition', async () => {
+      const app = await buildTestApp({ testDb });
+      const user = await createUser(testDb.client, { namespace: 'alice' });
+      const headers = await authHeaders(user);
+      const instance = await createInstance(testDb.client, { ownerId: user.id, name: 'my-agent', exposure: 'public' });
+
+      const response = await app.inject({
+        method: 'PATCH',
+        url: `/v1/instances/${instance.id}/exposure`,
+        headers,
+        payload: { exposure: 'public' },
+      });
+
+      expect(response.statusCode).toBe(400);
+      const body = JSON.parse(response.payload);
+      expect(body.error).toContain('Invalid exposure transition');
+    });
+
+    it('should return 403 for non-owner', async () => {
+      const app = await buildTestApp({ testDb });
+      const owner = await createUser(testDb.client, { namespace: 'alice' });
+      const other = await createUser(testDb.client, { namespace: 'bob' });
+      const headers = await authHeaders(other);
+      const instance = await createInstance(testDb.client, { ownerId: owner.id, name: 'my-agent' });
+
+      const response = await app.inject({
+        method: 'PATCH',
+        url: `/v1/instances/${instance.id}/exposure`,
+        headers,
+        payload: { exposure: 'public', public_profile: { public_name: 'X', description: 'Y', tags: [], category: 'other' } },
+      });
+
+      expect(response.statusCode).toBe(403);
+    });
+  });
+
+  describe('GET /v1/me/shared-instances', () => {
+    it('should list private instances shared with the user', async () => {
+      const app = await buildTestApp({ testDb });
+      const owner = await createUser(testDb.client, { namespace: 'alice' });
+      const viewer = await createUser(testDb.client, { namespace: 'bob' });
+      const headers = await authHeaders(viewer);
+
+      await createInstance(testDb.client, {
+        ownerId: owner.id,
+        name: 'shared-agent',
+        exposure: 'private',
+        allowedUsers: [String(viewer.id)],
+        status: 'online',
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/v1/me/shared-instances',
+        headers,
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.payload);
+      expect(body.instances).toHaveLength(1);
+      expect(body.instances[0].agentName).toBe('shared-agent');
+      expect(body.instances[0].status).toBe('online');
+    });
+
+    it('should return 401 when not authenticated', async () => {
+      const app = await buildTestApp({ testDb });
+      const response = await app.inject({
+        method: 'GET',
+        url: '/v1/me/shared-instances',
+      });
+      expect(response.statusCode).toBe(401);
+    });
+  });
+
+  describe('GET /v1/public/agents/:owner/:agentName', () => {
+    it('should return public instance page data', async () => {
+      const app = await buildTestApp({ testDb });
+      const user = await createUser(testDb.client, { namespace: 'alice', displayName: 'Alice' });
+      await createInstance(testDb.client, {
+        ownerId: user.id,
+        name: 'public-agent',
+        exposure: 'public',
+        publicName: 'Alice Agent',
+        description: 'An agent by Alice',
+        capabilities: ['chat', 'search'],
+        status: 'online',
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/v1/public/agents/alice/public-agent',
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.payload);
+      expect(body.instance.publicName).toBe('Alice Agent');
+      expect(body.instance.description).toBe('An agent by Alice');
+      expect(body.instance.owner.name).toBe('Alice');
+      expect(body.instance.capabilities).toEqual(['chat', 'search']);
+      expect(body.instance.status).toBe('online');
+    });
+
+    it('should return 404 for non-public instance', async () => {
+      const app = await buildTestApp({ testDb });
+      const user = await createUser(testDb.client, { namespace: 'alice' });
+      await createInstance(testDb.client, {
+        ownerId: user.id,
+        name: 'private-agent',
+        exposure: 'private',
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/v1/public/agents/alice/private-agent',
+      });
+
+      expect(response.statusCode).toBe(404);
+    });
+  });
+
+  describe('POST /v1/public/agents/:owner/:agentName/chat', () => {
+    it('should proxy chat for public agent', async () => {
+      const app = await buildTestApp({ testDb });
+      const user = await createUser(testDb.client, { namespace: 'alice' });
+      await createInstance(testDb.client, {
+        ownerId: user.id,
+        name: 'public-agent',
+        exposure: 'public',
+        status: 'online',
+      });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/public/agents/alice/public-agent/chat',
+        payload: { message: 'hello' },
+      });
+
+      // Will 502 because no tunnel
+      expect(response.statusCode).toBe(502);
+    }, 35000);
+
+    it('should require ToS acknowledgment when tos_required is true', async () => {
+      const app = await buildTestApp({ testDb });
+      const user = await createUser(testDb.client, { namespace: 'alice' });
+      await createInstance(testDb.client, {
+        ownerId: user.id,
+        name: 'tos-agent',
+        exposure: 'public',
+        tosRequired: true,
+        tosText: 'You must agree.',
+      });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/public/agents/alice/tos-agent/chat',
+        payload: { message: 'hello' },
+      });
+
+      expect(response.statusCode).toBe(428);
+      const body = JSON.parse(response.payload);
+      expect(body.error).toBe('Terms of Service acknowledgment required');
+      expect(body.tosText).toBe('You must agree.');
+    });
+
+    it('should return 404 for non-existent public agent', async () => {
+      const app = await buildTestApp({ testDb });
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/public/agents/alice/missing/chat',
+        payload: { message: 'hello' },
+      });
+      expect(response.statusCode).toBe(404);
+    });
+  });
+
+  describe('GET /v1/instances/:id/analytics', () => {
+    it('should return analytics for owner', async () => {
+      const app = await buildTestApp({ testDb });
+      const user = await createUser(testDb.client, { namespace: 'alice' });
+      const headers = await authHeaders(user);
+      const instance = await createInstance(testDb.client, { ownerId: user.id, name: 'my-agent' });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/v1/instances/${instance.id}/analytics`,
+        headers,
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.payload);
+      expect(body).toHaveProperty('totalSessions');
+      expect(body).toHaveProperty('uniqueVisitors');
+      expect(body).toHaveProperty('avgSessionLengthSeconds');
+      expect(body).toHaveProperty('period');
+    });
+
+    it('should return 403 for non-owner', async () => {
+      const app = await buildTestApp({ testDb });
+      const owner = await createUser(testDb.client, { namespace: 'alice' });
+      const other = await createUser(testDb.client, { namespace: 'bob' });
+      const headers = await authHeaders(other);
+      const instance = await createInstance(testDb.client, { ownerId: owner.id, name: 'my-agent' });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/v1/instances/${instance.id}/analytics`,
+        headers,
+      });
+
+      expect(response.statusCode).toBe(403);
+    });
   });
 });

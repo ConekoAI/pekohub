@@ -134,12 +134,26 @@ const DDL_STATEMENTS = [
     last_seen_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
     capabilities JSONB DEFAULT '[]',
-    metadata JSONB DEFAULT '{}'
+    metadata JSONB DEFAULT '{}',
+    public_name VARCHAR(255),
+    description TEXT,
+    tags JSONB DEFAULT '[]',
+    category VARCHAR(32),
+    tos_required BOOLEAN DEFAULT FALSE,
+    tos_text TEXT,
+    daily_quota INTEGER,
+    weekly_quota INTEGER,
+    published_at TIMESTAMPTZ,
+    featured BOOLEAN DEFAULT FALSE,
+    monetization JSONB DEFAULT '{"enabled":false}'
   );`,
   `CREATE INDEX IF NOT EXISTS idx_instances_owner_id ON instances(owner_id);`,
   `CREATE INDEX IF NOT EXISTS idx_instances_runtime_id ON instances(runtime_id);`,
   `CREATE INDEX IF NOT EXISTS idx_instances_exposure_status ON instances(exposure, status);`,
   `CREATE INDEX IF NOT EXISTS idx_instances_last_seen_at ON instances(last_seen_at);`,
+  `CREATE INDEX IF NOT EXISTS idx_instances_published_at ON instances(published_at);`,
+  `CREATE INDEX IF NOT EXISTS idx_instances_featured ON instances(featured);`,
+  `CREATE INDEX IF NOT EXISTS idx_instances_category ON instances(category);`,
 ];
 
 /**

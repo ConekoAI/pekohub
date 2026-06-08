@@ -37,6 +37,12 @@ export interface SearchService {
     ownerId: number;
     runtimeDisplayName?: string;
     createdAt: string;
+    publicName?: string;
+    description?: string;
+    tags?: string[];
+    category?: string;
+    featured?: boolean;
+    publishedAt?: string;
   }): Promise<void>;
   searchInstances(query: string, options?: SearchParams): Promise<{
     hits: Array<Record<string, unknown>>;
@@ -91,9 +97,9 @@ async function searchPlugin(fastify: FastifyInstance) {
   // Ensure instances index settings on startup
   try {
     await instancesIndex.updateSettings({
-      searchableAttributes: ['name', 'bundleRef', 'capabilities', 'runtimeDisplayName'],
-      filterableAttributes: ['type', 'status', 'capabilities'],
-      sortableAttributes: ['createdAt'],
+      searchableAttributes: ['name', 'publicName', 'description', 'tags', 'bundleRef', 'capabilities', 'runtimeDisplayName'],
+      filterableAttributes: ['type', 'status', 'capabilities', 'category', 'featured', 'exposure'],
+      sortableAttributes: ['createdAt', 'publishedAt'],
       rankingRules: ['words', 'typo', 'proximity', 'attribute', 'sort', 'exactness'],
     });
   } catch (err) {
@@ -159,6 +165,13 @@ async function searchPlugin(fastify: FastifyInstance) {
         ownerId: doc.ownerId,
         runtimeDisplayName: doc.runtimeDisplayName,
         createdAt: doc.createdAt,
+        publicName: doc.publicName,
+        description: doc.description,
+        tags: doc.tags,
+        category: doc.category,
+        featured: doc.featured,
+        publishedAt: doc.publishedAt,
+        exposure: 'public',
       }]);
     },
 

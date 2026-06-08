@@ -36,6 +36,13 @@
       "when": 1780841381309,
       "tag": "0004_add_instances_table",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1780883419549,
+      "tag": "0005_add_exposure_profile_fields",
+      "breakpoints": true
     }
   ]
 }

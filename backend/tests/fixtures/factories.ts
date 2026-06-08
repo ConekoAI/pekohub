@@ -50,6 +50,16 @@ export interface TestInstance {
   createdAt: Date;
   capabilities: string[];
   metadata: Record<string, unknown>;
+  publicName: string | null;
+  description: string | null;
+  tags: string[];
+  category: string | null;
+  tosRequired: boolean;
+  tosText: string | null;
+  dailyQuota: number | null;
+  weeklyQuota: number | null;
+  publishedAt: Date | null;
+  featured: boolean;
 }
 
 /**
@@ -175,9 +185,17 @@ export async function createInstance(
   const runtimeId = overrides.runtimeId ?? `runtime-${faker.string.alphanumeric(8)}`;
 
   const result = await client.query(
-    `INSERT INTO instances (id, type, name, owner_id, runtime_id, runtime_display_name, bundle_ref, status, exposure, allowed_users, capabilities, metadata)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-     RETURNING id, type, name, owner_id, runtime_id, runtime_display_name, bundle_ref, status, exposure, allowed_users, last_seen_at, created_at, capabilities, metadata`,
+    `INSERT INTO instances (
+      id, type, name, owner_id, runtime_id, runtime_display_name, bundle_ref,
+      status, exposure, allowed_users, capabilities, metadata,
+      public_name, description, tags, category, tos_required, tos_text,
+      daily_quota, weekly_quota, published_at, featured
+    )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+     RETURNING id, type, name, owner_id, runtime_id, runtime_display_name, bundle_ref,
+       status, exposure, allowed_users, last_seen_at, created_at, capabilities, metadata,
+       public_name, description, tags, category, tos_required, tos_text,
+       daily_quota, weekly_quota, published_at, featured`,
     [
       id,
       type,
@@ -191,6 +209,16 @@ export async function createInstance(
       JSON.stringify(overrides.allowedUsers ?? []),
       JSON.stringify(overrides.capabilities ?? []),
       JSON.stringify(overrides.metadata ?? {}),
+      overrides.publicName ?? null,
+      overrides.description ?? null,
+      JSON.stringify(overrides.tags ?? []),
+      overrides.category ?? null,
+      overrides.tosRequired ?? false,
+      overrides.tosText ?? null,
+      overrides.dailyQuota ?? null,
+      overrides.weeklyQuota ?? null,
+      overrides.publishedAt ?? null,
+      overrides.featured ?? false,
     ]
   );
 
@@ -210,5 +238,15 @@ export async function createInstance(
     createdAt: row.created_at,
     capabilities: row.capabilities ?? [],
     metadata: row.metadata ?? {},
+    publicName: row.public_name ?? null,
+    description: row.description ?? null,
+    tags: row.tags ?? [],
+    category: row.category ?? null,
+    tosRequired: row.tos_required ?? false,
+    tosText: row.tos_text ?? null,
+    dailyQuota: row.daily_quota ?? null,
+    weeklyQuota: row.weekly_quota ?? null,
+    publishedAt: row.published_at ?? null,
+    featured: row.featured ?? false,
   } as TestInstance;
 }
