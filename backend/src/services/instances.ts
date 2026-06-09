@@ -1,5 +1,5 @@
 import { db } from '../db/index.js';
-import { instances, users } from '../db/schema.js';
+import { instances } from '../db/schema.js';
 import { eq, and, sql, desc, count, gte, lt } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 
@@ -136,19 +136,6 @@ export interface StreamChunkPayload {
   chunk: string;
   done: boolean;
 }
-
-/**
- * In-memory registry for pending proxied requests.
- * Maps requestId -> { resolve, reject, reply }
- */
-const pendingRequests = new Map<
-  string,
-  {
-    resolve: (value: { status: number; body: unknown }) => void;
-    reject: (reason: Error) => void;
-    reply?: unknown;
-  }
->();
 
 /**
  * Instance management service.
@@ -312,51 +299,6 @@ export class InstanceService {
     if (userId === null) return false;
     if (instance.ownerId === userId) return true;
     return instance.allowedUsers.some((u) => String(u) === String(userId));
-  }
-
-  // ── Tunnel Proxy ───────────────────────────────────────────────────────────
-
-  async sendProxiedRequest(
-    runtimeId: string,
-    payload: ProxiedRequestPayload,
-    timeoutMs: number = 30_000
-  ): Promise<{ status: number; body: unknown }> {
-    return new Promise((resolve, reject) => {
-      pendingRequests.set(payload.requestId, { resolve, reject });
-
-      // TODO: Integrate with actual tunnel manager to send `proxied_request` message
-      // For now, the tunnel manager should call `resolveProxiedResponse` when a
-      // `proxied_response` or `stream_chunk` (with done=true) arrives.
-
-      // Timeout safeguard
-      const timer = setTimeout(() => {
-        if (pendingRequests.has(payload.requestId)) {
-          pendingRequests.delete(payload.requestId);
-          reject(new Error('Proxy request timeout'));
-        }
-      }, timeoutMs);
-
-      // Ensure timer doesn't keep the process alive in tests
-      if (timer.unref) {
-        timer.unref();
-      }
-    });
-  }
-
-  resolveProxiedResponse(requestId: string, status: number, body: unknown): void {
-    const pending = pendingRequests.get(requestId);
-    if (pending) {
-      pendingRequests.delete(requestId);
-      pending.resolve({ status, body });
-    }
-  }
-
-  rejectProxiedRequest(requestId: string, error: Error): void {
-    const pending = pendingRequests.get(requestId);
-    if (pending) {
-      pendingRequests.delete(requestId);
-      pending.reject(error);
-    }
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────

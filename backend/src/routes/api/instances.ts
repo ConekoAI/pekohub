@@ -343,8 +343,20 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       fastify.log.warn({ err }, 'Failed to sync instance in Meilisearch during exposure update');
     }
 
-    // TODO: notify runtime via tunnel control channel when tunnel manager is integrated
-    // fastify.tunnel.sendControlMessage(instance.runtimeId, { type: 'exposure.update', payload: { instanceId: id, exposure } });
+    // Notify runtime via tunnel control channel
+    if (fastify.tunnelManager.isRuntimeConnected(instance.runtimeId)) {
+      tunnelStatus = 'opened';
+      await fastify.tunnelRouter.sendControl(instance.runtimeId, {
+        type: 'exposure_update',
+        payload: {
+          instanceId: id,
+          exposure,
+          allowedUserIds: allowed_users,
+        },
+      });
+    } else {
+      tunnelStatus = 'closed';
+    }
 
     return {
       instance: updated,
@@ -410,17 +422,14 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     }
 
     // Proxy through tunnel
-    const requestId = crypto.randomUUID();
     try {
-      const response = await instanceService.sendProxiedRequest(instance.runtimeId, {
-        requestId,
-        instanceId: id,
-        method: 'chat',
-        body: body.data,
-        headers: { 'content-type': 'application/json' },
-      });
-
-      return reply.status(response.status).send(response.body);
+      return await fastify.tunnelRouter.proxyChat(
+        instance.runtimeId,
+        id,
+        body.data,
+        { 'content-type': 'application/json' },
+        reply
+      );
     } catch (err) {
       fastify.log.warn({ err, instanceId: id }, 'Chat proxy failed');
       return reply.status(502).send({ error: 'Instance unreachable' });
@@ -449,19 +458,25 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       }
     }
 
-    // Set up SSE
-    reply.raw.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-    });
-
-    const requestId = crypto.randomUUID();
-
-    // TODO: Integrate with tunnel manager to stream chunks.
-    // For now, send a placeholder and close.
-    reply.raw.write(`data: ${JSON.stringify({ requestId, chunk: '', done: true })}\n\n`);
-    reply.raw.end();
+    // Proxy through tunnel as an SSE stream
+    try {
+      return await fastify.tunnelRouter.proxyStream(
+        instance.runtimeId,
+        id,
+        {},
+        { 'content-type': 'application/json' },
+        reply
+      );
+    } catch (err) {
+      fastify.log.warn({ err, instanceId: id }, 'Stream proxy failed');
+      reply.raw.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      });
+      reply.raw.write(`event: error\ndata: ${JSON.stringify({ message: 'Instance unreachable' })}\n\n`);
+      reply.raw.end();
+    }
   });
 
   // ── List public instances ──────────────────────────────────────────────────
@@ -754,17 +769,14 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     }
 
     // Proxy through tunnel
-    const requestId = crypto.randomUUID();
     try {
-      const response = await instanceService.sendProxiedRequest(instance.runtimeId, {
-        requestId,
-        instanceId: instance.id,
-        method: 'chat',
-        body: body.data,
-        headers: { 'content-type': 'application/json' },
-      });
-
-      return reply.status(response.status).send(response.body);
+      return await fastify.tunnelRouter.proxyChat(
+        instance.runtimeId,
+        instance.id,
+        body.data,
+        { 'content-type': 'application/json' },
+        reply
+      );
     } catch (err) {
       fastify.log.warn({ err, instanceId: instance.id }, 'Public chat proxy failed');
       return reply.status(502).send({ error: 'Instance unreachable' });

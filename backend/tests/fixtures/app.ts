@@ -87,6 +87,10 @@ export async function buildTestApp(options: TestAppOptions) {
   // Mock search plugin
   app.decorate('search', createMockSearch());
 
+  // Mock tunnel plugin (skip real WebSocket server in tests)
+  app.decorate('tunnelManager', createMockTunnelManager());
+  app.decorate('tunnelRouter', createMockTunnelRouter(app.tunnelManager));
+
   // Register routes
   await app.register(ociRoutes);
   await app.register(searchApiRoutes, { prefix: '/v1' });
@@ -169,10 +173,41 @@ function createMockSearch() {
   };
 }
 
+function createMockTunnelManager() {
+  return {
+    startReaper() {},
+    stopReaper() {},
+    isRuntimeConnected() {
+      return false;
+    },
+    async broadcastControl() {},
+    async sendProxiedRequest() {
+      throw new Error('Runtime not connected');
+    },
+    async startStream() {
+      throw new Error('Runtime not connected');
+    },
+  };
+}
+
+function createMockTunnelRouter(_manager: ReturnType<typeof createMockTunnelManager>) {
+  return {
+    async proxyChat() {
+      throw new Error('Runtime not connected');
+    },
+    async proxyStream() {
+      throw new Error('Runtime not connected');
+    },
+    async sendControl() {},
+  };
+}
+
 // Type augmentation for mock plugins
 declare module 'fastify' {
   interface FastifyInstance {
     storage: ReturnType<typeof createMockStorage>;
     search: ReturnType<typeof createMockSearch>;
+    tunnelManager: ReturnType<typeof createMockTunnelManager>;
+    tunnelRouter: ReturnType<typeof createMockTunnelRouter>;
   }
 }

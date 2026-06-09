@@ -10,6 +10,7 @@ import configPlugin from './plugins/config.js';
 import authPlugin from './plugins/auth.js';
 import storagePlugin from './plugins/storage.js';
 import searchPlugin from './plugins/search.js';
+import tunnelPlugin from './plugins/tunnel.js';
 
 import ociRoutes from './routes/oci/index.js';
 import searchApiRoutes from './routes/api/search.js';
@@ -68,6 +69,7 @@ async function main() {
   await app.register(authPlugin);
   await app.register(storagePlugin);
   await app.register(searchPlugin);
+  await app.register(tunnelPlugin);
 
   // Swagger / OpenAPI
   await app.register(swagger, {
