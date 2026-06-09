@@ -1,9 +1,9 @@
-import type { FastifyInstance } from 'fastify';
-import { db } from '../../db/index.js';
-import { bundles, bundleVersions, pullStats, blobs } from '../../db/schema.js';
-import { eq, and, sql, inArray } from 'drizzle-orm';
-import { BundleDetail } from '@pekohub/shared';
-import { auditService } from '../../services/audit.js';
+import type { FastifyInstance } from "fastify";
+import { db } from "../../db/index.js";
+import { bundles, bundleVersions, pullStats, blobs } from "../../db/schema.js";
+import { eq, and, sql, inArray } from "drizzle-orm";
+import { BundleDetail } from "@pekohub/shared";
+import { auditService } from "../../services/audit.js";
 
 /**
  * Custom API: Bundle metadata and detail pages
@@ -14,15 +14,18 @@ import { auditService } from '../../services/audit.js';
  */
 export default async function bundleRoutes(fastify: FastifyInstance) {
   // GET bundle detail
-  fastify.get('/bundles/:namespace/:name', async (request, reply) => {
-    const { namespace, name } = request.params as { namespace: string; name: string };
+  fastify.get("/bundles/:namespace/:name", async (request, reply) => {
+    const { namespace, name } = request.params as {
+      namespace: string;
+      name: string;
+    };
 
     const bundle = await db.query.bundles.findFirst({
       where: and(eq(bundles.namespace, namespace), eq(bundles.name, name)),
     });
 
     if (!bundle) {
-      return reply.status(404).send({ error: 'Bundle not found' });
+      return reply.status(404).send({ error: "Bundle not found" });
     }
 
     // Fetch versions separately
@@ -34,14 +37,22 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
     const latestVersion = versions[0];
 
     // Aggregate pull stats
-    const stats = await db.select({
-      daily: sql<number>`COALESCE(SUM(CASE WHEN ${pullStats.date} >= NOW() - INTERVAL '1 day' THEN ${pullStats.count} ELSE 0 END), 0)`,
-      weekly: sql<number>`COALESCE(SUM(CASE WHEN ${pullStats.date} >= NOW() - INTERVAL '7 days' THEN ${pullStats.count} ELSE 0 END), 0)`,
-      monthly: sql<number>`COALESCE(SUM(CASE WHEN ${pullStats.date} >= NOW() - INTERVAL '30 days' THEN ${pullStats.count} ELSE 0 END), 0)`,
-      allTime: sql<number>`COALESCE(SUM(${pullStats.count}), 0)`,
-    }).from(pullStats).where(eq(pullStats.bundleId, bundle.id));
+    const stats = await db
+      .select({
+        daily: sql<number>`COALESCE(SUM(CASE WHEN ${pullStats.date} >= NOW() - INTERVAL '1 day' THEN ${pullStats.count} ELSE 0 END), 0)`,
+        weekly: sql<number>`COALESCE(SUM(CASE WHEN ${pullStats.date} >= NOW() - INTERVAL '7 days' THEN ${pullStats.count} ELSE 0 END), 0)`,
+        monthly: sql<number>`COALESCE(SUM(CASE WHEN ${pullStats.date} >= NOW() - INTERVAL '30 days' THEN ${pullStats.count} ELSE 0 END), 0)`,
+        allTime: sql<number>`COALESCE(SUM(${pullStats.count}), 0)`,
+      })
+      .from(pullStats)
+      .where(eq(pullStats.bundleId, bundle.id));
 
-    const pullCounts = stats[0] ?? { daily: 0, weekly: 0, monthly: 0, allTime: bundle.pullCount };
+    const pullCounts = stats[0] ?? {
+      daily: 0,
+      weekly: 0,
+      monthly: 0,
+      allTime: bundle.pullCount,
+    };
 
     const detail = BundleDetail.parse({
       namespace: bundle.namespace,
@@ -68,7 +79,7 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
         homepage: bundle.homepage,
         repository: bundle.repository,
         readme: bundle.readme,
-        version: latestVersion?.version ?? '0.0.0',
+        version: latestVersion?.version ?? "0.0.0",
         deprecated: false,
         forkedFrom: bundle.forkedFrom ?? undefined,
         hooks: bundle.hooks ?? undefined,
@@ -81,22 +92,25 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
         monthly: Number(pullCounts.monthly),
         allTime: Number(pullCounts.allTime),
       },
-      installCommand: `peko agent pull ${namespace}/${name}:${latestVersion?.version ?? 'latest'}`,
+      installCommand: `peko agent pull ${namespace}/${name}:${latestVersion?.version ?? "latest"}`,
     });
 
     return detail;
   });
 
   // GET version history
-  fastify.get('/bundles/:namespace/:name/versions', async (request, reply) => {
-    const { namespace, name } = request.params as { namespace: string; name: string };
+  fastify.get("/bundles/:namespace/:name/versions", async (request, reply) => {
+    const { namespace, name } = request.params as {
+      namespace: string;
+      name: string;
+    };
 
     const bundle = await db.query.bundles.findFirst({
       where: and(eq(bundles.namespace, namespace), eq(bundles.name, name)),
     });
 
     if (!bundle) {
-      return reply.status(404).send({ error: 'Bundle not found' });
+      return reply.status(404).send({ error: "Bundle not found" });
     }
 
     const versions = await db.query.bundleVersions.findMany({
@@ -121,85 +135,108 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
   // POST deprecate / undeprecate a specific version
   fastify.post<{
     Body: { deprecated: boolean; message?: string };
-  }>('/bundles/:namespace/:name/versions/:version/deprecate', async (request, reply) => {
-    const { namespace, name, version } = request.params as {
-      namespace: string;
-      name: string;
-      version: string;
-    };
+  }>(
+    "/bundles/:namespace/:name/versions/:version/deprecate",
+    async (request, reply) => {
+      const { namespace, name, version } = request.params as {
+        namespace: string;
+        name: string;
+        version: string;
+      };
 
-    let user: { namespace: string };
-    try {
-      user = await fastify.authenticate(request);
-    } catch {
-      if (fastify.config.NODE_ENV === 'development' && fastify.config.ALLOW_DEV_AUTH_BYPASS === 'true') {
-        user = { namespace };
-      } else {
-        return reply.status(401).send({ error: 'Authentication required' });
+      let user: { namespace: string };
+      try {
+        user = await fastify.authenticate(request);
+      } catch {
+        if (
+          fastify.config.NODE_ENV === "development" &&
+          fastify.config.ALLOW_DEV_AUTH_BYPASS === "true"
+        ) {
+          user = { namespace };
+        } else {
+          return reply.status(401).send({ error: "Authentication required" });
+        }
       }
-    }
 
-    if (user.namespace !== namespace) {
-      return reply.status(403).send({ error: 'Namespace ownership mismatch' });
-    }
+      if (user.namespace !== namespace) {
+        return reply
+          .status(403)
+          .send({ error: "Namespace ownership mismatch" });
+      }
 
-    const bundle = await db.query.bundles.findFirst({
-      where: and(eq(bundles.namespace, namespace), eq(bundles.name, name)),
-    });
+      const bundle = await db.query.bundles.findFirst({
+        where: and(eq(bundles.namespace, namespace), eq(bundles.name, name)),
+      });
 
-    if (!bundle) {
-      return reply.status(404).send({ error: 'Bundle not found' });
-    }
+      if (!bundle) {
+        return reply.status(404).send({ error: "Bundle not found" });
+      }
 
-    const { deprecated, message } = request.body;
+      const { deprecated, message } = request.body;
 
-    const [updated] = await db.update(bundleVersions)
-      .set({
-        deprecated,
-        deprecatedMessage: deprecated ? (message ?? null) : null,
-      })
-      .where(and(eq(bundleVersions.bundleId, bundle.id), eq(bundleVersions.version, version)))
-      .returning();
+      const [updated] = await db
+        .update(bundleVersions)
+        .set({
+          deprecated,
+          deprecatedMessage: deprecated ? (message ?? null) : null,
+        })
+        .where(
+          and(
+            eq(bundleVersions.bundleId, bundle.id),
+            eq(bundleVersions.version, version),
+          ),
+        )
+        .returning();
 
-    if (!updated) {
-      return reply.status(404).send({ error: 'Version not found' });
-    }
+      if (!updated) {
+        return reply.status(404).send({ error: "Version not found" });
+      }
 
-    // Fire-and-forget audit log (must not throw)
-    const userId = (user as { id?: number }).id;
-    await auditService.logPermissionChange(
-      namespace,
-      userId,
-      `${namespace}/${name}:${version}`,
-      { action: deprecated ? 'deprecate' : 'undeprecate', message: deprecated ? (message ?? null) : null },
-    );
+      // Fire-and-forget audit log (must not throw)
+      const userId = (user as { id?: number }).id;
+      await auditService.logPermissionChange(
+        namespace,
+        userId,
+        `${namespace}/${name}:${version}`,
+        {
+          action: deprecated ? "deprecate" : "undeprecate",
+          message: deprecated ? (message ?? null) : null,
+        },
+      );
 
-    return {
-      namespace,
-      name,
-      version: updated.version,
-      deprecated: updated.deprecated,
-      deprecatedMessage: updated.deprecatedMessage,
-    };
-  });
+      return {
+        namespace,
+        name,
+        version: updated.version,
+        deprecated: updated.deprecated,
+        deprecatedMessage: updated.deprecatedMessage,
+      };
+    },
+  );
 
   // DELETE a bundle and all its versions (owner only)
-  fastify.delete('/bundles/:namespace/:name', async (request, reply) => {
-    const { namespace, name } = request.params as { namespace: string; name: string };
+  fastify.delete("/bundles/:namespace/:name", async (request, reply) => {
+    const { namespace, name } = request.params as {
+      namespace: string;
+      name: string;
+    };
 
     let user: { namespace: string };
     try {
       user = await fastify.authenticate(request);
     } catch {
-      if (fastify.config.NODE_ENV === 'development' && fastify.config.ALLOW_DEV_AUTH_BYPASS === 'true') {
+      if (
+        fastify.config.NODE_ENV === "development" &&
+        fastify.config.ALLOW_DEV_AUTH_BYPASS === "true"
+      ) {
         user = { namespace };
       } else {
-        return reply.status(401).send({ error: 'Authentication required' });
+        return reply.status(401).send({ error: "Authentication required" });
       }
     }
 
     if (user.namespace !== namespace) {
-      return reply.status(403).send({ error: 'Namespace ownership mismatch' });
+      return reply.status(403).send({ error: "Namespace ownership mismatch" });
     }
 
     const bundle = await db.query.bundles.findFirst({
@@ -207,7 +244,7 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
     });
 
     if (!bundle) {
-      return reply.status(404).send({ error: 'Bundle not found' });
+      return reply.status(404).send({ error: "Bundle not found" });
     }
 
     // Collect all digests referenced by this bundle's versions to check for orphaned blobs
@@ -226,14 +263,16 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
 
     // Delete versions, pull stats, and bundle (cascades where configured)
     await db.delete(pullStats).where(eq(pullStats.bundleId, bundle.id));
-    await db.delete(bundleVersions).where(eq(bundleVersions.bundleId, bundle.id));
+    await db
+      .delete(bundleVersions)
+      .where(eq(bundleVersions.bundleId, bundle.id));
     await db.delete(bundles).where(eq(bundles.id, bundle.id));
 
     // Remove from search index
     try {
       await fastify.search.deleteBundle(`${namespace}-${name}`);
     } catch (err) {
-      fastify.log.warn({ err }, 'Failed to delete bundle from Meilisearch');
+      fastify.log.warn({ err }, "Failed to delete bundle from Meilisearch");
     }
 
     // Fire-and-forget audit log
@@ -247,68 +286,96 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
   });
 
   // DELETE a specific version (owner only)
-  fastify.delete('/bundles/:namespace/:name/versions/:version', async (request, reply) => {
-    const { namespace, name, version } = request.params as {
-      namespace: string;
-      name: string;
-      version: string;
-    };
+  fastify.delete(
+    "/bundles/:namespace/:name/versions/:version",
+    async (request, reply) => {
+      const { namespace, name, version } = request.params as {
+        namespace: string;
+        name: string;
+        version: string;
+      };
 
-    let user: { namespace: string };
-    try {
-      user = await fastify.authenticate(request);
-    } catch {
-      if (fastify.config.NODE_ENV === 'development' && fastify.config.ALLOW_DEV_AUTH_BYPASS === 'true') {
-        user = { namespace };
-      } else {
-        return reply.status(401).send({ error: 'Authentication required' });
+      let user: { namespace: string };
+      try {
+        user = await fastify.authenticate(request);
+      } catch {
+        if (
+          fastify.config.NODE_ENV === "development" &&
+          fastify.config.ALLOW_DEV_AUTH_BYPASS === "true"
+        ) {
+          user = { namespace };
+        } else {
+          return reply.status(401).send({ error: "Authentication required" });
+        }
       }
-    }
 
-    if (user.namespace !== namespace) {
-      return reply.status(403).send({ error: 'Namespace ownership mismatch' });
-    }
+      if (user.namespace !== namespace) {
+        return reply
+          .status(403)
+          .send({ error: "Namespace ownership mismatch" });
+      }
 
-    const bundle = await db.query.bundles.findFirst({
-      where: and(eq(bundles.namespace, namespace), eq(bundles.name, name)),
-    });
+      const bundle = await db.query.bundles.findFirst({
+        where: and(eq(bundles.namespace, namespace), eq(bundles.name, name)),
+      });
 
-    if (!bundle) {
-      return reply.status(404).send({ error: 'Bundle not found' });
-    }
+      if (!bundle) {
+        return reply.status(404).send({ error: "Bundle not found" });
+      }
 
-    const [deleted] = await db.delete(bundleVersions)
-      .where(and(eq(bundleVersions.bundleId, bundle.id), eq(bundleVersions.version, version)))
-      .returning();
+      const [deleted] = await db
+        .delete(bundleVersions)
+        .where(
+          and(
+            eq(bundleVersions.bundleId, bundle.id),
+            eq(bundleVersions.version, version),
+          ),
+        )
+        .returning();
 
-    if (!deleted) {
-      return reply.status(404).send({ error: 'Version not found' });
-    }
+      if (!deleted) {
+        return reply.status(404).send({ error: "Version not found" });
+      }
 
-    // Fire-and-forget audit log
-    const userId = (user as { id?: number }).id;
-    await auditService.logDelete(namespace, userId, `${namespace}/${name}:${version}`, {
-      digest: deleted.digest,
-    });
+      // Fire-and-forget audit log
+      const userId = (user as { id?: number }).id;
+      await auditService.logDelete(
+        namespace,
+        userId,
+        `${namespace}/${name}:${version}`,
+        {
+          digest: deleted.digest,
+        },
+      );
 
-    return reply.status(204).send();
-  });
+      return reply.status(204).send();
+    },
+  );
 
   // POST fork a bundle to the authenticated user's namespace
   fastify.post<{
     Querystring: { targetName?: string };
-  }>('/bundles/:namespace/:name/fork', async (request, reply) => {
-    const { namespace, name } = request.params as { namespace: string; name: string };
+  }>("/bundles/:namespace/:name/fork", async (request, reply) => {
+    const { namespace, name } = request.params as {
+      namespace: string;
+      name: string;
+    };
     const { targetName } = request.query;
 
     let user: { id: number; namespace: string };
     try {
-      user = await fastify.authenticate(request) as { id: number; namespace: string };
+      user = (await fastify.authenticate(request)) as {
+        id: number;
+        namespace: string;
+      };
     } catch {
-      if (fastify.config.NODE_ENV === 'development' && fastify.config.ALLOW_DEV_AUTH_BYPASS === 'true') {
-        user = { id: 0, namespace: 'dev-user' };
+      if (
+        fastify.config.NODE_ENV === "development" &&
+        fastify.config.ALLOW_DEV_AUTH_BYPASS === "true"
+      ) {
+        user = { id: 0, namespace: "dev-user" };
       } else {
-        return reply.status(401).send({ error: 'Authentication required' });
+        return reply.status(401).send({ error: "Authentication required" });
       }
     }
 
@@ -317,42 +384,50 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
     });
 
     if (!sourceBundle) {
-      return reply.status(404).send({ error: 'Bundle not found' });
+      return reply.status(404).send({ error: "Bundle not found" });
     }
 
     const newName = targetName?.trim() || name;
 
     // Check for conflict in user's namespace
     const existing = await db.query.bundles.findFirst({
-      where: and(eq(bundles.namespace, user.namespace), eq(bundles.name, newName)),
+      where: and(
+        eq(bundles.namespace, user.namespace),
+        eq(bundles.name, newName),
+      ),
     });
 
     if (existing) {
-      return reply.status(409).send({ error: `Bundle ${user.namespace}/${newName} already exists` });
+      return reply
+        .status(409)
+        .send({ error: `Bundle ${user.namespace}/${newName} already exists` });
     }
 
     // Create the forked bundle
-    const [newBundle] = await db.insert(bundles).values({
-      namespace: user.namespace,
-      name: newName,
-      bundleType: sourceBundle.bundleType,
-      extensionType: sourceBundle.extensionType,
-      description: sourceBundle.description,
-      author: sourceBundle.author,
-      license: sourceBundle.license,
-      tags: sourceBundle.tags,
-      categories: sourceBundle.categories,
-      modelProviders: sourceBundle.modelProviders,
-      requiredMcpServers: sourceBundle.requiredMcpServers,
-      homepage: sourceBundle.homepage,
-      repository: sourceBundle.repository,
-      readme: sourceBundle.readme,
-      hooks: sourceBundle.hooks,
-      compatibility: sourceBundle.compatibility,
-      forkedFrom: `${namespace}/${name}`,
-      starCount: 0,
-      pullCount: 0,
-    }).returning();
+    const [newBundle] = await db
+      .insert(bundles)
+      .values({
+        namespace: user.namespace,
+        name: newName,
+        bundleType: sourceBundle.bundleType,
+        extensionType: sourceBundle.extensionType,
+        description: sourceBundle.description,
+        author: sourceBundle.author,
+        license: sourceBundle.license,
+        tags: sourceBundle.tags,
+        categories: sourceBundle.categories,
+        modelProviders: sourceBundle.modelProviders,
+        requiredMcpServers: sourceBundle.requiredMcpServers,
+        homepage: sourceBundle.homepage,
+        repository: sourceBundle.repository,
+        readme: sourceBundle.readme,
+        hooks: sourceBundle.hooks,
+        compatibility: sourceBundle.compatibility,
+        forkedFrom: `${namespace}/${name}`,
+        starCount: 0,
+        pullCount: 0,
+      })
+      .returning();
 
     // Copy all versions (blobs are content-addressable, no need to duplicate)
     const sourceVersions = await db.query.bundleVersions.findMany({
@@ -369,7 +444,7 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
           size: v.size,
           deprecated: v.deprecated,
           deprecatedMessage: v.deprecatedMessage,
-        }))
+        })),
       );
     }
 
@@ -377,12 +452,12 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
     try {
       const latestVersion = sourceVersions[0];
       await fastify.search.indexBundle({
-        objectID: `${user.namespace}-${newName}-${latestVersion?.version ?? 'latest'}`,
+        objectID: `${user.namespace}-${newName}-${latestVersion?.version ?? "latest"}`,
         namespace: user.namespace,
         name: newName,
-        version: latestVersion?.version ?? 'latest',
+        version: latestVersion?.version ?? "latest",
         description: newBundle.description ?? undefined,
-        author: newBundle.author ?? 'unknown',
+        author: newBundle.author ?? "unknown",
         bundleType: newBundle.bundleType,
         extensionType: newBundle.extensionType ?? undefined,
         tags: newBundle.tags ?? undefined,
@@ -391,7 +466,7 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
         updatedAt: new Date().toISOString(),
       });
     } catch (err) {
-      fastify.log.warn({ err }, 'Failed to index forked bundle in Meilisearch');
+      fastify.log.warn({ err }, "Failed to index forked bundle in Meilisearch");
     }
 
     return reply.status(201).send({

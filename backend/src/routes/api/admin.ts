@@ -1,6 +1,6 @@
-import type { FastifyInstance } from 'fastify';
-import { GarbageCollector } from '../../services/gc.js';
-import { auditService } from '../../services/audit.js';
+import type { FastifyInstance } from "fastify";
+import { GarbageCollector } from "../../services/gc.js";
+import { auditService } from "../../services/audit.js";
 
 export default async function adminRoutes(fastify: FastifyInstance) {
   /**
@@ -10,12 +10,12 @@ export default async function adminRoutes(fastify: FastifyInstance) {
    */
   fastify.post<{
     Body: { retentionDays?: number; dryRun?: boolean };
-  }>('/gc', async (request, reply) => {
+  }>("/gc", async (request, reply) => {
     const user = await fastify.authenticate(request);
 
     // In production, check admin role; for now gate by namespace or env
-    if (fastify.config.NODE_ENV === 'production') {
-      return reply.status(403).send({ error: 'Forbidden' });
+    if (fastify.config.NODE_ENV === "production") {
+      return reply.status(403).send({ error: "Forbidden" });
     }
 
     const { retentionDays = 7, dryRun = false } = request.body ?? {};
@@ -29,7 +29,7 @@ export default async function adminRoutes(fastify: FastifyInstance) {
       });
 
       return {
-        status: dryRun ? 'simulated' : 'completed',
+        status: dryRun ? "simulated" : "completed",
         ...result,
       };
     } catch (err) {
@@ -45,17 +45,19 @@ export default async function adminRoutes(fastify: FastifyInstance) {
    */
   fastify.get<{
     Querystring: { retentionDays?: string };
-  }>('/gc/estimate', async (request) => {
+  }>("/gc/estimate", async (request) => {
     const user = await fastify.authenticate(request);
 
-    const retentionDays = request.query.retentionDays ? parseInt(request.query.retentionDays) : 7;
+    const retentionDays = request.query.retentionDays
+      ? parseInt(request.query.retentionDays)
+      : 7;
 
     const gc = new GarbageCollector(fastify.storage);
     const bytesFreed = await gc.estimateUnreferencedSize(retentionDays);
 
     return {
       estimatedBytesFreed: bytesFreed,
-      estimatedGiB: (bytesFreed / (1024 ** 3)).toFixed(2),
+      estimatedGiB: (bytesFreed / 1024 ** 3).toFixed(2),
       retentionDays,
     };
   });
@@ -65,19 +67,26 @@ export default async function adminRoutes(fastify: FastifyInstance) {
    * Query audit logs for a namespace (owners or admins only)
    */
   fastify.get<{
-    Querystring: { namespace?: string; action?: string; page?: string; perPage?: string };
-  }>('/audit', async (request, reply) => {
+    Querystring: {
+      namespace?: string;
+      action?: string;
+      page?: string;
+      perPage?: string;
+    };
+  }>("/audit", async (request, reply) => {
     const user = await fastify.authenticate(request);
     const { namespace, action, page, perPage } = request.query;
 
     if (!namespace) {
-      return reply.status(400).send({ error: 'Missing namespace query parameter' });
+      return reply
+        .status(400)
+        .send({ error: "Missing namespace query parameter" });
     }
 
     // Only namespace owners (or admins in dev) may query their own namespace's logs
     if (user.namespace !== namespace) {
-      if (fastify.config.NODE_ENV === 'production') {
-        return reply.status(403).send({ error: 'Forbidden' });
+      if (fastify.config.NODE_ENV === "production") {
+        return reply.status(403).send({ error: "Forbidden" });
       }
       // In non-production, allow admins to view any namespace
     }

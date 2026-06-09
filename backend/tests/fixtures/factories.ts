@@ -1,10 +1,10 @@
-import { faker } from '@faker-js/faker';
-import type { PGlite } from '@electric-sql/pglite';
+import { faker } from "@faker-js/faker";
+import type { PGlite } from "@electric-sql/pglite";
 
 export interface TestUser {
   id: number;
   externalId: string;
-  provider: 'github' | 'google';
+  provider: "github" | "google";
   namespace: string;
   displayName: string;
   email: string;
@@ -15,15 +15,26 @@ export interface TestBundle {
   id: number;
   namespace: string;
   name: string;
-  bundleType: 'agent' | 'team' | 'extension';
-  extensionType?: 'mcp' | 'skill' | 'tool' | 'gateway' | 'universal' | 'general' | 'team';
+  bundleType: "agent" | "team" | "extension";
+  extensionType?:
+    | "mcp"
+    | "skill"
+    | "tool"
+    | "gateway"
+    | "universal"
+    | "general"
+    | "team";
   description: string;
   author: string;
   tags: string[];
   starCount: number;
   pullCount: number;
   hooks?: Array<{ point: string; handler?: string; topicPattern?: string }>;
-  compatibility?: { runtime?: string; minVersion?: string; maxVersion?: string };
+  compatibility?: {
+    runtime?: string;
+    minVersion?: string;
+    maxVersion?: string;
+  };
 }
 
 export interface TestBundleVersion {
@@ -37,14 +48,14 @@ export interface TestBundleVersion {
 
 export interface TestInstance {
   id: string;
-  type: 'agent' | 'team';
+  type: "agent" | "team";
   name: string;
   ownerId: number;
   runtimeId: string;
   runtimeDisplayName: string | null;
   bundleRef: string | null;
-  status: 'online' | 'offline' | 'busy' | 'error';
-  exposure: 'private' | 'public' | 'unexposed';
+  status: "online" | "offline" | "busy" | "error";
+  exposure: "private" | "public" | "unexposed";
   allowedUsers: string[];
   lastSeenAt: Date | null;
   createdAt: Date;
@@ -67,10 +78,15 @@ export interface TestInstance {
  */
 export async function createUser(
   client: PGlite,
-  overrides: Partial<TestUser> = {}
+  overrides: Partial<TestUser> = {},
 ): Promise<TestUser> {
-  const namespace = overrides.namespace ?? faker.internet.userName().toLowerCase().replace(/[^a-z0-9_-]/g, '');
-  const provider = overrides.provider ?? 'github';
+  const namespace =
+    overrides.namespace ??
+    faker.internet
+      .userName()
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, "");
+  const provider = overrides.provider ?? "github";
   const externalId = `${provider}:${overrides.id ?? faker.number.int({ min: 100000, max: 999999 })}`;
 
   const result = await client.query(
@@ -84,7 +100,7 @@ export async function createUser(
       overrides.displayName ?? faker.person.fullName(),
       overrides.email ?? faker.internet.email(),
       overrides.avatarUrl ?? faker.image.avatar(),
-    ]
+    ],
   );
 
   return result.rows[0] as TestUser;
@@ -95,11 +111,16 @@ export async function createUser(
  */
 export async function createBundle(
   client: PGlite,
-  overrides: Partial<TestBundle> = {}
+  overrides: Partial<TestBundle> = {},
 ): Promise<TestBundle> {
-  const namespace = overrides.namespace ?? faker.internet.userName().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  const namespace =
+    overrides.namespace ??
+    faker.internet
+      .userName()
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, "");
   const name = overrides.name ?? faker.word.noun().toLowerCase();
-  const bundleType = overrides.bundleType ?? 'agent';
+  const bundleType = overrides.bundleType ?? "agent";
 
   const result = await client.query(
     `INSERT INTO bundles (namespace, name, bundle_type, extension_type, description, author, tags, hooks, compatibility, star_count, pull_count)
@@ -112,12 +133,12 @@ export async function createBundle(
       overrides.extensionType ?? null,
       overrides.description ?? faker.lorem.sentence(),
       overrides.author ?? faker.person.fullName(),
-      JSON.stringify(overrides.tags ?? ['test']),
+      JSON.stringify(overrides.tags ?? ["test"]),
       JSON.stringify(overrides.hooks ?? null),
       JSON.stringify(overrides.compatibility ?? null),
       overrides.starCount ?? 0,
       overrides.pullCount ?? 0,
-    ]
+    ],
   );
 
   return result.rows[0] as TestBundle;
@@ -129,10 +150,13 @@ export async function createBundle(
 export async function createBundleVersion(
   client: PGlite,
   bundleId: number,
-  overrides: Partial<TestBundleVersion> = {}
+  overrides: Partial<TestBundleVersion> = {},
 ): Promise<TestBundleVersion> {
-  const version = overrides.version ?? `v${faker.number.int({ min: 1, max: 10 })}.0.0`;
-  const digest = overrides.digest ?? `sha256:${faker.string.hexadecimal({ length: 64 }).slice(2)}`;
+  const version =
+    overrides.version ?? `v${faker.number.int({ min: 1, max: 10 })}.0.0`;
+  const digest =
+    overrides.digest ??
+    `sha256:${faker.string.hexadecimal({ length: 64 }).slice(2)}`;
 
   const result = await client.query(
     `INSERT INTO bundle_versions (bundle_id, version, digest, manifest_json, size)
@@ -142,9 +166,11 @@ export async function createBundleVersion(
       bundleId,
       version,
       digest,
-      JSON.stringify(overrides.manifestJson ?? { schemaVersion: 2, name: 'test-bundle' }),
+      JSON.stringify(
+        overrides.manifestJson ?? { schemaVersion: 2, name: "test-bundle" },
+      ),
       overrides.size ?? 1024,
-    ]
+    ],
   );
 
   return result.rows[0] as TestBundleVersion;
@@ -156,7 +182,10 @@ export async function createBundleVersion(
 export async function createBundleWithVersions(
   client: PGlite,
   versionCount: number = 3,
-  overrides: { bundle?: Partial<TestBundle>; versions?: Partial<TestBundleVersion> } = {}
+  overrides: {
+    bundle?: Partial<TestBundle>;
+    versions?: Partial<TestBundleVersion>;
+  } = {},
 ): Promise<{ bundle: TestBundle; versions: TestBundleVersion[] }> {
   const bundle = await createBundle(client, overrides.bundle);
   const versions: TestBundleVersion[] = [];
@@ -177,12 +206,13 @@ export async function createBundleWithVersions(
  */
 export async function createInstance(
   client: PGlite,
-  overrides: Partial<TestInstance> & { ownerId: number }
+  overrides: Partial<TestInstance> & { ownerId: number },
 ): Promise<TestInstance> {
   const id = overrides.id ?? crypto.randomUUID();
-  const type = overrides.type ?? 'agent';
+  const type = overrides.type ?? "agent";
   const name = overrides.name ?? faker.word.noun().toLowerCase();
-  const runtimeId = overrides.runtimeId ?? `runtime-${faker.string.alphanumeric(8)}`;
+  const runtimeId =
+    overrides.runtimeId ?? `runtime-${faker.string.alphanumeric(8)}`;
 
   const result = await client.query(
     `INSERT INTO instances (
@@ -204,8 +234,8 @@ export async function createInstance(
       runtimeId,
       overrides.runtimeDisplayName ?? null,
       overrides.bundleRef ?? null,
-      overrides.status ?? 'offline',
-      overrides.exposure ?? 'unexposed',
+      overrides.status ?? "offline",
+      overrides.exposure ?? "unexposed",
       JSON.stringify(overrides.allowedUsers ?? []),
       JSON.stringify(overrides.capabilities ?? []),
       JSON.stringify(overrides.metadata ?? {}),
@@ -219,7 +249,7 @@ export async function createInstance(
       overrides.weeklyQuota ?? null,
       overrides.publishedAt ?? null,
       overrides.featured ?? false,
-    ]
+    ],
   );
 
   const row = result.rows[0];

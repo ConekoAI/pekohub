@@ -1,10 +1,10 @@
-import fp from 'fastify-plugin';
-import { MeiliSearch, type SearchParams } from 'meilisearch';
-import type { FastifyInstance } from 'fastify';
-import type { SearchResultItem } from '@pekohub/shared';
+import fp from "fastify-plugin";
+import { MeiliSearch, type SearchParams } from "meilisearch";
+import type { FastifyInstance } from "fastify";
+import type { SearchResultItem } from "@pekohub/shared";
 
-const BUNDLES_INDEX = 'bundles';
-const INSTANCES_INDEX = 'instances';
+const BUNDLES_INDEX = "bundles";
+const INSTANCES_INDEX = "instances";
 
 /**
  * Sanitize a document ID for Meilisearch.
@@ -12,14 +12,26 @@ const INSTANCES_INDEX = 'instances';
  */
 export function sanitizeObjectID(id: string): string {
   return id
-    .replace(/[^a-zA-Z0-9_-]/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .replace(/-+/g, '-');
+    .replace(/[^a-zA-Z0-9_-]/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-+/g, "-");
 }
 
 export interface SearchService {
-  indexBundle(doc: SearchResultItem & { objectID: string; compatibility?: { runtime?: string; minVersion?: string; maxVersion?: string } }): Promise<void>;
-  search(query: string, options?: SearchParams): Promise<{
+  indexBundle(
+    doc: SearchResultItem & {
+      objectID: string;
+      compatibility?: {
+        runtime?: string;
+        minVersion?: string;
+        maxVersion?: string;
+      };
+    },
+  ): Promise<void>;
+  search(
+    query: string,
+    options?: SearchParams,
+  ): Promise<{
     hits: SearchResultItem[];
     total: number;
     page: number;
@@ -44,7 +56,10 @@ export interface SearchService {
     featured?: boolean;
     publishedAt?: string;
   }): Promise<void>;
-  searchInstances(query: string, options?: SearchParams): Promise<{
+  searchInstances(
+    query: string,
+    options?: SearchParams,
+  ): Promise<{
     hits: Array<Record<string, unknown>>;
     total: number;
     page: number;
@@ -66,44 +81,66 @@ async function searchPlugin(fastify: FastifyInstance) {
   try {
     await bundlesIndex.updateSettings({
       searchableAttributes: [
-        'name',
-        'namespace',
-        'description',
-        'tags',
-        'author',
+        "name",
+        "namespace",
+        "description",
+        "tags",
+        "author",
       ],
       filterableAttributes: [
-        'bundleType',
-        'extensionType',
-        'tags',
-        'categories',
-        'modelProviders',
-        'hookPoints',
+        "bundleType",
+        "extensionType",
+        "tags",
+        "categories",
+        "modelProviders",
+        "hookPoints",
       ],
-      sortableAttributes: ['updatedAt', 'pullCount', 'starCount'],
+      sortableAttributes: ["updatedAt", "pullCount", "starCount"],
       rankingRules: [
-        'words',
-        'typo',
-        'proximity',
-        'attribute',
-        'sort',
-        'exactness',
+        "words",
+        "typo",
+        "proximity",
+        "attribute",
+        "sort",
+        "exactness",
       ],
     });
   } catch (err) {
-    fastify.log.warn({ err }, 'Failed to update Meilisearch bundle settings');
+    fastify.log.warn({ err }, "Failed to update Meilisearch bundle settings");
   }
 
   // Ensure instances index settings on startup
   try {
     await instancesIndex.updateSettings({
-      searchableAttributes: ['name', 'publicName', 'description', 'tags', 'bundleRef', 'capabilities', 'runtimeDisplayName'],
-      filterableAttributes: ['type', 'status', 'capabilities', 'category', 'featured', 'exposure'],
-      sortableAttributes: ['createdAt', 'publishedAt'],
-      rankingRules: ['words', 'typo', 'proximity', 'attribute', 'sort', 'exactness'],
+      searchableAttributes: [
+        "name",
+        "publicName",
+        "description",
+        "tags",
+        "bundleRef",
+        "capabilities",
+        "runtimeDisplayName",
+      ],
+      filterableAttributes: [
+        "type",
+        "status",
+        "capabilities",
+        "category",
+        "featured",
+        "exposure",
+      ],
+      sortableAttributes: ["createdAt", "publishedAt"],
+      rankingRules: [
+        "words",
+        "typo",
+        "proximity",
+        "attribute",
+        "sort",
+        "exactness",
+      ],
     });
   } catch (err) {
-    fastify.log.warn({ err }, 'Failed to update Meilisearch instance settings');
+    fastify.log.warn({ err }, "Failed to update Meilisearch instance settings");
   }
 
   const search: SearchService = {
@@ -155,36 +192,41 @@ async function searchPlugin(fastify: FastifyInstance) {
     },
 
     async indexInstance(doc) {
-      await instancesIndex.addDocuments([{
-        id: doc.objectID,
-        name: doc.name,
-        type: doc.type,
-        bundleRef: doc.bundleRef,
-        status: doc.status,
-        capabilities: doc.capabilities,
-        ownerId: doc.ownerId,
-        runtimeDisplayName: doc.runtimeDisplayName,
-        createdAt: doc.createdAt,
-        publicName: doc.publicName,
-        description: doc.description,
-        tags: doc.tags,
-        category: doc.category,
-        featured: doc.featured,
-        publishedAt: doc.publishedAt,
-        exposure: 'public',
-      }]);
+      await instancesIndex.addDocuments([
+        {
+          id: doc.objectID,
+          name: doc.name,
+          type: doc.type,
+          bundleRef: doc.bundleRef,
+          status: doc.status,
+          capabilities: doc.capabilities,
+          ownerId: doc.ownerId,
+          runtimeDisplayName: doc.runtimeDisplayName,
+          createdAt: doc.createdAt,
+          publicName: doc.publicName,
+          description: doc.description,
+          tags: doc.tags,
+          category: doc.category,
+          featured: doc.featured,
+          publishedAt: doc.publishedAt,
+          exposure: "public",
+        },
+      ]);
     },
 
     async searchInstances(query, options = {}) {
       const page = options.page ?? 0;
       const perPage = options.hitsPerPage ?? 20;
 
-      const result = await instancesIndex.search<Record<string, unknown>>(query, {
-        filter: options.filter,
-        sort: options.sort,
-        offset: page * perPage,
-        limit: perPage,
-      });
+      const result = await instancesIndex.search<Record<string, unknown>>(
+        query,
+        {
+          filter: options.filter,
+          sort: options.sort,
+          offset: page * perPage,
+          limit: perPage,
+        },
+      );
 
       return {
         hits: result.hits,
@@ -199,12 +241,12 @@ async function searchPlugin(fastify: FastifyInstance) {
     },
   };
 
-  fastify.decorate('search', search);
+  fastify.decorate("search", search);
 }
 
 export default fp(searchPlugin);
 
-declare module 'fastify' {
+declare module "fastify" {
   interface FastifyInstance {
     search: SearchService;
   }

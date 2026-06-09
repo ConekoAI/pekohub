@@ -1,20 +1,20 @@
-import { db } from '../db/index.js';
-import { instances } from '../db/schema.js';
-import { eq, and, sql, desc, count, gte, lt } from 'drizzle-orm';
-import type { SQL } from 'drizzle-orm';
+import { db } from "../db/index.js";
+import { instances } from "../db/schema.js";
+import { eq, and, sql, desc, count, gte, lt } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 
-export type InstanceType = 'agent' | 'team';
-export type InstanceStatus = 'online' | 'offline' | 'busy' | 'error';
-export type InstanceExposure = 'unexposed' | 'private' | 'public';
+export type InstanceType = "agent" | "team";
+export type InstanceStatus = "online" | "offline" | "busy" | "error";
+export type InstanceExposure = "unexposed" | "private" | "public";
 
 export type PublicCategory =
-  | 'productivity'
-  | 'coding'
-  | 'creative'
-  | 'business'
-  | 'entertainment'
-  | 'education'
-  | 'other';
+  | "productivity"
+  | "coding"
+  | "creative"
+  | "business"
+  | "entertainment"
+  | "education"
+  | "other";
 
 export interface InstanceRecord {
   id: string;
@@ -49,7 +49,7 @@ export interface InstanceRecord {
   // Monetization hooks
   monetization: {
     enabled: boolean;
-    pricingModel: 'free' | 'subscription' | 'usage' | null;
+    pricingModel: "free" | "subscription" | "usage" | null;
     priceCents: number | null;
     stripeProductId: string | null;
   };
@@ -120,7 +120,7 @@ export interface ListInstancesResult {
 export interface ProxiedRequestPayload {
   requestId: string;
   instanceId: string;
-  method: 'chat' | 'stream';
+  method: "chat" | "stream";
   body: unknown;
   headers: Record<string, string>;
 }
@@ -155,12 +155,12 @@ export class InstanceService {
         runtimeId: input.runtimeId,
         runtimeDisplayName: input.runtimeDisplayName ?? null,
         bundleRef: input.bundleRef ?? null,
-        status: input.status ?? 'offline',
-        exposure: input.exposure ?? 'unexposed',
+        status: input.status ?? "offline",
+        exposure: input.exposure ?? "unexposed",
         allowedUsers: input.allowedUsers ?? [],
         capabilities: input.capabilities ?? [],
         metadata: input.metadata ?? {},
-        lastSeenAt: input.status === 'online' ? new Date() : null,
+        lastSeenAt: input.status === "online" ? new Date() : null,
         publicName: input.publicName ?? null,
         description: input.description ?? null,
         tags: input.tags ?? [],
@@ -183,14 +183,24 @@ export class InstanceService {
   }
 
   async list(options: ListInstancesOptions = {}): Promise<ListInstancesResult> {
-    const { ownerId, runtimeId, status, type, exposure, page = 1, perPage = 20 } = options;
+    const {
+      ownerId,
+      runtimeId,
+      status,
+      type,
+      exposure,
+      page = 1,
+      perPage = 20,
+    } = options;
 
     const conditions: SQL[] = [];
     if (ownerId !== undefined) conditions.push(eq(instances.ownerId, ownerId));
-    if (runtimeId !== undefined) conditions.push(eq(instances.runtimeId, runtimeId));
+    if (runtimeId !== undefined)
+      conditions.push(eq(instances.runtimeId, runtimeId));
     if (status !== undefined) conditions.push(eq(instances.status, status));
     if (type !== undefined) conditions.push(eq(instances.type, type));
-    if (exposure !== undefined) conditions.push(eq(instances.exposure, exposure));
+    if (exposure !== undefined)
+      conditions.push(eq(instances.exposure, exposure));
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -211,19 +221,29 @@ export class InstanceService {
     };
   }
 
-  async update(id: string, input: UpdateInstanceInput): Promise<InstanceRecord | null> {
+  async update(
+    id: string,
+    input: UpdateInstanceInput,
+  ): Promise<InstanceRecord | null> {
     const values: Record<string, unknown> = {};
     if (input.name !== undefined) values.name = input.name;
-    if (input.runtimeDisplayName !== undefined) values.runtimeDisplayName = input.runtimeDisplayName;
+    if (input.runtimeDisplayName !== undefined)
+      values.runtimeDisplayName = input.runtimeDisplayName;
     if (input.status !== undefined) {
       values.status = input.status;
-      if (input.status === 'online' || input.status === 'busy' || input.status === 'error') {
+      if (
+        input.status === "online" ||
+        input.status === "busy" ||
+        input.status === "error"
+      ) {
         values.lastSeenAt = new Date();
       }
     }
     if (input.exposure !== undefined) values.exposure = input.exposure;
-    if (input.allowedUsers !== undefined) values.allowedUsers = input.allowedUsers;
-    if (input.capabilities !== undefined) values.capabilities = input.capabilities;
+    if (input.allowedUsers !== undefined)
+      values.allowedUsers = input.allowedUsers;
+    if (input.capabilities !== undefined)
+      values.capabilities = input.capabilities;
     if (input.metadata !== undefined) values.metadata = input.metadata;
     if (input.publicName !== undefined) values.publicName = input.publicName;
     if (input.description !== undefined) values.description = input.description;
@@ -250,11 +270,16 @@ export class InstanceService {
   }
 
   async delete(id: string): Promise<boolean> {
-    const result = await db.delete(instances).where(eq(instances.id, id)).returning();
+    const result = await db
+      .delete(instances)
+      .where(eq(instances.id, id))
+      .returning();
     return result.length > 0;
   }
 
-  async upsertFromAnnounce(input: CreateInstanceInput): Promise<InstanceRecord> {
+  async upsertFromAnnounce(
+    input: CreateInstanceInput,
+  ): Promise<InstanceRecord> {
     const existing = input.id ? await this.getById(input.id) : null;
     if (existing) {
       const values: UpdateInstanceInput & { bundleRef?: string } = {
@@ -286,8 +311,10 @@ export class InstanceService {
     const cutoff = new Date(Date.now() - timeoutMs);
     const result = await db
       .update(instances)
-      .set({ status: 'offline' })
-      .where(and(eq(instances.status, 'online'), lt(instances.lastSeenAt, cutoff)))
+      .set({ status: "offline" })
+      .where(
+        and(eq(instances.status, "online"), lt(instances.lastSeenAt, cutoff)),
+      )
       .returning({ id: instances.id });
     return result.length;
   }
@@ -295,7 +322,7 @@ export class InstanceService {
   // ── Permissions ────────────────────────────────────────────────────────────
 
   canAccess(instance: InstanceRecord, userId: number | null): boolean {
-    if (instance.exposure === 'public') return true;
+    if (instance.exposure === "public") return true;
     if (userId === null) return false;
     if (instance.ownerId === userId) return true;
     return instance.allowedUsers.some((u) => String(u) === String(userId));
@@ -304,7 +331,10 @@ export class InstanceService {
   // ── Helpers ────────────────────────────────────────────────────────────────
 
   private toRecord(row: typeof instances.$inferSelect): InstanceRecord {
-    const monetization = (row.monetization as Record<string, unknown> | null) ?? {
+    const monetization = (row.monetization as Record<
+      string,
+      unknown
+    > | null) ?? {
       enabled: false,
       pricingModel: null,
       priceCents: null,
@@ -337,9 +367,15 @@ export class InstanceService {
       featured: row.featured ?? false,
       monetization: {
         enabled: (monetization.enabled as boolean) ?? false,
-        pricingModel: (monetization.pricingModel as 'free' | 'subscription' | 'usage' | null) ?? null,
+        pricingModel:
+          (monetization.pricingModel as
+            | "free"
+            | "subscription"
+            | "usage"
+            | null) ?? null,
         priceCents: (monetization.priceCents as number | null) ?? null,
-        stripeProductId: (monetization.stripeProductId as string | null) ?? null,
+        stripeProductId:
+          (monetization.stripeProductId as string | null) ?? null,
       },
     };
   }

@@ -1,11 +1,15 @@
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
-import { createTestDb, resetTables } from '../fixtures/db.js';
-import { buildTestApp } from '../fixtures/app.js';
-import { createUser, createBundle, createBundleWithVersions } from '../fixtures/factories.js';
-import { authHeaders } from '../fixtures/auth.js';
-import type { TestDb } from '../fixtures/db.js';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
+import { createTestDb, resetTables } from "../fixtures/db.js";
+import { buildTestApp } from "../fixtures/app.js";
+import {
+  createUser,
+  createBundle,
+  createBundleWithVersions,
+} from "../fixtures/factories.js";
+import { authHeaders } from "../fixtures/auth.js";
+import type { TestDb } from "../fixtures/db.js";
 
-describe('Bundle API', () => {
+describe("Bundle API", () => {
   let testDb: TestDb;
 
   beforeAll(async () => {
@@ -20,130 +24,153 @@ describe('Bundle API', () => {
     await testDb.client.close();
   });
 
-  describe('GET /v1/bundles/:namespace/:name', () => {
-    it('should return a bundle by namespace and name', async () => {
+  describe("GET /v1/bundles/:namespace/:name", () => {
+    it("should return a bundle by namespace and name", async () => {
       const app = await buildTestApp({ testDb });
       const bundle = await createBundle(testDb.client, {
-        namespace: 'acme',
-        name: 'my-agent',
-        description: 'A test agent',
+        namespace: "acme",
+        name: "my-agent",
+        description: "A test agent",
       });
 
       const response = await app.inject({
-        method: 'GET',
+        method: "GET",
         url: `/v1/bundles/${bundle.namespace}/${bundle.name}`,
       });
 
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
       expect(body).toMatchObject({
-        namespace: 'acme',
-        name: 'my-agent',
+        namespace: "acme",
+        name: "my-agent",
         metadata: {
-          description: 'A test agent',
+          description: "A test agent",
         },
       });
     });
 
-    it('should return 404 for non-existent bundle', async () => {
+    it("should return 404 for non-existent bundle", async () => {
       const app = await buildTestApp({ testDb });
 
       const response = await app.inject({
-        method: 'GET',
-        url: '/v1/bundles/nonexistent/missing',
+        method: "GET",
+        url: "/v1/bundles/nonexistent/missing",
       });
 
       expect(response.statusCode).toBe(404);
     });
 
-    it('should return extension metadata including hooks and compatibility', async () => {
+    it("should return extension metadata including hooks and compatibility", async () => {
       const app = await buildTestApp({ testDb });
       const bundle = await createBundle(testDb.client, {
-        namespace: 'acme',
-        name: 'my-extension',
-        bundleType: 'extension',
-        extensionType: 'skill',
-        description: 'A test extension',
+        namespace: "acme",
+        name: "my-extension",
+        bundleType: "extension",
+        extensionType: "skill",
+        description: "A test extension",
         hooks: [
-          { point: 'tool.register', handler: 'registerTools' },
-          { point: 'agent.init', handler: 'onInit' },
+          { point: "tool.register", handler: "registerTools" },
+          { point: "agent.init", handler: "onInit" },
         ],
-        compatibility: { runtime: 'peko', minVersion: '1.0.0', maxVersion: '2.0.0' },
+        compatibility: {
+          runtime: "peko",
+          minVersion: "1.0.0",
+          maxVersion: "2.0.0",
+        },
       });
 
       const response = await app.inject({
-        method: 'GET',
+        method: "GET",
         url: `/v1/bundles/${bundle.namespace}/${bundle.name}`,
       });
 
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
-      expect(body.metadata.bundleType).toBe('extension');
-      expect(body.metadata.extensionType).toBe('skill');
+      expect(body.metadata.bundleType).toBe("extension");
+      expect(body.metadata.extensionType).toBe("skill");
       expect(body.metadata.hooks).toHaveLength(2);
-      expect(body.metadata.hooks[0]).toMatchObject({ point: 'tool.register', handler: 'registerTools' });
-      expect(body.metadata.compatibility).toMatchObject({ runtime: 'peko', minVersion: '1.0.0', maxVersion: '2.0.0' });
+      expect(body.metadata.hooks[0]).toMatchObject({
+        point: "tool.register",
+        handler: "registerTools",
+      });
+      expect(body.metadata.compatibility).toMatchObject({
+        runtime: "peko",
+        minVersion: "1.0.0",
+        maxVersion: "2.0.0",
+      });
     });
   });
 
-  describe('GET /v1/bundles/:namespace/:name/versions', () => {
-    it('should return all versions for a bundle', async () => {
+  describe("GET /v1/bundles/:namespace/:name/versions", () => {
+    it("should return all versions for a bundle", async () => {
       const app = await buildTestApp({ testDb });
-      const { bundle, versions } = await createBundleWithVersions(testDb.client, 3, {
-        bundle: { namespace: 'acme', name: 'my-agent' },
-      });
+      const { bundle, versions } = await createBundleWithVersions(
+        testDb.client,
+        3,
+        {
+          bundle: { namespace: "acme", name: "my-agent" },
+        },
+      );
 
       const response = await app.inject({
-        method: 'GET',
+        method: "GET",
         url: `/v1/bundles/${bundle.namespace}/${bundle.name}/versions`,
       });
 
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
       expect(body.versions).toHaveLength(3);
-      expect(body.versions.map((v: any) => v.version)).toContain('v1.0.0');
-      expect(body.versions.map((v: any) => v.version)).toContain('v2.0.0');
-      expect(body.versions.map((v: any) => v.version)).toContain('v3.0.0');
+      expect(body.versions.map((v: any) => v.version)).toContain("v1.0.0");
+      expect(body.versions.map((v: any) => v.version)).toContain("v2.0.0");
+      expect(body.versions.map((v: any) => v.version)).toContain("v3.0.0");
     });
   });
 
-  describe('POST /v1/bundles/:namespace/:name/versions/:version/deprecate', () => {
-    it('should deprecate a version when authenticated', async () => {
+  describe("POST /v1/bundles/:namespace/:name/versions/:version/deprecate", () => {
+    it("should deprecate a version when authenticated", async () => {
       const app = await buildTestApp({ testDb });
-      const user = await createUser(testDb.client, { namespace: 'acme' });
-      const { bundle, versions } = await createBundleWithVersions(testDb.client, 1, {
-        bundle: { namespace: 'acme', name: 'my-agent' },
-      });
+      const user = await createUser(testDb.client, { namespace: "acme" });
+      const { bundle, versions } = await createBundleWithVersions(
+        testDb.client,
+        1,
+        {
+          bundle: { namespace: "acme", name: "my-agent" },
+        },
+      );
       const headers = await authHeaders(user);
 
       const response = await app.inject({
-        method: 'POST',
+        method: "POST",
         url: `/v1/bundles/${bundle.namespace}/${bundle.name}/versions/${versions[0].version}/deprecate`,
         headers,
         payload: {
           deprecated: true,
-          message: 'This version is deprecated',
+          message: "This version is deprecated",
         },
       });
 
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
       expect(body.deprecated).toBe(true);
-      expect(body.deprecatedMessage).toBe('This version is deprecated');
+      expect(body.deprecatedMessage).toBe("This version is deprecated");
     });
 
-    it('should return 401 when not authenticated', async () => {
+    it("should return 401 when not authenticated", async () => {
       const app = await buildTestApp({ testDb });
-      const { bundle, versions } = await createBundleWithVersions(testDb.client, 1, {
-        bundle: { namespace: 'acme', name: 'my-agent' },
-      });
+      const { bundle, versions } = await createBundleWithVersions(
+        testDb.client,
+        1,
+        {
+          bundle: { namespace: "acme", name: "my-agent" },
+        },
+      );
 
       const response = await app.inject({
-        method: 'POST',
+        method: "POST",
         url: `/v1/bundles/${bundle.namespace}/${bundle.name}/versions/${versions[0].version}/deprecate`,
         payload: {
           deprecated: true,
-          message: 'Deprecated',
+          message: "Deprecated",
         },
       });
 
@@ -151,18 +178,18 @@ describe('Bundle API', () => {
     });
   });
 
-  describe('DELETE /v1/bundles/:namespace/:name', () => {
-    it('should delete a bundle when authenticated as owner', async () => {
+  describe("DELETE /v1/bundles/:namespace/:name", () => {
+    it("should delete a bundle when authenticated as owner", async () => {
       const app = await buildTestApp({ testDb });
-      const user = await createUser(testDb.client, { namespace: 'acme' });
+      const user = await createUser(testDb.client, { namespace: "acme" });
       const bundle = await createBundle(testDb.client, {
-        namespace: 'acme',
-        name: 'my-agent',
+        namespace: "acme",
+        name: "my-agent",
       });
       const headers = await authHeaders(user);
 
       const response = await app.inject({
-        method: 'DELETE',
+        method: "DELETE",
         url: `/v1/bundles/${bundle.namespace}/${bundle.name}`,
         headers,
       });
@@ -170,15 +197,15 @@ describe('Bundle API', () => {
       expect(response.statusCode).toBe(204);
     });
 
-    it('should return 401 when not authenticated', async () => {
+    it("should return 401 when not authenticated", async () => {
       const app = await buildTestApp({ testDb });
       const bundle = await createBundle(testDb.client, {
-        namespace: 'acme',
-        name: 'my-agent',
+        namespace: "acme",
+        name: "my-agent",
       });
 
       const response = await app.inject({
-        method: 'DELETE',
+        method: "DELETE",
         url: `/v1/bundles/${bundle.namespace}/${bundle.name}`,
       });
 

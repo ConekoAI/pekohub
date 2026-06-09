@@ -34,7 +34,7 @@ export interface TunnelProxiedRequest {
 export interface HttpProxiedRequest {
   requestId: string;
   instanceId: string;
-  method: 'chat' | 'stream';
+  method: "chat" | "stream";
   body: unknown;
   headers: Record<string, string>;
 }
@@ -56,9 +56,9 @@ export interface StreamEndPayload {
 
 // --- Instance lifecycle extensions (ADR-004) ---
 
-export type InstanceStatus = 'online' | 'offline' | 'busy' | 'error';
-export type InstanceExposure = 'private' | 'public' | 'unexposed';
-export type InstanceType = 'agent' | 'team';
+export type InstanceStatus = "online" | "offline" | "busy" | "error";
+export type InstanceExposure = "private" | "public" | "unexposed";
+export type InstanceType = "agent" | "team";
 
 export interface InstanceAnnouncePayload {
   id: string;
@@ -90,25 +90,37 @@ export interface ExposureUpdatePayload {
 }
 
 export type TunnelMessage =
-  | { type: 'runtime_hello'; runtimeId: string; nonce: string; signature: string }
-  | { type: 'tunnel_ready'; heartbeatIntervalSecs: number }
-  | { type: 'heartbeat'; seq: number }
-  | { type: 'heartbeat_ack'; seq: number }
-  | { type: 'disconnect'; reason: string }
-  | { type: 'proxied_request'; requestId: string; agent: string; payload: number[] }
-  | { type: 'proxied_response'; requestId: string; payload: number[] }
-  | { type: 'stream_chunk'; requestId: string; seq: number; payload: number[] }
-  | { type: 'stream_end'; requestId: string }
-  | { type: 'instance_announce'; payload: InstanceAnnouncePayload }
-  | { type: 'instance_heartbeat'; payload: InstanceHeartbeatPayload }
-  | { type: 'instance_deregister'; payload: InstanceDeregisterPayload }
-  | { type: 'exposure_update'; payload: ExposureUpdatePayload };
+  | {
+      type: "runtime_hello";
+      runtimeId: string;
+      nonce: string;
+      signature: string;
+    }
+  | { type: "tunnel_ready"; heartbeatIntervalSecs: number }
+  | { type: "heartbeat"; seq: number }
+  | { type: "heartbeat_ack"; seq: number }
+  | { type: "disconnect"; reason: string }
+  | {
+      type: "proxied_request";
+      requestId: string;
+      agent: string;
+      payload: number[];
+    }
+  | { type: "proxied_response"; requestId: string; payload: number[] }
+  | { type: "stream_chunk"; requestId: string; seq: number; payload: number[] }
+  | { type: "stream_end"; requestId: string }
+  | { type: "instance_announce"; payload: InstanceAnnouncePayload }
+  | { type: "instance_heartbeat"; payload: InstanceHeartbeatPayload }
+  | { type: "instance_deregister"; payload: InstanceDeregisterPayload }
+  | { type: "exposure_update"; payload: ExposureUpdatePayload };
 
 export function encodeTunnelMessage(msg: TunnelMessage): Buffer {
-  return Buffer.from(JSON.stringify(msg), 'utf8');
+  return Buffer.from(JSON.stringify(msg), "utf8");
 }
 
-export function decodeTunnelMessage(data: Buffer | ArrayBuffer | Buffer[]): TunnelMessage {
+export function decodeTunnelMessage(
+  data: Buffer | ArrayBuffer | Buffer[],
+): TunnelMessage {
   let buffer: Buffer;
   if (Array.isArray(data)) {
     buffer = Buffer.concat(data);
@@ -117,5 +129,5 @@ export function decodeTunnelMessage(data: Buffer | ArrayBuffer | Buffer[]): Tunn
   } else {
     buffer = Buffer.from(data);
   }
-  return JSON.parse(buffer.toString('utf8')) as TunnelMessage;
+  return JSON.parse(buffer.toString("utf8")) as TunnelMessage;
 }

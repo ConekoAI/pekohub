@@ -1,17 +1,17 @@
-import type { PGlite } from '@electric-sql/pglite';
-import type { TestUser } from './factories.js';
+import type { PGlite } from "@electric-sql/pglite";
+import type { TestUser } from "./factories.js";
 
-const DEFAULT_JWT_SECRET = 'test-secret-key-that-is-32-chars-long!!';
+const DEFAULT_JWT_SECRET = "test-secret-key-that-is-32-chars-long!!";
 
 /**
  * Generate a JWT token for a test user using fast-jwt (same as @fastify/jwt).
  */
 export async function generateTestToken(
   user: TestUser,
-  secret: string = DEFAULT_JWT_SECRET
+  secret: string = DEFAULT_JWT_SECRET,
 ): Promise<string> {
-  const { createSigner } = await import('fast-jwt');
-  const signer = createSigner({ key: secret, algorithm: 'HS256' });
+  const { createSigner } = await import("fast-jwt");
+  const signer = createSigner({ key: secret, algorithm: "HS256" });
   return signer({ sub: String(user.id), namespace: user.namespace });
 }
 
@@ -20,7 +20,7 @@ export async function generateTestToken(
  */
 export async function authHeaders(
   user: TestUser,
-  secret?: string
+  secret?: string,
 ): Promise<{ Authorization: string }> {
   const token = await generateTestToken(user, secret);
   return { Authorization: `Bearer ${token}` };
@@ -32,9 +32,9 @@ export async function authHeaders(
 export async function createAuthenticatedUser(
   client: PGlite,
   overrides: Partial<TestUser> = {},
-  secret?: string
+  secret?: string,
 ): Promise<{ user: TestUser; headers: { Authorization: string } }> {
-  const { createUser } = await import('./factories.js');
+  const { createUser } = await import("./factories.js");
   const user = await createUser(client, overrides);
   const headers = await authHeaders(user, secret);
   return { user, headers };

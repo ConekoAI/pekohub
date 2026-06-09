@@ -2,9 +2,9 @@
  * TunnelRouter — HTTP ↔ tunnel bridge for chat and streaming requests.
  */
 
-import type { FastifyReply } from 'fastify';
-import type { TunnelManager } from './tunnel-manager.js';
-import type { HttpProxiedRequest, TunnelMessage } from './tunnel-protocol.js';
+import type { FastifyReply } from "fastify";
+import type { TunnelManager } from "./tunnel-manager.js";
+import type { HttpProxiedRequest, TunnelMessage } from "./tunnel-protocol.js";
 
 export class TunnelRouter {
   constructor(private tunnelManager: TunnelManager) {}
@@ -14,25 +14,25 @@ export class TunnelRouter {
     instanceId: string,
     body: unknown,
     headers: Record<string, string>,
-    reply: FastifyReply
-  ): Promise<FastifyReply> {
+    reply: FastifyReply,
+  ): Promise<void> {
     // Fail fast if runtime is not connected
     if (!this.tunnelManager.isRuntimeConnected(runtimeId)) {
-      return reply.status(502).send({ error: 'Instance unreachable' });
+      return reply.status(502).send({ error: "Instance unreachable" });
     }
 
     const request: HttpProxiedRequest = {
       requestId: crypto.randomUUID(),
       instanceId,
-      method: 'chat',
+      method: "chat",
       body,
       headers,
     };
 
     reply.raw.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
     });
 
     const sink = {
@@ -44,7 +44,9 @@ export class TunnelRouter {
         reply.raw.end();
       },
       onError: (err: Error) => {
-        reply.raw.write(`event: error\ndata: ${JSON.stringify({ message: err.message })}\n\n`);
+        reply.raw.write(
+          `event: error\ndata: ${JSON.stringify({ message: err.message })}\n\n`,
+        );
         reply.raw.end();
       },
     };
@@ -52,7 +54,7 @@ export class TunnelRouter {
     try {
       await this.tunnelManager.startStream(runtimeId, request, sink);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Stream failed';
+      const message = err instanceof Error ? err.message : "Stream failed";
       sink.onError(new Error(message));
     }
   }
@@ -62,25 +64,25 @@ export class TunnelRouter {
     instanceId: string,
     body: unknown,
     headers: Record<string, string>,
-    reply: FastifyReply
+    reply: FastifyReply,
   ): Promise<void> {
     // Fail fast if runtime is not connected
     if (!this.tunnelManager.isRuntimeConnected(runtimeId)) {
-      return reply.status(502).send({ error: 'Instance unreachable' });
+      return reply.status(502).send({ error: "Instance unreachable" });
     }
 
     const request: HttpProxiedRequest = {
       requestId: crypto.randomUUID(),
       instanceId,
-      method: 'stream',
+      method: "stream",
       body,
       headers,
     };
 
     reply.raw.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
     });
 
     const sink = {
@@ -92,7 +94,9 @@ export class TunnelRouter {
         reply.raw.end();
       },
       onError: (err: Error) => {
-        reply.raw.write(`event: error\ndata: ${JSON.stringify({ message: err.message })}\n\n`);
+        reply.raw.write(
+          `event: error\ndata: ${JSON.stringify({ message: err.message })}\n\n`,
+        );
         reply.raw.end();
       },
     };
@@ -100,14 +104,14 @@ export class TunnelRouter {
     try {
       await this.tunnelManager.startStream(runtimeId, request, sink);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Stream failed';
+      const message = err instanceof Error ? err.message : "Stream failed";
       sink.onError(new Error(message));
     }
   }
 
   sendControl(
     runtimeId: string,
-    message: Extract<TunnelMessage, { type: 'exposure_update' }>
+    message: Extract<TunnelMessage, { type: "exposure_update" }>,
   ): void {
     // Fire-and-forget: control messages are best-effort. The runtime will
     // re-announce the instance to confirm the change.

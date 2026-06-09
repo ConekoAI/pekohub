@@ -1,6 +1,6 @@
-import { PGlite } from '@electric-sql/pglite';
-import { drizzle } from 'drizzle-orm/pglite';
-import * as schema from '../../src/db/schema.js';
+import { PGlite } from "@electric-sql/pglite";
+import { drizzle } from "drizzle-orm/pglite";
+import * as schema from "../../src/db/schema.js";
 
 export interface TestDb {
   db: ReturnType<typeof drizzle<typeof schema>>;
@@ -178,15 +178,15 @@ export async function createTestDb(): Promise<TestDb> {
  */
 export async function resetTables(client: PGlite) {
   const tables = [
-    'audit_logs',
-    'refresh_tokens',
-    'pull_stats',
-    'blobs',
-    'bundle_versions',
-    'bundles',
-    'instances',
-    'api_keys',
-    'users',
+    "audit_logs",
+    "refresh_tokens",
+    "pull_stats",
+    "blobs",
+    "bundle_versions",
+    "bundles",
+    "instances",
+    "api_keys",
+    "users",
   ];
   for (const table of tables) {
     await client.query(`DELETE FROM ${table};`);

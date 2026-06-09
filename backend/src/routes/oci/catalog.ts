@@ -1,17 +1,20 @@
-import type { FastifyInstance } from 'fastify';
-import { db } from '../../db/index.js';
-import { bundles } from '../../db/schema.js';
+import type { FastifyInstance } from "fastify";
+import { db } from "../../db/index.js";
+import { bundles } from "../../db/schema.js";
 
 /**
  * OCI Distribution Spec: Catalog listing
  * GET /v2/_catalog
  */
 export default async function catalogRoutes(fastify: FastifyInstance) {
-  fastify.get('/_catalog', async (request, reply) => {
+  fastify.get("/_catalog", async (request, reply) => {
     const { n = 100, last } = request.query as { n?: number; last?: string };
 
     const allBundles = await db.query.bundles.findMany({
-      orderBy: (bundles, { asc }) => [asc(bundles.namespace), asc(bundles.name)],
+      orderBy: (bundles, { asc }) => [
+        asc(bundles.namespace),
+        asc(bundles.name),
+      ],
     });
 
     // Group by namespace for catalog format
@@ -21,7 +24,7 @@ export default async function catalogRoutes(fastify: FastifyInstance) {
     }
 
     const repositories: string[] = allBundles.map(
-      (b) => `${b.namespace}/${b.name}`
+      (b) => `${b.namespace}/${b.name}`,
     );
 
     // Simple pagination
@@ -31,7 +34,7 @@ export default async function catalogRoutes(fastify: FastifyInstance) {
     }
     const paginated = repositories.slice(startIdx, startIdx + n);
 
-    reply.header('Content-Type', 'application/json');
+    reply.header("Content-Type", "application/json");
     return {
       repositories: paginated,
     };

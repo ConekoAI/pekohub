@@ -5,8 +5,8 @@
  * request routing, and control messages.
  */
 
-import type { FastifyInstance } from 'fastify';
-import type { WebSocket } from 'ws';
+import type { FastifyInstance } from "fastify";
+import type { WebSocket } from "ws";
 import {
   decodeTunnelMessage,
   encodeTunnelMessage,
@@ -15,12 +15,12 @@ import {
   type InstanceAnnouncePayload,
   type InstanceHeartbeatPayload,
   type InstanceDeregisterPayload,
-} from './tunnel-protocol.js';
-import { verifyDidKeySignature, TunnelAuthError } from './tunnel-crypto.js';
-import { instanceService, type InstanceStatus } from './instances.js';
-import { db } from '../db/index.js';
-import { runtimes, instances } from '../db/schema.js';
-import { eq, inArray, and } from 'drizzle-orm';
+} from "./tunnel-protocol.js";
+import { verifyDidKeySignature, TunnelAuthError } from "./tunnel-crypto.js";
+import { instanceService, type InstanceStatus } from "./instances.js";
+import { db } from "../db/index.js";
+import { runtimes, instances } from "../db/schema.js";
+import { eq, inArray, and } from "drizzle-orm";
 
 const HELLO_TIMEOUT_MS = 10_000;
 const HEARTBEAT_INTERVAL_SECS = 30;
@@ -77,8 +77,11 @@ export class TunnelManager {
     // Wait for RuntimeHello as the first binary/text frame
     const helloTimer = setTimeout(() => {
       if (socket.readyState === socket.OPEN) {
-        this.sendMessage(socket, { type: 'disconnect', reason: 'RuntimeHello timeout' });
-        socket.close(1008, 'RuntimeHello timeout');
+        this.sendMessage(socket, {
+          type: "disconnect",
+          reason: "RuntimeHello timeout",
+        });
+        socket.close(1008, "RuntimeHello timeout");
       }
     }, HELLO_TIMEOUT_MS);
 
@@ -89,54 +92,69 @@ export class TunnelManager {
       try {
         msg = decodeTunnelMessage(data);
       } catch (err) {
-        this.fastify.log.warn({ err }, 'Failed to decode tunnel message');
-        this.sendMessage(socket, { type: 'disconnect', reason: 'Invalid message encoding' });
-        socket.close(1003, 'Invalid message encoding');
+        this.fastify.log.warn({ err }, "Failed to decode tunnel message");
+        this.sendMessage(socket, {
+          type: "disconnect",
+          reason: "Invalid message encoding",
+        });
+        socket.close(1003, "Invalid message encoding");
         return;
       }
 
-      if (msg.type !== 'runtime_hello') {
-        this.sendMessage(socket, { type: 'disconnect', reason: 'Expected RuntimeHello' });
-        socket.close(1008, 'Expected RuntimeHello');
+      if (msg.type !== "runtime_hello") {
+        this.sendMessage(socket, {
+          type: "disconnect",
+          reason: "Expected RuntimeHello",
+        });
+        socket.close(1008, "Expected RuntimeHello");
         return;
       }
 
       try {
         await this.authenticateHello(socket, msg);
       } catch (err) {
-        this.fastify.log.warn({ err, runtimeId: msg.runtimeId }, 'Tunnel authentication failed');
+        this.fastify.log.warn(
+          { err, runtimeId: msg.runtimeId },
+          "Tunnel authentication failed",
+        );
         this.sendMessage(socket, {
-          type: 'disconnect',
-          reason: err instanceof TunnelAuthError ? err.message : 'Authentication failed',
+          type: "disconnect",
+          reason:
+            err instanceof TunnelAuthError
+              ? err.message
+              : "Authentication failed",
         });
-        socket.close(1008, 'Authentication failed');
+        socket.close(1008, "Authentication failed");
       }
     };
 
-    socket.once('message', onMessage);
+    socket.once("message", onMessage);
 
-    socket.once('close', () => {
+    socket.once("close", () => {
       clearTimeout(helloTimer);
     });
   }
 
   private async authenticateHello(
     socket: WebSocket,
-    hello: Extract<TunnelMessage, { type: 'runtime_hello' }>
+    hello: Extract<TunnelMessage, { type: "runtime_hello" }>,
   ): Promise<void> {
     const { runtimeId, nonce, signature } = hello;
 
     // Verify signature using pubkey derived from did:key
     const valid = verifyDidKeySignature(runtimeId, nonce, signature);
     if (!valid) {
-      throw new TunnelAuthError('Invalid RuntimeHello signature');
+      throw new TunnelAuthError("Invalid RuntimeHello signature");
     }
 
     // If a connection already exists for this runtime, close the old one
     const existing = this.connections.get(runtimeId);
     if (existing) {
-      this.fastify.log.info({ runtimeId }, 'Replacing existing tunnel connection');
-      this.closeConnection(existing, 'new connection from same runtime');
+      this.fastify.log.info(
+        { runtimeId },
+        "Replacing existing tunnel connection",
+      );
+      this.closeConnection(existing, "new connection from same runtime");
     }
 
     const conn: RuntimeConnection = {
@@ -153,96 +171,108 @@ export class TunnelManager {
 
     // Send TunnelReady
     this.sendMessage(socket, {
-      type: 'tunnel_ready',
+      type: "tunnel_ready",
       heartbeatIntervalSecs: HEARTBEAT_INTERVAL_SECS,
     });
 
     // Wire message handler
     const messageHandler = (data: Buffer | ArrayBuffer | Buffer[]) => {
       this.handleMessage(conn, data).catch((err) => {
-        this.fastify.log.warn({ err, runtimeId }, 'Error handling tunnel message');
+        this.fastify.log.warn(
+          { err, runtimeId },
+          "Error handling tunnel message",
+        );
       });
     };
-    socket.on('message', messageHandler);
+    socket.on("message", messageHandler);
 
-    socket.once('close', () => {
+    socket.once("close", () => {
       this.handleDisconnect(conn);
     });
 
-    socket.once('error', (err) => {
-      this.fastify.log.warn({ err, runtimeId }, 'Tunnel socket error');
+    socket.once("error", (err) => {
+      this.fastify.log.warn({ err, runtimeId }, "Tunnel socket error");
       this.handleDisconnect(conn);
     });
 
-    this.fastify.log.info({ runtimeId }, 'Runtime tunnel authenticated');
+    this.fastify.log.info({ runtimeId }, "Runtime tunnel authenticated");
   }
 
-  private async handleMessage(conn: RuntimeConnection, data: Buffer | ArrayBuffer | Buffer[]): Promise<void> {
+  private async handleMessage(
+    conn: RuntimeConnection,
+    data: Buffer | ArrayBuffer | Buffer[],
+  ): Promise<void> {
     let msg: TunnelMessage;
     try {
       msg = decodeTunnelMessage(data);
     } catch (err) {
-      this.fastify.log.warn({ err, runtimeId: conn.runtimeId }, 'Failed to decode tunnel message');
+      this.fastify.log.warn(
+        { err, runtimeId: conn.runtimeId },
+        "Failed to decode tunnel message",
+      );
       return;
     }
 
     switch (msg.type) {
-      case 'heartbeat': {
+      case "heartbeat": {
         conn.lastHeartbeatAt = new Date();
         this.resetHeartbeatTimeout(conn);
-        this.sendMessage(conn.socket, { type: 'heartbeat_ack', seq: msg.seq });
+        this.sendMessage(conn.socket, { type: "heartbeat_ack", seq: msg.seq });
         break;
       }
 
-      case 'heartbeat_ack': {
+      case "heartbeat_ack": {
         // Runtime-side concern; server just acknowledges
         break;
       }
 
-      case 'proxied_response': {
+      case "proxied_response": {
         this.handleProxiedResponse(msg.requestId, msg.payload);
         break;
       }
 
-      case 'stream_chunk': {
+      case "stream_chunk": {
         this.handleStreamChunk(msg.requestId, msg.payload);
         break;
       }
 
-      case 'stream_end': {
+      case "stream_end": {
         this.handleStreamEnd(msg.requestId);
         break;
       }
 
-      case 'instance_announce': {
+      case "instance_announce": {
         await this.handleInstanceAnnounce(conn.runtimeId, msg.payload);
         break;
       }
 
-      case 'instance_heartbeat': {
+      case "instance_heartbeat": {
         await this.handleInstanceHeartbeat(conn.runtimeId, msg.payload);
         break;
       }
 
-      case 'instance_deregister': {
+      case "instance_deregister": {
         await this.handleInstanceDeregister(conn.runtimeId, msg.payload);
         break;
       }
 
-      case 'disconnect': {
-        this.fastify.log.info({ runtimeId: conn.runtimeId, reason: msg.reason }, 'Runtime sent disconnect');
+      case "disconnect": {
+        this.fastify.log.info(
+          { runtimeId: conn.runtimeId, reason: msg.reason },
+          "Runtime sent disconnect",
+        );
         this.closeConnection(conn, msg.reason);
         break;
       }
 
-      case 'runtime_hello':
-      case 'tunnel_ready':
-      case 'proxied_request':
-      case 'exposure_update': {
+      case "runtime_hello":
+      case "tunnel_ready":
+      case "proxied_request":
+      case "exposure_update": {
         // Unexpected direction
         this.fastify.log.warn(
           { type: msg.type, runtimeId: conn.runtimeId },
-          'Unexpected tunnel message direction from runtime'
+          "Unexpected tunnel message direction from runtime",
         );
         break;
       }
@@ -251,7 +281,7 @@ export class TunnelManager {
         // Exhaustiveness fallback
         this.fastify.log.warn(
           { type: (msg as TunnelMessage).type, runtimeId: conn.runtimeId },
-          'Unknown tunnel message type'
+          "Unknown tunnel message type",
         );
       }
     }
@@ -262,12 +292,18 @@ export class TunnelManager {
     if (!pending) return;
 
     try {
-      const text = Buffer.from(payload).toString('utf8');
+      const text = Buffer.from(payload).toString("utf8");
       const parsed = JSON.parse(text) as { status?: number; body?: unknown };
-      pending.resolve({ status: parsed.status ?? 200, body: parsed.body ?? null });
+      pending.resolve({
+        status: parsed.status ?? 200,
+        body: parsed.body ?? null,
+      });
     } catch {
       // Fallback: treat raw bytes as body
-      pending.resolve({ status: 200, body: Buffer.from(payload).toString('utf8') });
+      pending.resolve({
+        status: 200,
+        body: Buffer.from(payload).toString("utf8"),
+      });
     }
 
     this.pendingRequests.delete(requestId);
@@ -282,15 +318,17 @@ export class TunnelManager {
     const pending = this.pendingRequests.get(requestId);
     if (!pending) return;
 
-    const chunk = Buffer.from(payload).toString('utf8');
+    const chunk = Buffer.from(payload).toString("utf8");
 
     if (pending.streamSink) {
       pending.receivedStreamInit = true;
       try {
         pending.streamSink.onChunk(chunk);
       } catch (err) {
-        pending.streamSink.onError(err instanceof Error ? err : new Error(String(err)));
-        this.rejectRequest(requestId, new Error('Stream sink error'));
+        pending.streamSink.onError(
+          err instanceof Error ? err : new Error(String(err)),
+        );
+        this.rejectRequest(requestId, new Error("Stream sink error"));
       }
     } else {
       pending.receivedStreamInit = true;
@@ -309,7 +347,9 @@ export class TunnelManager {
       try {
         pending.streamSink.onEnd();
       } catch (err) {
-        pending.streamSink.onError(err instanceof Error ? err : new Error(String(err)));
+        pending.streamSink.onError(
+          err instanceof Error ? err : new Error(String(err)),
+        );
       }
       pending.resolve({ status: 200, body: null });
       this.pendingRequests.delete(requestId);
@@ -320,7 +360,7 @@ export class TunnelManager {
     }
 
     // Non-streaming fallback: concatenate chunks and resolve
-    const body = pending.chunks.length > 0 ? pending.chunks.join('') : '';
+    const body = pending.chunks.length > 0 ? pending.chunks.join("") : "";
     pending.resolve({ status: 200, body });
     this.pendingRequests.delete(requestId);
     const conn = connForRequestId(this.connections, requestId);
@@ -337,11 +377,14 @@ export class TunnelManager {
 
   private async handleInstanceAnnounce(
     runtimeId: string,
-    payload: InstanceAnnouncePayload
+    payload: InstanceAnnouncePayload,
   ): Promise<void> {
     let ownerId = await this.resolveRuntimeOwner(runtimeId);
     if (ownerId === null) {
-      this.fastify.log.warn({ runtimeId, instanceId: payload.id }, 'No runtime record found; falling back to ownerId 0');
+      this.fastify.log.warn(
+        { runtimeId, instanceId: payload.id },
+        "No runtime record found; falling back to ownerId 0",
+      );
       ownerId = 0;
     }
 
@@ -361,29 +404,41 @@ export class TunnelManager {
         metadata: payload.metadata,
       });
     } catch (err) {
-      this.fastify.log.warn({ err, runtimeId, instanceId: payload.id }, 'Failed to upsert instance from announce');
+      this.fastify.log.warn(
+        { err, runtimeId, instanceId: payload.id },
+        "Failed to upsert instance from announce",
+      );
     }
   }
 
   private async handleInstanceHeartbeat(
     runtimeId: string,
-    payload: InstanceHeartbeatPayload
+    payload: InstanceHeartbeatPayload,
   ): Promise<void> {
     try {
-      await instanceService.heartbeat(payload.id, payload.status as InstanceStatus);
+      await instanceService.heartbeat(
+        payload.id,
+        payload.status as InstanceStatus,
+      );
     } catch (err) {
-      this.fastify.log.warn({ err, runtimeId, instanceId: payload.id }, 'Failed to process instance heartbeat');
+      this.fastify.log.warn(
+        { err, runtimeId, instanceId: payload.id },
+        "Failed to process instance heartbeat",
+      );
     }
   }
 
   private async handleInstanceDeregister(
     _runtimeId: string,
-    payload: InstanceDeregisterPayload
+    payload: InstanceDeregisterPayload,
   ): Promise<void> {
     try {
       await instanceService.delete(payload.id);
     } catch (err) {
-      this.fastify.log.warn({ err, instanceId: payload.id }, 'Failed to deregister instance');
+      this.fastify.log.warn(
+        { err, instanceId: payload.id },
+        "Failed to deregister instance",
+      );
     }
   }
 
@@ -395,7 +450,7 @@ export class TunnelManager {
 
     // Reject pending requests
     for (const requestId of conn.pendingRequestIds) {
-      this.rejectRequest(requestId, new Error('Tunnel disconnected'));
+      this.rejectRequest(requestId, new Error("Tunnel disconnected"));
     }
     conn.pendingRequestIds.clear();
 
@@ -405,15 +460,21 @@ export class TunnelManager {
 
     // Mark hosted instances offline
     this.markRuntimeOffline(conn.runtimeId).catch((err) => {
-      this.fastify.log.warn({ err, runtimeId: conn.runtimeId }, 'Failed to mark runtime offline');
+      this.fastify.log.warn(
+        { err, runtimeId: conn.runtimeId },
+        "Failed to mark runtime offline",
+      );
     });
 
-    this.fastify.log.info({ runtimeId: conn.runtimeId }, 'Runtime tunnel disconnected');
+    this.fastify.log.info(
+      { runtimeId: conn.runtimeId },
+      "Runtime tunnel disconnected",
+    );
   }
 
   private closeConnection(conn: RuntimeConnection, reason: string): void {
     if (conn.socket.readyState === conn.socket.OPEN) {
-      this.sendMessage(conn.socket, { type: 'disconnect', reason });
+      this.sendMessage(conn.socket, { type: "disconnect", reason });
       conn.socket.close(1000, reason);
     }
   }
@@ -423,8 +484,11 @@ export class TunnelManager {
       clearTimeout(conn.heartbeatTimeout);
     }
     conn.heartbeatTimeout = setTimeout(() => {
-      this.fastify.log.warn({ runtimeId: conn.runtimeId }, 'Tunnel heartbeat timeout');
-      this.closeConnection(conn, 'heartbeat timeout');
+      this.fastify.log.warn(
+        { runtimeId: conn.runtimeId },
+        "Tunnel heartbeat timeout",
+      );
+      this.closeConnection(conn, "heartbeat timeout");
       this.handleDisconnect(conn);
     }, HEARTBEAT_TIMEOUT_MS);
     conn.heartbeatTimeout.unref?.();
@@ -434,8 +498,11 @@ export class TunnelManager {
     const now = Date.now();
     for (const conn of this.connections.values()) {
       if (now - conn.lastHeartbeatAt.getTime() > HEARTBEAT_TIMEOUT_MS) {
-        this.fastify.log.warn({ runtimeId: conn.runtimeId }, 'Reaping stale tunnel connection');
-        this.closeConnection(conn, 'heartbeat timeout');
+        this.fastify.log.warn(
+          { runtimeId: conn.runtimeId },
+          "Reaping stale tunnel connection",
+        );
+        this.closeConnection(conn, "heartbeat timeout");
         this.handleDisconnect(conn);
       }
     }
@@ -444,11 +511,11 @@ export class TunnelManager {
   async sendProxiedRequest(
     runtimeId: string,
     request: HttpProxiedRequest,
-    timeoutMs: number = 30_000
+    timeoutMs: number = 30_000,
   ): Promise<{ status: number; body: unknown }> {
     const conn = this.connections.get(runtimeId);
     if (!conn || conn.socket.readyState !== conn.socket.OPEN) {
-      throw new Error('Runtime not connected');
+      throw new Error("Runtime not connected");
     }
 
     return new Promise((resolve, reject) => {
@@ -463,7 +530,7 @@ export class TunnelManager {
       conn.pendingRequestIds.add(request.requestId);
 
       this.sendMessage(conn.socket, {
-        type: 'proxied_request',
+        type: "proxied_request",
         requestId: request.requestId,
         agent: request.instanceId, // fallback agent identifier
         payload: Array.from(encodeHttpRequestBody(request)),
@@ -473,7 +540,7 @@ export class TunnelManager {
         if (this.pendingRequests.has(request.requestId)) {
           this.pendingRequests.delete(request.requestId);
           conn.pendingRequestIds.delete(request.requestId);
-          reject(new Error('Proxy request timeout'));
+          reject(new Error("Proxy request timeout"));
         }
       }, timeoutMs);
       timer.unref?.();
@@ -485,11 +552,11 @@ export class TunnelManager {
     runtimeId: string,
     request: HttpProxiedRequest,
     sink: StreamSink,
-    timeoutMs: number = 30_000
+    timeoutMs: number = 30_000,
   ): Promise<void> {
     const conn = this.connections.get(runtimeId);
     if (!conn || conn.socket.readyState !== conn.socket.OPEN) {
-      throw new Error('Runtime not connected');
+      throw new Error("Runtime not connected");
     }
 
     return new Promise((resolve, reject) => {
@@ -498,13 +565,17 @@ export class TunnelManager {
           // If resolved without stream init, treat as immediate response
           if (!pending.receivedStreamInit) {
             try {
-              sink.onChunk(String(result.body ?? ''));
+              sink.onChunk(String(result.body ?? ""));
               sink.onEnd();
             } catch (err) {
               sink.onError(err instanceof Error ? err : new Error(String(err)));
             }
           }
-          try { resolve(); } catch { /* already resolved */ }
+          try {
+            resolve();
+          } catch {
+            /* already resolved */
+          }
         },
         reject: (err) => {
           sink.onError(err);
@@ -519,7 +590,7 @@ export class TunnelManager {
       conn.pendingRequestIds.add(request.requestId);
 
       this.sendMessage(conn.socket, {
-        type: 'proxied_request',
+        type: "proxied_request",
         requestId: request.requestId,
         agent: request.instanceId,
         payload: Array.from(encodeHttpRequestBody(request)),
@@ -529,7 +600,7 @@ export class TunnelManager {
         if (this.pendingRequests.has(request.requestId)) {
           this.pendingRequests.delete(request.requestId);
           conn.pendingRequestIds.delete(request.requestId);
-          const err = new Error('Stream request timeout');
+          const err = new Error("Stream request timeout");
           sink.onError(err);
           reject(err);
         }
@@ -539,7 +610,10 @@ export class TunnelManager {
     });
   }
 
-  async broadcastControl(runtimeId: string, message: TunnelMessage): Promise<void> {
+  async broadcastControl(
+    runtimeId: string,
+    message: TunnelMessage,
+  ): Promise<void> {
     const conn = this.connections.get(runtimeId);
     if (!conn || conn.socket.readyState !== conn.socket.OPEN) {
       return;
@@ -552,15 +626,18 @@ export class TunnelManager {
       // Mark all instances hosted by this runtime as offline in a single bulk UPDATE
       await db
         .update(instances)
-        .set({ status: 'offline' })
+        .set({ status: "offline" })
         .where(
           and(
             eq(instances.runtimeId, runtimeId),
-            inArray(instances.status, ['online', 'busy'])
-          )
+            inArray(instances.status, ["online", "busy"]),
+          ),
         );
     } catch (err) {
-      this.fastify.log.warn({ err, runtimeId }, 'Failed to mark runtime instances offline');
+      this.fastify.log.warn(
+        { err, runtimeId },
+        "Failed to mark runtime instances offline",
+      );
     }
   }
 
@@ -586,7 +663,7 @@ export class TunnelManager {
 
 function connForRequestId(
   connections: Map<string, RuntimeConnection>,
-  requestId: string
+  requestId: string,
 ): RuntimeConnection | undefined {
   for (const conn of connections.values()) {
     if (conn.pendingRequestIds.has(requestId)) return conn;
@@ -603,7 +680,7 @@ function encodeHttpRequestBody(request: HttpProxiedRequest): Buffer {
       body: request.body,
       headers: request.headers,
     }),
-    'utf8'
+    "utf8",
   );
 }
 

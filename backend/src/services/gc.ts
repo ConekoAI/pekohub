@@ -1,7 +1,7 @@
-import { db } from '../db/index.js';
-import { blobs, bundleVersions } from '../db/schema.js';
-import { lt, eq } from 'drizzle-orm';
-import type { StorageService } from '../plugins/storage.js';
+import { db } from "../db/index.js";
+import { blobs, bundleVersions } from "../db/schema.js";
+import { lt, eq } from "drizzle-orm";
+import type { StorageService } from "../plugins/storage.js";
 
 export interface GarbageCollectionConfig {
   // Retention period in days before a blob can be garbage collected
@@ -29,12 +29,10 @@ export class GarbageCollector {
   /**
    * Run garbage collection to find and delete unreferenced blobs
    */
-  async collect(config: GarbageCollectionConfig = {}): Promise<GarbageCollectionResult> {
-    const {
-      retentionDays = 7,
-      dryRun = false,
-      batchSize = 1000,
-    } = config;
+  async collect(
+    config: GarbageCollectionConfig = {},
+  ): Promise<GarbageCollectionResult> {
+    const { retentionDays = 7, dryRun = false, batchSize = 1000 } = config;
 
     const result: GarbageCollectionResult = {
       blobsScanned: 0,
@@ -64,7 +62,9 @@ export class GarbageCollector {
       }
 
       // Calculate cutoff date for retention
-      const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+      const cutoffDate = new Date(
+        Date.now() - retentionDays * 24 * 60 * 60 * 1000,
+      );
 
       // Find all blobs older than retention period
       const oldBlobs = await db
@@ -74,7 +74,9 @@ export class GarbageCollector {
         .limit(batchSize);
 
       // Filter to only those not referenced
-      const unreferencedBlobs = oldBlobs.filter(blob => !referencedDigests.has(blob.digest));
+      const unreferencedBlobs = oldBlobs.filter(
+        (blob) => !referencedDigests.has(blob.digest),
+      );
 
       result.blobsScanned = unreferencedBlobs.length;
 
@@ -91,12 +93,16 @@ export class GarbageCollector {
             result.blobsDeleted++;
             result.bytesFreed += blob.size;
           } catch (err) {
-            result.errors.push(`Failed to delete blob ${blob.digest}: ${err instanceof Error ? err.message : String(err)}`);
+            result.errors.push(
+              `Failed to delete blob ${blob.digest}: ${err instanceof Error ? err.message : String(err)}`,
+            );
           }
         }
       }
     } catch (err) {
-      result.errors.push(`Garbage collection failed: ${err instanceof Error ? err.message : String(err)}`);
+      result.errors.push(
+        `Garbage collection failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
 
     return result;
@@ -123,7 +129,9 @@ export class GarbageCollector {
       }
     }
 
-    const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+    const cutoffDate = new Date(
+      Date.now() - retentionDays * 24 * 60 * 60 * 1000,
+    );
 
     // Find all old blobs
     const oldBlobs = await db
@@ -132,7 +140,9 @@ export class GarbageCollector {
       .where(lt(blobs.uploadedAt, cutoffDate));
 
     // Filter to only those not referenced
-    const unreferencedBlobs = oldBlobs.filter(blob => !referencedDigests.has(blob.digest));
+    const unreferencedBlobs = oldBlobs.filter(
+      (blob) => !referencedDigests.has(blob.digest),
+    );
 
     return unreferencedBlobs.reduce((sum, blob) => sum + blob.size, 0);
   }

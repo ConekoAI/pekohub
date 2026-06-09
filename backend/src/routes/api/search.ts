@@ -1,17 +1,17 @@
-import type { FastifyInstance } from 'fastify';
-import { SearchQuery, SearchResponse } from '@pekohub/shared';
+import type { FastifyInstance } from "fastify";
+import { SearchQuery, SearchResponse } from "@pekohub/shared";
 
 /**
  * Custom API: Full-text search
  * GET /api/v1/search?q=...&page=...&perPage=...&filters=...
  */
 export default async function searchRoutes(fastify: FastifyInstance) {
-  fastify.get('/search', async (request, reply) => {
+  fastify.get("/search", async (request, reply) => {
     const parse = SearchQuery.safeParse(request.query);
 
     if (!parse.success) {
       return reply.status(400).send({
-        error: 'Invalid query parameters',
+        error: "Invalid query parameters",
         details: parse.error.format(),
       });
     }
@@ -19,10 +19,14 @@ export default async function searchRoutes(fastify: FastifyInstance) {
     const { q, page, perPage, filters } = parse.data;
 
     const meiliFilters: string[] = [];
-    if (filters?.bundleType) meiliFilters.push(`bundleType = ${filters.bundleType}`);
-    if (filters?.extensionType) meiliFilters.push(`extensionType = ${filters.extensionType}`);
-    if (filters?.modelProvider) meiliFilters.push(`modelProviders = ${filters.modelProvider}`);
-    if (filters?.category) meiliFilters.push(`categories = ${filters.category}`);
+    if (filters?.bundleType)
+      meiliFilters.push(`bundleType = ${filters.bundleType}`);
+    if (filters?.extensionType)
+      meiliFilters.push(`extensionType = ${filters.extensionType}`);
+    if (filters?.modelProvider)
+      meiliFilters.push(`modelProviders = ${filters.modelProvider}`);
+    if (filters?.category)
+      meiliFilters.push(`categories = ${filters.category}`);
     if (filters?.license) meiliFilters.push(`license = ${filters.license}`);
 
     const result = await fastify.search.search(q, {
@@ -31,7 +35,7 @@ export default async function searchRoutes(fastify: FastifyInstance) {
       filter: meiliFilters.length > 0 ? meiliFilters : undefined,
     });
 
-    fastify.log.debug({ result }, 'Search result from Meilisearch');
+    fastify.log.debug({ result }, "Search result from Meilisearch");
 
     const response = SearchResponse.parse({
       items: result.hits,
@@ -41,7 +45,7 @@ export default async function searchRoutes(fastify: FastifyInstance) {
       totalPages: Math.ceil(result.total / perPage),
     });
 
-    fastify.log.debug({ response }, 'Parsed search response');
+    fastify.log.debug({ response }, "Parsed search response");
 
     return response;
   });

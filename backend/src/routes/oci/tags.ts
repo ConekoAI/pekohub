@@ -1,7 +1,7 @@
-import type { FastifyInstance } from 'fastify';
-import { db } from '../../db/index.js';
-import { bundles, bundleVersions } from '../../db/schema.js';
-import { eq, and, desc } from 'drizzle-orm';
+import type { FastifyInstance } from "fastify";
+import { db } from "../../db/index.js";
+import { bundles, bundleVersions } from "../../db/schema.js";
+import { eq, and, desc } from "drizzle-orm";
 
 /**
  * OCI Distribution Spec: Tag listing
@@ -11,8 +11,11 @@ import { eq, and, desc } from 'drizzle-orm';
  * so the handler path is just /tags/list
  */
 export default async function tagRoutes(fastify: FastifyInstance) {
-  fastify.get('/tags/list', async (request, reply) => {
-    const { namespace, name } = request.params as { namespace: string; name: string };
+  fastify.get("/tags/list", async (request, reply) => {
+    const { namespace, name } = request.params as {
+      namespace: string;
+      name: string;
+    };
     const { n = 100, last } = request.query as { n?: number; last?: string };
 
     const bundle = await db.query.bundles.findFirst({
@@ -21,7 +24,12 @@ export default async function tagRoutes(fastify: FastifyInstance) {
 
     if (!bundle) {
       return reply.status(404).send({
-        errors: [{ code: 'NAME_UNKNOWN', message: `Bundle ${namespace}/${name} not found` }],
+        errors: [
+          {
+            code: "NAME_UNKNOWN",
+            message: `Bundle ${namespace}/${name} not found`,
+          },
+        ],
       });
     }
 
@@ -39,7 +47,7 @@ export default async function tagRoutes(fastify: FastifyInstance) {
     }
     tags = tags.slice(0, n);
 
-    reply.header('Content-Type', 'application/json');
+    reply.header("Content-Type", "application/json");
     return {
       name: `${namespace}/${name}`,
       tags,

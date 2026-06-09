@@ -1,7 +1,7 @@
-import { db } from '../db/index.js';
-import { auditLogs, users } from '../db/schema.js';
-import { eq, and, desc, sql, count } from 'drizzle-orm';
-import type { SQL } from 'drizzle-orm';
+import { db } from "../db/index.js";
+import { auditLogs, users } from "../db/schema.js";
+import { eq, and, desc, sql, count } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 
 export interface ListAuditOptions {
   action?: string;
@@ -32,7 +32,10 @@ export interface ListAuditResult {
 export class AuditService {
   private logError(method: string, err: unknown): void {
     // eslint-disable-next-line no-console
-    console.error(`[AuditService] ${method} failed:`, err instanceof Error ? err.message : String(err));
+    console.error(
+      `[AuditService] ${method} failed:`,
+      err instanceof Error ? err.message : String(err),
+    );
   }
 
   async logPush(
@@ -47,12 +50,12 @@ export class AuditService {
       await db.insert(auditLogs).values({
         namespace,
         userId: userId ?? null,
-        action: 'push',
+        action: "push",
         resource: `${namespace}/${bundleName}:${version}`,
         details: { digest, ...details },
       });
     } catch (err) {
-      this.logError('logPush', err);
+      this.logError("logPush", err);
     }
   }
 
@@ -68,12 +71,12 @@ export class AuditService {
       await db.insert(auditLogs).values({
         namespace,
         userId: userId ?? null,
-        action: 'pull',
+        action: "pull",
         resource: `${namespace}/${bundleName}:${version}`,
         details: { digest, ...details },
       });
     } catch (err) {
-      this.logError('logPull', err);
+      this.logError("logPull", err);
     }
   }
 
@@ -87,12 +90,12 @@ export class AuditService {
       await db.insert(auditLogs).values({
         namespace,
         userId: userId ?? null,
-        action: 'delete',
+        action: "delete",
         resource,
         details: details ?? null,
       });
     } catch (err) {
-      this.logError('logDelete', err);
+      this.logError("logDelete", err);
     }
   }
 
@@ -106,12 +109,12 @@ export class AuditService {
       await db.insert(auditLogs).values({
         namespace,
         userId: userId ?? null,
-        action: 'permission_change',
+        action: "permission_change",
         resource,
         details: details ?? null,
       });
     } catch (err) {
-      this.logError('logPermissionChange', err);
+      this.logError("logPermissionChange", err);
     }
   }
 
@@ -123,14 +126,14 @@ export class AuditService {
   ): Promise<void> {
     try {
       await db.insert(auditLogs).values({
-        namespace: 'security',
+        namespace: "security",
         userId: userId ?? null,
         action,
         resource,
         details: details ?? null,
       });
     } catch (err) {
-      this.logError('logSecurityEvent', err);
+      this.logError("logSecurityEvent", err);
     }
   }
 
@@ -155,10 +158,7 @@ export class AuditService {
         .orderBy(desc(auditLogs.createdAt))
         .limit(perPage)
         .offset((page - 1) * perPage),
-      db
-        .select({ count: count() })
-        .from(auditLogs)
-        .where(whereClause),
+      db.select({ count: count() }).from(auditLogs).where(whereClause),
     ]);
 
     return {

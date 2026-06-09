@@ -17,7 +17,11 @@ export class Scheduler {
 
   constructor(private logger: Logger) {}
 
-  addJob(name: string, intervalMs: number, fn: () => void | Promise<void>): void {
+  addJob(
+    name: string,
+    intervalMs: number,
+    fn: () => void | Promise<void>,
+  ): void {
     if (this.jobs.has(name)) {
       this.logger.warn(`Job "${name}" already exists, overwriting`);
       this.removeJob(name);
@@ -51,7 +55,7 @@ export class Scheduler {
       this.startJob(job);
     }
 
-    this.logger.info('Scheduler started');
+    this.logger.info("Scheduler started");
   }
 
   stop(): void {
@@ -65,7 +69,7 @@ export class Scheduler {
       }
     }
 
-    this.logger.info('Scheduler stopped');
+    this.logger.info("Scheduler stopped");
   }
 
   private startJob(job: Job): void {
@@ -84,7 +88,7 @@ export class Scheduler {
     } catch (err) {
       this.logger.error(
         `Scheduled job failed: ${job.name}`,
-        err instanceof Error ? err.message : String(err)
+        err instanceof Error ? err.message : String(err),
       );
     }
   }
