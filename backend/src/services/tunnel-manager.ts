@@ -18,6 +18,9 @@ import {
 } from './tunnel-protocol.js';
 import { verifyDidKeySignature, TunnelAuthError } from './tunnel-crypto.js';
 import { instanceService, type InstanceStatus } from './instances.js';
+import { db } from '../db/index.js';
+import { runtimes, instances } from '../db/schema.js';
+import { eq, inArray, and } from 'drizzle-orm';
 
 const HELLO_TIMEOUT_MS = 10_000;
 const HEARTBEAT_INTERVAL_SECS = 30;
@@ -325,16 +328,29 @@ export class TunnelManager {
     if (pending.timer) clearTimeout(pending.timer);
   }
 
+  async resolveRuntimeOwner(runtimeId: string): Promise<number | null> {
+    const row = await db.query.runtimes.findFirst({
+      where: eq(runtimes.runtimeDid, runtimeId),
+    });
+    return row?.ownerId ?? null;
+  }
+
   private async handleInstanceAnnounce(
     runtimeId: string,
     payload: InstanceAnnouncePayload
   ): Promise<void> {
+    let ownerId = await this.resolveRuntimeOwner(runtimeId);
+    if (ownerId === null) {
+      this.fastify.log.warn({ runtimeId, instanceId: payload.id }, 'No runtime record found; falling back to ownerId 0');
+      ownerId = 0;
+    }
+
     try {
       await instanceService.upsertFromAnnounce({
         id: payload.id,
         type: payload.type,
         name: payload.name,
-        ownerId: 0, // TODO: link runtime → user when runtimes table exists
+        ownerId,
         runtimeId,
         runtimeDisplayName: payload.runtimeDisplayName,
         bundleRef: payload.bundleRef,
@@ -533,15 +549,16 @@ export class TunnelManager {
 
   async markRuntimeOffline(runtimeId: string): Promise<void> {
     try {
-      // Mark all instances hosted by this runtime as offline
-      const result = await instanceService.list({ runtimeId, status: 'online' });
-      for (const instance of result.data) {
-        await instanceService.update(instance.id, { status: 'offline' });
-      }
-      const busyResult = await instanceService.list({ runtimeId, status: 'busy' });
-      for (const instance of busyResult.data) {
-        await instanceService.update(instance.id, { status: 'offline' });
-      }
+      // Mark all instances hosted by this runtime as offline in a single bulk UPDATE
+      await db
+        .update(instances)
+        .set({ status: 'offline' })
+        .where(
+          and(
+            eq(instances.runtimeId, runtimeId),
+            inArray(instances.status, ['online', 'busy'])
+          )
+        );
     } catch (err) {
       this.fastify.log.warn({ err, runtimeId }, 'Failed to mark runtime instances offline');
     }

@@ -389,7 +389,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     return reply.status(204).send();
   });
 
-  // ── Chat proxy ─────────────────────────────────────────────────────────────
+  // ── Chat proxy (SSE streaming) ─────────────────────────────────────────────
   fastify.post('/instances/:id/chat', async (request, reply) => {
     const { id } = request.params as { id: string };
     const instance = await instanceService.getById(id);
@@ -421,19 +421,14 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       return reply.status(428).send({ error: 'Terms of Service acknowledgment required', tosText: instance.tosText });
     }
 
-    // Proxy through tunnel
-    try {
-      return await fastify.tunnelRouter.proxyChat(
-        instance.runtimeId,
-        id,
-        body.data,
-        { 'content-type': 'application/json' },
-        reply
-      );
-    } catch (err) {
-      fastify.log.warn({ err, instanceId: id }, 'Chat proxy failed');
-      return reply.status(502).send({ error: 'Instance unreachable' });
-    }
+    // Proxy through tunnel as an SSE stream
+    return await fastify.tunnelRouter.proxyStream(
+      instance.runtimeId,
+      id,
+      body.data,
+      { 'content-type': 'application/json' },
+      reply
+    );
   });
 
   // ── Stream proxy (SSE) ─────────────────────────────────────────────────────
@@ -768,19 +763,14 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       return reply.status(428).send({ error: 'Terms of Service acknowledgment required', tosText: instance.tosText });
     }
 
-    // Proxy through tunnel
-    try {
-      return await fastify.tunnelRouter.proxyChat(
-        instance.runtimeId,
-        instance.id,
-        body.data,
-        { 'content-type': 'application/json' },
-        reply
-      );
-    } catch (err) {
-      fastify.log.warn({ err, instanceId: instance.id }, 'Public chat proxy failed');
-      return reply.status(502).send({ error: 'Instance unreachable' });
-    }
+    // Proxy through tunnel as an SSE stream
+    return await fastify.tunnelRouter.proxyStream(
+      instance.runtimeId,
+      instance.id,
+      body.data,
+      { 'content-type': 'application/json' },
+      reply
+    );
   });
 
   // ── Analytics (owner only) ─────────────────────────────────────────────────

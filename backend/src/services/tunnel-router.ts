@@ -15,7 +15,12 @@ export class TunnelRouter {
     body: unknown,
     headers: Record<string, string>,
     reply: FastifyReply
-  ): Promise<void> {
+  ): Promise<FastifyReply> {
+    // Fail fast if runtime is not connected
+    if (!this.tunnelManager.isRuntimeConnected(runtimeId)) {
+      return reply.status(502).send({ error: 'Instance unreachable' });
+    }
+
     const request: HttpProxiedRequest = {
       requestId: crypto.randomUUID(),
       instanceId,
@@ -24,8 +29,32 @@ export class TunnelRouter {
       headers,
     };
 
-    const response = await this.tunnelManager.sendProxiedRequest(runtimeId, request);
-    return reply.status(response.status).send(response.body);
+    reply.raw.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    });
+
+    const sink = {
+      onChunk: (chunk: string) => {
+        reply.raw.write(`data: ${JSON.stringify({ chunk, done: false })}\n\n`);
+      },
+      onEnd: () => {
+        reply.raw.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+        reply.raw.end();
+      },
+      onError: (err: Error) => {
+        reply.raw.write(`event: error\ndata: ${JSON.stringify({ message: err.message })}\n\n`);
+        reply.raw.end();
+      },
+    };
+
+    try {
+      await this.tunnelManager.startStream(runtimeId, request, sink);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Stream failed';
+      sink.onError(new Error(message));
+    }
   }
 
   async proxyStream(
@@ -35,6 +64,11 @@ export class TunnelRouter {
     headers: Record<string, string>,
     reply: FastifyReply
   ): Promise<void> {
+    // Fail fast if runtime is not connected
+    if (!this.tunnelManager.isRuntimeConnected(runtimeId)) {
+      return reply.status(502).send({ error: 'Instance unreachable' });
+    }
+
     const request: HttpProxiedRequest = {
       requestId: crypto.randomUUID(),
       instanceId,

@@ -213,6 +213,21 @@ export const instanceRelations = relations(instances, ({ one }) => ({
 }));
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Runtimes
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const runtimes = pgTable('runtimes', {
+  id: serial('id').primaryKey(),
+  runtimeDid: varchar('runtime_did', { length: 255 }).notNull().unique(),
+  ownerId: integer('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  displayName: varchar('display_name', { length: 255 }),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('idx_runtimes_runtime_did').on(table.runtimeDid),
+]);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Audit Log
 // ─────────────────────────────────────────────────────────────────────────────
 

@@ -190,12 +190,30 @@ function createMockTunnelManager() {
   };
 }
 
-function createMockTunnelRouter(_manager: ReturnType<typeof createMockTunnelManager>) {
+function createMockTunnelRouter(manager: ReturnType<typeof createMockTunnelManager>) {
   return {
-    async proxyChat() {
+    async proxyChat(
+      runtimeId: string,
+      instanceId: string,
+      body: unknown,
+      headers: Record<string, string>,
+      reply: any
+    ) {
+      if (!manager.isRuntimeConnected(runtimeId)) {
+        return reply.status(502).send({ error: 'Instance unreachable' });
+      }
       throw new Error('Runtime not connected');
     },
-    async proxyStream() {
+    async proxyStream(
+      runtimeId: string,
+      instanceId: string,
+      body: unknown,
+      headers: Record<string, string>,
+      reply: any
+    ) {
+      if (!manager.isRuntimeConnected(runtimeId)) {
+        return reply.status(502).send({ error: 'Instance unreachable' });
+      }
       throw new Error('Runtime not connected');
     },
     async sendControl() {},
