@@ -154,6 +154,17 @@ const DDL_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_instances_published_at ON instances(published_at);`,
   `CREATE INDEX IF NOT EXISTS idx_instances_featured ON instances(featured);`,
   `CREATE INDEX IF NOT EXISTS idx_instances_category ON instances(category);`,
+
+  // Runtimes table (for tunnel owner resolution)
+  `CREATE TABLE IF NOT EXISTS runtimes (
+    id SERIAL PRIMARY KEY,
+    runtime_did VARCHAR(255) NOT NULL UNIQUE,
+    owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    display_name VARCHAR(255),
+    last_seen_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+  );`,
+  `CREATE INDEX IF NOT EXISTS idx_runtimes_runtime_did ON runtimes(runtime_did);`,
 ];
 
 /**
@@ -185,6 +196,7 @@ export async function resetTables(client: PGlite) {
     "bundle_versions",
     "bundles",
     "instances",
+    "runtimes",
     "api_keys",
     "users",
   ];

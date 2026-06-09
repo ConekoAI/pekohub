@@ -12,6 +12,9 @@ import adminRoutes from "../../src/routes/api/admin.js";
 import oauthRoutes from "../../src/routes/auth/oauth.js";
 import apiKeyRoutes from "../../src/routes/auth/api-keys.js";
 import ociRoutes from "../../src/routes/oci/index.js";
+import tunnelPlugin from "../../src/plugins/tunnel.js";
+import instanceApiRoutes from "../../src/routes/api/instances.js";
+import runtimeApiRoutes from "../../src/routes/api/runtimes.js";
 
 import { createTestDb } from "./db.js";
 
@@ -141,10 +144,15 @@ async function main() {
   // Mock search plugin
   app.decorate("search", createMockSearch());
 
+  // Register plugins
+  await app.register(tunnelPlugin);
+
   // Register routes
   await app.register(ociRoutes);
   await app.register(searchApiRoutes, { prefix: "/v1" });
   await app.register(bundleApiRoutes, { prefix: "/v1" });
+  await app.register(instanceApiRoutes, { prefix: "/v1" });
+  await app.register(runtimeApiRoutes, { prefix: "/v1" });
   await app.register(adminRoutes, { prefix: "/v1/admin" });
   await app.register(oauthRoutes, { prefix: "/v1/auth" });
   await app.register(apiKeyRoutes, { prefix: "/v1/auth" });
