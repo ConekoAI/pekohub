@@ -529,6 +529,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     await fastify.tunnelRouter.proxyStream(
       instance.runtimeId,
       id,
+      instance.name,
       body.data,
       { "content-type": "application/json" },
       reply,
@@ -562,6 +563,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       return await fastify.tunnelRouter.proxyStream(
         instance.runtimeId,
         id,
+        instance.name,
         {},
         { "content-type": "application/json" },
         reply,
@@ -921,6 +923,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       await fastify.tunnelRouter.proxyStream(
         instance.runtimeId,
         instance.id,
+        instance.name,
         body.data,
         { "content-type": "application/json" },
         reply,

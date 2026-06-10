@@ -160,6 +160,37 @@ async function main() {
   // Health check
   app.get("/health", async () => ({ status: "ok", version: "0.1.0" }));
 
+  // Test-only: create a user directly in the database (for E2E tests)
+  app.post("/test/create-user", async (request, reply) => {
+    const body = request.body as any;
+    const result = await testDb.client.query(
+      `INSERT INTO users (external_id, provider, namespace, display_name, email, avatar_url)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, external_id, provider, namespace, display_name, email, avatar_url`,
+      [
+        body.external_id ?? `test-${Date.now()}`,
+        body.provider ?? "github",
+        body.namespace ?? `testuser${Date.now()}`,
+        body.display_name ?? "Test User",
+        body.email ?? "test@example.com",
+        body.avatar_url ?? null,
+      ],
+    );
+    return reply.status(201).send(result.rows[0]);
+  });
+
+  // Test-only: create a runtime record directly
+  app.post("/test/create-runtime", async (request, reply) => {
+    const body = request.body as any;
+    const result = await testDb.client.query(
+      `INSERT INTO runtimes (runtime_did, owner_id, display_name)
+       VALUES ($1, $2, $3)
+       RETURNING id, runtime_did, owner_id, display_name`,
+      [body.runtime_did, body.owner_id, body.display_name ?? "Test Runtime"],
+    );
+    return reply.status(201).send(result.rows[0]);
+  });
+
   // Error handler
   app.setErrorHandler((error, _request, reply) => {
     reply.status(error.statusCode ?? 500).send({

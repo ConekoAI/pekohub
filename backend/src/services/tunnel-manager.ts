@@ -592,7 +592,7 @@ export class TunnelManager {
       this.sendMessage(conn.socket, {
         type: "proxied_request",
         requestId: request.requestId,
-        agent: request.instanceId,
+        agent: request.agentName,
         payload: Array.from(encodeHttpRequestBody(request)),
       });
 

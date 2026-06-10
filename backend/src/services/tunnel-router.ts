@@ -12,6 +12,7 @@ export class TunnelRouter {
   async proxyChat(
     runtimeId: string,
     instanceId: string,
+    agentName: string,
     body: unknown,
     headers: Record<string, string>,
     reply: FastifyReply,
@@ -24,6 +25,7 @@ export class TunnelRouter {
     const request: HttpProxiedRequest = {
       requestId: crypto.randomUUID(),
       instanceId,
+      agentName,
       method: "chat",
       body,
       headers,
@@ -62,6 +64,7 @@ export class TunnelRouter {
   async proxyStream(
     runtimeId: string,
     instanceId: string,
+    agentName: string,
     body: unknown,
     headers: Record<string, string>,
     reply: FastifyReply,
@@ -74,6 +77,7 @@ export class TunnelRouter {
     const request: HttpProxiedRequest = {
       requestId: crypto.randomUUID(),
       instanceId,
+      agentName,
       method: "stream",
       body,
       headers,

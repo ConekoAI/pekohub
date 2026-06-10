@@ -34,6 +34,7 @@ export interface TunnelProxiedRequest {
 export interface HttpProxiedRequest {
   requestId: string;
   instanceId: string;
+  agentName: string;
   method: "chat" | "stream";
   body: unknown;
   headers: Record<string, string>;

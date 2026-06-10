@@ -210,6 +210,7 @@ function createMockTunnelRouter(
     async proxyChat(
       runtimeId: string,
       instanceId: string,
+      _agentName: string,
       body: unknown,
       headers: Record<string, string>,
       reply: any,
@@ -222,6 +223,7 @@ function createMockTunnelRouter(
     async proxyStream(
       runtimeId: string,
       instanceId: string,
+      _agentName: string,
       body: unknown,
       headers: Record<string, string>,
       reply: any,
