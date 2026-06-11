@@ -390,9 +390,11 @@ export class TunnelManager {
     if (ownerId === null) {
       this.fastify.log.warn(
         { runtimeId, instanceId: payload.id },
-        "No runtime record found; falling back to ownerId 0",
+        "No runtime record found for announce; skipping instance upsert",
       );
-      ownerId = 0;
+      // Do NOT fall back to ownerId 0 — that corrupts the DB with an invalid FK.
+      // The runtime should register first (via OAuth2 or API key exchange).
+      return;
     }
 
     try {
