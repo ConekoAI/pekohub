@@ -549,23 +549,21 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       return reply.status(404).send({ error: "Instance not found" });
     }
 
-    // Auth check
+    // Auth + availability check
     let userId: number | null = null;
-    if (instance.exposure === "private") {
+    if (instance.exposure === "private" || instance.exposure === "unexposed") {
       try {
         const user = await fastify.authenticate(request);
         userId = user.id;
       } catch {
         return reply.status(401).send({ error: "Authentication required" });
       }
-      if (!instanceService.canAccess(instance, userId)) {
-        return reply.status(403).send({ error: "Forbidden" });
-      }
     }
-
-    // Status check
-    if (instance.status === "offline") {
-      return reply.status(503).send({ error: "Service Unavailable" });
+    if (!instanceService.canChat(instance, userId)) {
+      if (instance.status === "offline" || instance.exposure === "unexposed") {
+        return reply.status(503).send({ error: "Service Unavailable" });
+      }
+      return reply.status(403).send({ error: "Forbidden" });
     }
 
     const body = ChatBodySchema.safeParse(request.body);
@@ -608,23 +606,21 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       return reply.status(404).send({ error: "Instance not found" });
     }
 
-    // Auth check
+    // Auth + availability check
     let userId: number | null = null;
-    if (instance.exposure === "private") {
+    if (instance.exposure === "private" || instance.exposure === "unexposed") {
       try {
         const user = await fastify.authenticate(request);
         userId = user.id;
       } catch {
         return reply.status(401).send({ error: "Authentication required" });
       }
-      if (!instanceService.canAccess(instance, userId)) {
-        return reply.status(403).send({ error: "Forbidden" });
-      }
     }
-
-    // Status check
-    if (instance.status === "offline") {
-      return reply.status(503).send({ error: "Service Unavailable" });
+    if (!instanceService.canChat(instance, userId)) {
+      if (instance.status === "offline" || instance.exposure === "unexposed") {
+        return reply.status(503).send({ error: "Service Unavailable" });
+      }
+      return reply.status(403).send({ error: "Forbidden" });
     }
 
     // Proxy through tunnel as an SSE stream

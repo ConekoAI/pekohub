@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { EventEmitter } from "events";
 import Fastify from "fastify";
 import { TunnelManager } from "../../src/services/tunnel-manager.js";
@@ -364,5 +364,73 @@ describe("TunnelManager", () => {
     // Should resolve even though onEnd threw
     await expect(streamPromise).resolves.toBeUndefined();
     expect(errors.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("propagates status_update messages on disconnect before marking offline", async () => {
+    const manager = new TunnelManager(app);
+    const socket = new MockWebSocket();
+    const { did, privateKey } = makeRuntimeIdentity();
+
+    manager.handleSocket(socket as any);
+    socket.triggerMessage({
+      type: "runtime_hello",
+      runtimeId: did,
+      nonce: "nonce-disconnect",
+      signature: signHello(privateKey, "nonce-disconnect"),
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(manager.isRuntimeConnected(did)).toBe(true);
+
+    // Spy on propagateRuntimeOffline so the DB-less unit test can verify
+    // the disconnect flow without needing a real database.
+    const propagateSpy = vi
+      .spyOn(manager as any, "propagateRuntimeOffline")
+      .mockResolvedValue(undefined);
+
+    // Trigger disconnect by closing the socket
+    socket.close();
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Connection should be removed
+    expect(manager.isRuntimeConnected(did)).toBe(false);
+    // propagateRuntimeOffline should have been called with the connection
+    expect(propagateSpy).toHaveBeenCalledTimes(1);
+    expect(propagateSpy.mock.calls[0][0].runtimeId).toBe(did);
+
+    propagateSpy.mockRestore();
+  });
+
+  it("does not throw when disconnecting a runtime with no instances", async () => {
+    const manager = new TunnelManager(app);
+    const socket = new MockWebSocket();
+    const { did, privateKey } = makeRuntimeIdentity();
+
+    manager.handleSocket(socket as any);
+    socket.triggerMessage({
+      type: "runtime_hello",
+      runtimeId: did,
+      nonce: "nonce-no-instances",
+      signature: signHello(privateKey, "nonce-no-instances"),
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(manager.isRuntimeConnected(did)).toBe(true);
+
+    // Spy on markRuntimeOffline so DB is never touched
+    const markOfflineSpy = vi
+      .spyOn(manager as any, "markRuntimeOffline")
+      .mockResolvedValue(undefined);
+
+    // Trigger disconnect — should not throw even when DB returns no rows
+    await expect(
+      (manager as any).propagateRuntimeOffline(
+        (manager as any).connections.get(did),
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(markOfflineSpy).toHaveBeenCalledWith(did);
+
+    markOfflineSpy.mockRestore();
   });
 });
