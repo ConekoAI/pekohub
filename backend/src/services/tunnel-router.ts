@@ -115,12 +115,12 @@ export class TunnelRouter {
 
   sendControl(
     runtimeId: string,
-    message: Extract<TunnelMessage, { type: "exposure_update" }>,
+    message: Extract<TunnelMessage, { type: "exposure_update" | "status_update" }>,
   ): void {
     // Fire-and-forget: control messages are best-effort. The runtime will
     // re-announce the instance to confirm the change.
     this.tunnelManager.broadcastControl(runtimeId, message).catch(() => {
-      // Swallow errors — exposure update PATCH should not 500 due to tunnel
+      // Swallow errors — exposure/status update PATCH should not 500 due to tunnel
       // side-effects. Logging is handled inside broadcastControl.
     });
   }

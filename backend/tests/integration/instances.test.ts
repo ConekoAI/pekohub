@@ -356,6 +356,7 @@ describe("Instance API", () => {
         ownerId: user.id,
         name: "public-agent",
         exposure: "public",
+        status: "online",
       });
 
       const response = await app.inject({
@@ -364,7 +365,7 @@ describe("Instance API", () => {
         payload: { message: "hello" },
       });
 
-      // Will 502 because no tunnel, but should pass auth/exposure checks
+      // Will 502 because no tunnel, but should pass auth/exposure/status checks
       expect(response.statusCode).toBe(502);
     }, 35000);
 
@@ -375,6 +376,7 @@ describe("Instance API", () => {
         ownerId: user.id,
         name: "tos-agent",
         exposure: "public",
+        status: "online",
         tosRequired: true,
         tosText: "Please agree to our terms.",
       });
@@ -600,6 +602,7 @@ describe("Instance API", () => {
         ownerId: user.id,
         name: "tos-agent",
         exposure: "public",
+        status: "online",
         tosRequired: true,
         tosText: "You must agree.",
       });

@@ -225,13 +225,21 @@ export class InstanceService {
     id: string,
     input: UpdateInstanceInput,
   ): Promise<InstanceRecord | null> {
+    const existing = await this.getById(id);
+    if (!existing) return null;
+
     const values: Record<string, unknown> = {};
     if (input.name !== undefined) values.name = input.name;
     if (input.runtimeDisplayName !== undefined)
       values.runtimeDisplayName = input.runtimeDisplayName;
     if (input.status !== undefined) {
       values.status = input.status;
-      if (
+      if (input.status === "offline") {
+        // Don't update lastSeenAt — it should reflect last time the instance was online
+      } else if (existing.status === "offline" && input.status === "online") {
+        // Transitioning from offline to online: update lastSeenAt to now
+        values.lastSeenAt = new Date();
+      } else if (
         input.status === "online" ||
         input.status === "busy" ||
         input.status === "error"
@@ -324,6 +332,14 @@ export class InstanceService {
   canAccess(instance: InstanceRecord, userId: number | null): boolean {
     if (instance.exposure === "public") return true;
     if (userId === null) return false;
+    if (instance.ownerId === userId) return true;
+    return instance.allowedUsers.some((u) => String(u) === String(userId));
+  }
+
+  canChat(instance: InstanceRecord, userId?: number | null): boolean {
+    if (instance.status === "offline" || instance.exposure === "unexposed") return false;
+    if (instance.exposure === "public") return true;
+    if (userId === null || userId === undefined) return false;
     if (instance.ownerId === userId) return true;
     return instance.allowedUsers.some((u) => String(u) === String(userId));
   }

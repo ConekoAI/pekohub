@@ -64,6 +64,7 @@ const CreateBodySchema = z.object({
 const UpdateBodySchema = z.object({
   name: z.string().min(1).max(255).optional(),
   runtime_display_name: z.string().max(255).optional(),
+  status: z.enum(["online", "offline", "busy", "error"]).optional(),
   exposure: z.enum(["private", "public", "unexposed"]).optional(),
   allowed_users: z.array(z.string()).optional(),
   metadata: z.record(z.unknown()).optional(),
@@ -112,6 +113,10 @@ const UpdateExposureBodySchema = z.object({
       weekly_quota: z.coerce.number().int().nonnegative().optional(),
     })
     .optional(),
+});
+
+const UpdateStatusBodySchema = z.object({
+  status: z.enum(["online", "offline", "busy", "error"]),
 });
 
 const ChatBodySchema = z.object({
@@ -281,6 +286,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       const updated = await instanceService.update(id, {
         name: body.data.name,
         runtimeDisplayName: body.data.runtime_display_name,
+        status: body.data.status,
         exposure: body.data.exposure,
         allowedUsers: body.data.allowed_users,
         metadata: body.data.metadata,
@@ -453,6 +459,59 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     },
   );
 
+  // ── Update status (dedicated endpoint with side effects) ───────────────────
+  fastify.patch(
+    "/instances/:id/status",
+    { preHandler: [authenticateOrDevBypass] },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const user = request.user;
+
+      const instance = await instanceService.getById(id);
+      if (!instance) {
+        return reply.status(404).send({ error: "Instance not found" });
+      }
+
+      if (instance.ownerId !== user.id) {
+        return reply.status(403).send({ error: "Forbidden" });
+      }
+
+      const body = UpdateStatusBodySchema.safeParse(request.body);
+      if (!body.success) {
+        return reply
+          .status(400)
+          .send({
+            error: "Invalid request body",
+            details: body.error.format(),
+          });
+      }
+
+      const { status } = body.data;
+
+      const updated = await instanceService.update(id, { status });
+
+      // Notify runtime via tunnel control channel
+      let tunnelStatus: "opened" | "already_open" | "closed" = "already_open";
+      if (fastify.tunnelManager.isRuntimeConnected(instance.runtimeId)) {
+        tunnelStatus = "opened";
+        await fastify.tunnelRouter.sendControl(instance.runtimeId, {
+          type: "status_update",
+          payload: {
+            instanceId: id,
+            status,
+          },
+        });
+      } else {
+        tunnelStatus = "closed";
+      }
+
+      return {
+        instance: updated,
+        tunnelStatus,
+      };
+    },
+  );
+
   // ── Deregister instance ────────────────────────────────────────────────────
   fastify.delete(
     "/instances/:id",
@@ -502,6 +561,11 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       if (!instanceService.canAccess(instance, userId)) {
         return reply.status(403).send({ error: "Forbidden" });
       }
+    }
+
+    // Status check
+    if (instance.status === "offline") {
+      return reply.status(503).send({ error: "Service Unavailable" });
     }
 
     const body = ChatBodySchema.safeParse(request.body);
@@ -556,6 +620,11 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       if (!instanceService.canAccess(instance, userId)) {
         return reply.status(403).send({ error: "Forbidden" });
       }
+    }
+
+    // Status check
+    if (instance.status === "offline") {
+      return reply.status(503).send({ error: "Service Unavailable" });
     }
 
     // Proxy through tunnel as an SSE stream
@@ -897,6 +966,11 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
 
       if (!instance) {
         return reply.status(404).send({ error: "Public agent not found" });
+      }
+
+      // Status check
+      if (instance.status === "offline") {
+        return reply.status(503).send({ error: "Service Unavailable" });
       }
 
       const body = ChatBodySchema.safeParse(request.body);

@@ -90,6 +90,11 @@ export interface ExposureUpdatePayload {
   allowedUserIds?: string[];
 }
 
+export interface StatusUpdatePayload {
+  instanceId: string;
+  status: InstanceStatus;
+}
+
 export type TunnelMessage =
   | {
       type: "runtime_hello";
@@ -113,7 +118,8 @@ export type TunnelMessage =
   | { type: "instance_announce"; payload: InstanceAnnouncePayload }
   | { type: "instance_heartbeat"; payload: InstanceHeartbeatPayload }
   | { type: "instance_deregister"; payload: InstanceDeregisterPayload }
-  | { type: "exposure_update"; payload: ExposureUpdatePayload };
+  | { type: "exposure_update"; payload: ExposureUpdatePayload }
+  | { type: "status_update"; payload: StatusUpdatePayload };
 
 export function encodeTunnelMessage(msg: TunnelMessage): Buffer {
   return Buffer.from(JSON.stringify(msg), "utf8");

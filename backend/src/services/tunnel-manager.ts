@@ -15,6 +15,7 @@ import {
   type InstanceAnnouncePayload,
   type InstanceHeartbeatPayload,
   type InstanceDeregisterPayload,
+  type StatusUpdatePayload,
 } from "./tunnel-protocol.js";
 import { verifyDidKeySignature, TunnelAuthError } from "./tunnel-crypto.js";
 import { instanceService, type InstanceStatus } from "./instances.js";
@@ -256,6 +257,11 @@ export class TunnelManager {
         break;
       }
 
+      case "status_update": {
+        await this.handleStatusUpdate(conn.runtimeId, msg.payload);
+        break;
+      }
+
       case "disconnect": {
         this.fastify.log.info(
           { runtimeId: conn.runtimeId, reason: msg.reason },
@@ -268,7 +274,8 @@ export class TunnelManager {
       case "runtime_hello":
       case "tunnel_ready":
       case "proxied_request":
-      case "exposure_update": {
+      case "exposure_update":
+      case "status_update": {
         // Unexpected direction
         this.fastify.log.warn(
           { type: msg.type, runtimeId: conn.runtimeId },
@@ -428,6 +435,22 @@ export class TunnelManager {
     }
   }
 
+  private async handleStatusUpdate(
+    _runtimeId: string,
+    payload: StatusUpdatePayload,
+  ): Promise<void> {
+    try {
+      await instanceService.update(payload.instanceId, {
+        status: payload.status,
+      });
+    } catch (err) {
+      this.fastify.log.warn(
+        { err, instanceId: payload.instanceId },
+        "Failed to process status update",
+      );
+    }
+  }
+
   private async handleInstanceDeregister(
     _runtimeId: string,
     payload: InstanceDeregisterPayload,
@@ -458,8 +481,8 @@ export class TunnelManager {
       this.connections.delete(conn.runtimeId);
     }
 
-    // Mark hosted instances offline
-    this.markRuntimeOffline(conn.runtimeId).catch((err) => {
+    // Mark hosted instances offline and propagate via tunnel if still connected
+    this.propagateRuntimeOffline(conn).catch((err) => {
       this.fastify.log.warn(
         { err, runtimeId: conn.runtimeId },
         "Failed to mark runtime offline",
@@ -619,6 +642,41 @@ export class TunnelManager {
       return;
     }
     this.sendMessage(conn.socket, message);
+  }
+
+  private async propagateRuntimeOffline(
+    conn: RuntimeConnection,
+  ): Promise<void> {
+    try {
+      const rows = await db
+        .select({ id: instances.id })
+        .from(instances)
+        .where(
+          and(
+            eq(instances.runtimeId, conn.runtimeId),
+            inArray(instances.status, ["online", "busy"]),
+          ),
+        );
+
+      for (const row of rows) {
+        if (conn.socket.readyState === conn.socket.OPEN) {
+          this.sendMessage(conn.socket, {
+            type: "status_update",
+            payload: {
+              instanceId: row.id,
+              status: "offline",
+            },
+          });
+        }
+      }
+    } catch (err) {
+      this.fastify.log.warn(
+        { err, runtimeId: conn.runtimeId },
+        "Failed to propagate runtime offline status",
+      );
+    }
+
+    await this.markRuntimeOffline(conn.runtimeId);
   }
 
   async markRuntimeOffline(runtimeId: string): Promise<void> {

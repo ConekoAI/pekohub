@@ -180,9 +180,9 @@ describe("Tunnel Proxy Integration", () => {
 
       const instance = await createInstance(testDb.client, {
         ownerId: user.id,
-        name: "offline-agent",
+        name: "online-agent",
         runtimeId: "did:key:zOffline",
-        status: "offline",
+        status: "online",
         exposure: "public",
       });
 
