@@ -16,7 +16,7 @@ import tunnelPlugin from "../../src/plugins/tunnel.js";
 import instanceApiRoutes from "../../src/routes/api/instances.js";
 import runtimeApiRoutes from "../../src/routes/api/runtimes.js";
 
-import { createTestDb } from "./db.js";
+import { createTestDb, resetTables } from "./db.js";
 
 /**
  * Parse --port argument from process.argv.
@@ -54,6 +54,9 @@ function createMockStorage() {
     async getSignedPutUrl(key: string) {
       return `http://mock-storage/${key}?upload`;
     },
+    clear() {
+      store.clear();
+    },
   };
 }
 
@@ -71,6 +74,9 @@ function createMockSearch() {
     },
     async deleteBundle(objectID: string) {
       docs.delete(objectID);
+    },
+    clear() {
+      docs.clear();
     },
   };
 }
@@ -191,6 +197,14 @@ async function main() {
     return reply.status(201).send(result.rows[0]);
   });
 
+  // Test-only: reset all data between tests
+  app.post("/test/reset", async (_request, reply) => {
+    await resetTables(testDb.client);
+    app.storage.clear();
+    app.search.clear();
+    return reply.status(204).send();
+  });
+
   // Error handler
   app.setErrorHandler((error, _request, reply) => {
     reply.status(error.statusCode ?? 500).send({
@@ -201,7 +215,7 @@ async function main() {
   // Cleanup: restore env
   process.env = originalEnv;
 
-  await app.listen({ port, host: "127.0.0.1" });
+  await app.listen({ port, host: "0.0.0.0" });
 
   const address = app.server.address();
   const boundPort =
