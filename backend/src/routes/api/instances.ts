@@ -554,6 +554,13 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     if (instance.exposure === "private" || instance.exposure === "unexposed") {
       try {
         const user = await fastify.authenticate(request);
+        if (user.id == null) {
+          fastify.log.warn(
+            { instanceId: id, exposure: instance.exposure },
+            "Authenticated user missing id after fastify.authenticate — cannot build x-pekohub-user-id",
+          );
+          return reply.status(500).send({ error: "Internal Server Error" });
+        }
         userId = user.id;
       } catch {
         return reply.status(401).send({ error: "Authentication required" });
@@ -595,6 +602,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       body.data,
       { "content-type": "application/json" },
       reply,
+      userId !== null ? { id: userId } : null,
     );
   });
 
@@ -611,6 +619,13 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     if (instance.exposure === "private" || instance.exposure === "unexposed") {
       try {
         const user = await fastify.authenticate(request);
+        if (user.id == null) {
+          fastify.log.warn(
+            { instanceId: id, exposure: instance.exposure },
+            "Authenticated user missing id after fastify.authenticate — cannot build x-pekohub-user-id",
+          );
+          return reply.status(500).send({ error: "Internal Server Error" });
+        }
         userId = user.id;
       } catch {
         return reply.status(401).send({ error: "Authentication required" });
@@ -632,6 +647,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         {},
         { "content-type": "application/json" },
         reply,
+        userId !== null ? { id: userId } : null,
       );
     } catch (err) {
       fastify.log.warn({ err, instanceId: id }, "Stream proxy failed");
@@ -997,6 +1013,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         body.data,
         { "content-type": "application/json" },
         reply,
+        null, // public endpoint — no authenticated user
       );
     },
   );

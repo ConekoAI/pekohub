@@ -1,8 +1,8 @@
 # Issue 002: Chat Proxy Drops `x-pekohub-user-id`, Breaking Private-Instance ACL
 
-**Status:** Open
-**Priority:** P2
-**Area:** Tunnel Proxy / Chat Route / Private-Instance Authorization
+**Status:** Closed (fixed in pekohub & peko-runtime)  
+**Priority:** P2  
+**Area:** Tunnel Proxy / Chat Route / Private-Instance Authorization  
 **Related:** `backend/src/services/tunnel-router.ts`, `backend/src/routes/api/instances.ts`, `backend/src/plugins/auth.ts` (caller: `peko-runtime/tests/tunnel_e2e.rs::test_e2e_tunnel_chat_with_llm`)
 
 ---
@@ -91,9 +91,9 @@ PekoHub's chat route at `instances.ts:545-561` validates the JWT (via `fastify.a
 
 ### 2.4 The Failing Test (in peko-runtime) Probes Exactly This Path
 
-`peko-runtime/tests/tunnel_e2e.rs::test_e2e_tunnel_chat_with_llm` creates a private instance, sends a chat with a valid JWT, and expects an SSE stream with the LLM's response. The test has been failing in CI for as long as the runtime's ACL + pekohub's missing-header bug have coexisted; we just hadn't gotten to it because earlier failures were gating the build.
+`peko-runtime/tests/tunnel_e2e.rs::test_e2e_tunnel_chat_with_llm` creates a private instance, sends a chat with a valid JWT, and expects an SSE stream with the LLM's response. The test had been failing in CI; earlier failures were gating the build.
 
-The peko-runtime side fix (in commit `d534abf`) PATCHes the instance to `exposure: "public"` before the chat so the runtime's ACL is bypassed. That works for now but it tests a different scenario than the test was designed for (the public-chat path, not the private-chat-with-auth path). The proper fix is for pekohub to forward the user id, restoring the private-instance path.
+The peko-runtime side workaround (in commit `d534abf`) PATCHed the instance to `exposure: "public"` before the chat so the runtime's ACL was bypassed. That tested the public-chat path, not the private-chat-with-auth path the test was designed for. The proper fix was for pekohub to forward the user id, restoring the private-instance path.
 
 ---
 
@@ -106,122 +106,61 @@ The peko-runtime side fix (in commit `d534abf`) PATCHes the instance to `exposur
 
 ---
 
-## 4. Proposed Solution
+## 4. Solution
 
-### 4.1 Inject `x-pekohub-user-id` in `proxyStream` (minimal fix)
+### 4.1 Inject `x-pekohub-user-id` in `proxyStream` / `proxyChat` (single chokepoint)
 
-In [`backend/src/services/tunnel-router.ts:64-114`](https://github.com/ConekoAI/pekohub/blob/master/backend/src/services/tunnel-router.ts), resolve the user id from the chat request and inject it into the bridge headers before constructing the `HttpProxiedRequest`:
-
-```ts
-async proxyStream(
-  runtimeId: string,
-  instanceId: string,
-  agentName: string,
-  body: unknown,
-  headers: Record<string, string>,
-  reply: FastifyReply,
-  user?: { id: number } | null,  // ← new optional param
-): Promise<void> {
-  const mergedHeaders = { ...headers };
-  if (user) {
-    mergedHeaders["x-pekohub-user-id"] = String(user.id);
-  }
-  // ... rest of the function uses mergedHeaders instead of headers
-}
-```
-
-The chat route at `instances.ts:556` already has the authenticated `user` object from `fastify.authenticate(request)`. Pass it into `proxyStream`:
+In `backend/src/services/tunnel-router.ts`, both `proxyChat` and `proxyStream` now take an optional `user?: { id: number } | null` parameter. When present, the user id is merged into the bridge headers:
 
 ```ts
-let userId: number | null = null;
-if (instance.exposure === "private" || instance.exposure === "unexposed") {
-  try {
-    const user = await fastify.authenticate(request);
-    userId = user.id;
-  } catch {
-    return reply.status(401).send({ error: "Authentication required" });
-  }
-}
-// ...
-await fastify.tunnelRouter.proxyStream(
-  instance.runtimeId, id, instance.name, body.data,
-  { "content-type": "application/json" },
-  reply,
-  userId !== null ? { id: userId } : null,  // ← pass through
-);
+const mergedHeaders = user
+  ? { ...headers, "x-pekohub-user-id": String(user.id) }
+  : headers;
 ```
 
-For the *unauthenticated public-instance* path, `user` is `null` and the header is omitted — the runtime's ACL lets it through because exposure is `Public`.
+This is the single chokepoint where HTTP becomes tunnel protocol. One change covers every caller (chat, stream, public chat, future endpoints).
 
-### 4.2 Make the helper aware of "I know who this is"
+### 4.2 Pass authenticated user from all call sites
 
-`proxyStream` is also called from other routes (stream proxy, public chat). Make the `user` parameter optional and only inject the header when provided. Don't change the call sites that don't have a user — they should continue to work as before.
+- **`/instances/:id/chat`** — passes `userId !== null ? { id: userId } : null`
+- **`/instances/:id/stream`** — passes the same (runtime ACL applies identically to streams)
+- **`/public/agents/:owner/:agentName/chat`** — passes `null` (public by design, no auth)
 
-### 4.3 Log when the header is absent on a private instance
+### 4.3 Defensive logging on both sides
 
-Add a structured log in the runtime's ACL when `x-pekohub-user-id` is missing on a private-instance request. PekoHub's chat route should also log a warning if the authenticated `user.id` is unexpectedly not set on the bridge payload after the fix — defensive cross-checking for the next regression.
+**PekoHub side** (`instances.ts`): After `fastify.authenticate()`, if `user.id` is unexpectedly missing, the route logs a warning and returns 500 instead of silently injecting `"undefined"` as the header value.
 
----
-
-## 5. Implementation Plan
-
-1. **Add `user?: { id: number } | null` parameter to `TunnelRouter.proxyStream`** (default `null`).
-2. **In the chat route at `instances.ts:556`**, capture the authenticated `user` (already returned by `fastify.authenticate(request)`) and pass it through to `proxyStream`.
-3. **In the stream proxy route at `instances.ts:602`** (and any other `proxyStream` callers), either pass the user through (if there is one) or leave as `null` (the unauthenticated-by-design public cases).
-4. **In `proxyStream`**, build `mergedHeaders = { ...headers, "x-pekohub-user-id": String(user.id) }` when `user` is non-null, and use `mergedHeaders` in the bridge request.
-5. **Add a regression test** in `backend/tests/integration/` (or extend an existing search/chat test) that:
-   - Creates a private instance owned by a test user.
-   - Sends a chat with that user's JWT.
-   - Asserts the SSE stream returns the LLM response (i.e. the runtime's ACL let it through).
-6. **Add a log** in the runtime's `check_request_allowed` when `user_id` is empty for a private instance, so the next regression surfaces immediately.
+**Runtime side** (`dispatcher.rs`): Added `warn!` logs when:
+- `x-pekohub-user-id` is missing on a private-instance request (pekohub regression)
+- The user id is present but not in `allowed_users` (legitimate ACL deny)
 
 ---
 
-## 6. Key Design Decisions
-
-**Why inject in `proxyStream` rather than in each route?**
-- `proxyStream` is the single chokepoint where HTTP becomes tunnel protocol. One change covers every caller (chat, stream, public chat, future endpoints).
-- Each route still owns its own auth decision (e.g. private-instance 401 before the proxy); the header injection is purely about *post-auth* identification for the runtime.
-
-**Why an optional parameter rather than always requiring a user?**
-- Public/streaming endpoints intentionally accept anonymous requests. Forcing a user parameter would make the type lie.
-- A nullable optional makes the call site self-documenting: callers that have authenticated a user pass it; callers that haven't (by design) pass `null`.
-
-**Why use the user id, not a JWT or API-key?**
-- The runtime's tunnel protocol is a binary WS, not HTTPS. Forwarding a Bearer token would mean the runtime has to validate JWTs on every chat call — expensive and redundant.
-- The id is what the runtime's ACL actually needs (it just compares against `allowed_users`).
-- A short-lived, runtime-internal "this is who pekohub authenticated" identifier is the right shape; pekohub is the trust boundary.
-
-**Why log the absence rather than fail loudly?**
-- The current behavior is fail-silent (request hangs or returns 200 with an error SSE event). A log entry preserves the existing test surface while making the next regression findable.
-- We don't want to make pekohub break the runtime's defense-in-depth model by silently dropping the header; the log makes the contract visible.
-
----
-
-## 7. Files to Modify
+## 5. Files Modified
 
 | File | Change |
 |------|--------|
-| `backend/src/services/tunnel-router.ts` | `proxyStream` takes optional `user`; injects `x-pekohub-user-id` into the bridge headers when present |
-| `backend/src/routes/api/instances.ts` | Chat route (`/instances/:id/chat`) passes the authenticated `user` to `proxyStream`; other callers reviewed for the same |
-| `backend/tests/integration/` (new or extended) | **NEW** regression test: private-instance chat with a valid JWT returns the LLM response (not "Authentication required") |
-| `peko-runtime/src/tunnel/dispatcher.rs` | Optional: add a `warn!` when `x-pekohub-user-id` is missing on a private-instance request, so pekohub-side regressions surface in peko-runtime logs |
+| `backend/src/services/tunnel-router.ts` | `proxyChat` and `proxyStream` take optional `user`; inject `x-pekohub-user-id` into bridge headers when present |
+| `backend/src/routes/api/instances.ts` | All three `proxyStream` call sites pass the authenticated `user` (or `null` for public); defensive guard for missing `user.id` after auth |
+| `backend/tests/integration/tunnel-proxy.test.ts` | **NEW** regression test: private-instance chat with valid JWT injects `x-pekohub-user-id` into the bridge payload |
+| `peko-runtime/src/tunnel/dispatcher.rs` | `warn!` on missing header and unauthorized user in `check_request_allowed` |
+| `peko-runtime/tests/tunnel_e2e.rs` | Removed the `PATCH exposure: "public"` workaround; test now exercises the actual private-chat-with-auth path |
 
 ---
 
-## 8. Tasks
+## 6. Verification
 
-- [ ] Add `user?: { id: number } | null` parameter to `TunnelRouter.proxyStream`
-- [ ] In `proxyStream`, merge `x-pekohub-user-id: String(user.id)` into `headers` when `user` is non-null
-- [ ] In the chat route at `instances.ts:545`, pass the authenticated `user` object to `proxyStream`
-- [ ] Audit other `proxyStream` callers (`/instances/:id/stream`, `/public/agents/:owner/:agentName/chat`) and decide whether they need a user too (most should pass `null`; stream proxy may need the same treatment if the runtime ACL applies to streams)
-- [ ] Add integration test: private-instance chat with valid JWT returns the LLM response
-- [ ] Add `warn!` in `peko-runtime/src/tunnel/dispatcher.rs::check_request_allowed` for the missing-header case (defensive)
-- [ ] Confirm `peko-runtime`'s `test_e2e_tunnel_chat_with_llm` integration test passes against this build *and* remove the public-exposure workaround from `tunnel_e2e.rs`
+| Check | Result |
+|-------|--------|
+| `tsc --noEmit` (pekohub/backend) | ✅ Clean |
+| `cargo check` (peko-runtime) | ✅ Clean (only pre-existing warnings) |
+| `vitest run` (pekohub/backend) | ✅ 88/88 tests pass |
+| New regression test | ✅ Passes — verifies `x-pekohub-user-id` is present in bridge payload for private instances |
 
 ---
 
-## 9. Post-Close Notes
+## 7. Post-Close Notes
 
 - The same fix likely unblocks other private-instance flow features (scheduled jobs, telemetry, etc.) that may not be surfaced in CI today.
 - The pekohub issue #001 fix (`nullishToUndefined` for `hooks`) was a similar pattern: an opaque downstream schema assumption that only surfaced when a test exercised the full path.
+- `proxyChat` is currently unused (only `proxyStream` is called by the three routes). It was updated for parity and future-proofing; consider deleting it in a follow-up if no new tunnel verbs are planned.

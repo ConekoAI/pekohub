@@ -16,11 +16,16 @@ export class TunnelRouter {
     body: unknown,
     headers: Record<string, string>,
     reply: FastifyReply,
+    user?: { id: number } | null,
   ): Promise<void> {
     // Fail fast if runtime is not connected
     if (!this.tunnelManager.isRuntimeConnected(runtimeId)) {
       return reply.status(502).send({ error: "Instance unreachable" });
     }
+
+    const mergedHeaders = user
+      ? { ...headers, "x-pekohub-user-id": String(user.id) }
+      : headers;
 
     const request: HttpProxiedRequest = {
       requestId: crypto.randomUUID(),
@@ -28,7 +33,7 @@ export class TunnelRouter {
       agentName,
       method: "chat",
       body,
-      headers,
+      headers: mergedHeaders,
     };
 
     reply.raw.writeHead(200, {
@@ -68,11 +73,16 @@ export class TunnelRouter {
     body: unknown,
     headers: Record<string, string>,
     reply: FastifyReply,
+    user?: { id: number } | null,
   ): Promise<void> {
     // Fail fast if runtime is not connected
     if (!this.tunnelManager.isRuntimeConnected(runtimeId)) {
       return reply.status(502).send({ error: "Instance unreachable" });
     }
+
+    const mergedHeaders = user
+      ? { ...headers, "x-pekohub-user-id": String(user.id) }
+      : headers;
 
     const request: HttpProxiedRequest = {
       requestId: crypto.randomUUID(),
@@ -80,7 +90,7 @@ export class TunnelRouter {
       agentName,
       method: "stream",
       body,
-      headers,
+      headers: mergedHeaders,
     };
 
     reply.raw.writeHead(200, {

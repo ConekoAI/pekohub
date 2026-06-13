@@ -381,6 +381,70 @@ describe("Tunnel Proxy Integration", () => {
       expect(events[events.length - 1]).toMatchObject({ done: true });
     });
 
+    it("includes x-pekohub-user-id in proxied request headers for private instance chat", async () => {
+      const { app, tunnelManager } = await buildTunnelTestApp(testDb);
+      const user = await createUser(testDb.client, { namespace: "alice" });
+      const headers = await authHeaders(user);
+      const { did, privateKey } = makeRuntimeIdentity();
+
+      // Create a private instance with the user in allowedUsers
+      const instance = await createInstance(testDb.client, {
+        ownerId: user.id,
+        name: "private-agent",
+        runtimeId: did,
+        status: "online",
+        exposure: "private",
+        allowedUsers: [String(user.id)],
+      });
+
+      // Connect a mock runtime WebSocket
+      const socket = new MockWebSocket();
+      tunnelManager.handleSocket(socket as unknown as WebSocket);
+      await new Promise((r) => setTimeout(r, 10));
+
+      // Authenticate the runtime
+      const nonce = "nonce-private";
+      socket.triggerMessage({
+        type: "runtime_hello",
+        runtimeId: did,
+        nonce,
+        signature: signHello(privateKey, nonce),
+      });
+      await new Promise((r) => setTimeout(r, 50));
+      expect(tunnelManager.isRuntimeConnected(did)).toBe(true);
+
+      // Make the HTTP chat request
+      const chatPromise = app.inject({
+        method: "POST",
+        url: `/v1/instances/${instance.id}/chat`,
+        headers,
+        payload: { message: "hello" },
+      });
+      await new Promise((r) => setTimeout(r, 50));
+
+      // Find the proxied_request message and decode its payload to verify headers
+      const proxiedRequest = socket.sent.find(
+        (m) => m.type === "proxied_request",
+      );
+      expect(proxiedRequest).toBeDefined();
+      if (proxiedRequest?.type !== "proxied_request") throw new Error("unexpected");
+
+      const decoded = JSON.parse(
+        Buffer.from(proxiedRequest.payload).toString("utf8"),
+      );
+      expect(decoded.headers).toBeDefined();
+      expect(decoded.headers["x-pekohub-user-id"]).toBe(String(user.id));
+
+      // Complete the stream so the HTTP side doesn't hang
+      socket.triggerMessage({
+        type: "stream_end",
+        requestId: proxiedRequest.requestId,
+      });
+
+      const response = await chatPromise;
+      expect(response.statusCode).toBe(200);
+    });
+
     it("returns error event when runtime responds with proxied_response (non-streaming fallback)", async () => {
       const { app, tunnelManager } = await buildTunnelTestApp(testDb);
       const user = await createUser(testDb.client, { namespace: "charlie" });
