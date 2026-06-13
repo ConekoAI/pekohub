@@ -10,6 +10,9 @@ import {
 // Extension-specific types (defined early for use in BundleMetadata)
 // ─────────────────────────────────────────────────────────────────────────────
 
+const nullishToUndefined = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess((val) => (val === null ? undefined : val), schema);
+
 export const HookPoint = z.enum([
   'agent.init',
   'agent.shutdown',
@@ -45,22 +48,24 @@ export const BundleMetadata = z.object({
   description: z.string().max(2000).optional(),
   author: z.string().min(1).max(256),
   license: z.string().max(64).optional().nullable(),
-  tags: z.array(z.string().max(32)).max(20).optional(),
-  categories: z.array(z.enum(Categories)).optional(),
+  tags: nullishToUndefined(z.array(z.string().max(32)).max(20).optional()),
+  categories: nullishToUndefined(z.array(z.enum(Categories)).optional()),
   bundleType: z.enum(BundleTypes),
   extensionType: z.enum(ExtensionTypes).optional().nullable(),
-  modelProviders: z.array(z.enum(ModelProviders)).optional(),
-  requiredMcpServers: z.array(z.string()).optional(),
+  modelProviders: nullishToUndefined(z.array(z.enum(ModelProviders)).optional()),
+  requiredMcpServers: nullishToUndefined(z.array(z.string()).optional()),
   homepage: z.string().url().optional().nullable(),
   repository: z.string().url().optional().nullable(),
   readme: z.string().max(50000).optional().nullable(),
-  hooks: z.array(
-    z.object({
-      point: HookPoint,
-      handler: z.string().optional(),
-      topicPattern: z.string().optional(),
-    })
-  ).optional(),
+  hooks: nullishToUndefined(
+    z.array(
+      z.object({
+        point: HookPoint,
+        handler: z.string().optional(),
+        topicPattern: z.string().optional(),
+      })
+    ).optional()
+  ),
   compatibility: z
     .object({
       runtime: z.string().optional(),
@@ -106,17 +111,19 @@ export const SearchResultItem = z.object({
   author: z.string(),
   bundleType: z.enum(BundleTypes),
   extensionType: z.enum(ExtensionTypes).optional(),
-  tags: z.array(z.string()).optional(),
+  tags: nullishToUndefined(z.array(z.string()).optional()),
   pullCount: z.number().int().nonnegative(),
   starCount: z.number().int().nonnegative(),
   updatedAt: z.string().datetime(),
-  hooks: z.array(
-    z.object({
-      point: HookPoint,
-      handler: z.string().optional(),
-      topicPattern: z.string().optional(),
-    })
-  ).optional(),
+  hooks: nullishToUndefined(
+    z.array(
+      z.object({
+        point: HookPoint,
+        handler: z.string().optional(),
+        topicPattern: z.string().optional(),
+      })
+    ).optional()
+  ),
 });
 export type SearchResultItem = z.infer<typeof SearchResultItem>;
 

@@ -37,7 +37,7 @@ export default async function searchRoutes(fastify: FastifyInstance) {
 
     fastify.log.debug({ result }, "Search result from Meilisearch");
 
-    const response = SearchResponse.parse({
+    const parseResponse = SearchResponse.safeParse({
       items: result.hits,
       total: result.total,
       page: result.page,
@@ -45,8 +45,20 @@ export default async function searchRoutes(fastify: FastifyInstance) {
       totalPages: Math.ceil(result.total / perPage),
     });
 
-    fastify.log.debug({ response }, "Parsed search response");
+    if (!parseResponse.success) {
+      fastify.log.error(
+        { zodError: parseResponse.error.flatten() },
+        "Search response failed Zod validation"
+      );
+      return reply.status(500).send({
+        statusCode: 500,
+        error: "Internal Server Error",
+        message: parseResponse.error.message,
+      });
+    }
 
-    return response;
+    fastify.log.debug({ response: parseResponse.data }, "Parsed search response");
+
+    return parseResponse.data;
   });
 }

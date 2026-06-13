@@ -145,12 +145,17 @@ async function searchPlugin(fastify: FastifyInstance) {
 
   const search: SearchService = {
     async indexBundle(doc) {
-      const { objectID, compatibility, ...rest } = doc;
+      const { objectID, compatibility, hooks, ...rest } = doc;
       const sanitizedDoc: Record<string, unknown> = {
         ...rest,
         id: sanitizeObjectID(objectID),
-        hookPoints: doc.hooks?.map((h) => h.point) ?? [],
+        hookPoints: hooks?.map((h) => h.point) ?? [],
       };
+      // Only index hooks when it is a non-null array so Meilisearch never
+      // stores `null` for this field (prevents Zod response-validation 500s).
+      if (hooks != null) {
+        sanitizedDoc.hooks = hooks;
+      }
       if (compatibility) {
         sanitizedDoc.compatibilityRuntime = compatibility.runtime;
         sanitizedDoc.compatibilityMinVersion = compatibility.minVersion;

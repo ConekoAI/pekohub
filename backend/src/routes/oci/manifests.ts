@@ -367,13 +367,7 @@ export default async function manifestRoutes(fastify: FastifyInstance) {
         pullCount: bundle.pullCount,
         starCount: bundle.starCount,
         updatedAt: new Date().toISOString(),
-        hooks: bundle.hooks as
-          | Array<{
-              point: import("@pekohub/shared").HookPoint;
-              handler?: string;
-              topicPattern?: string;
-            }>
-          | undefined,
+        hooks: bundle.hooks ?? undefined,
         compatibility:
           parseJsonAnnotation<{
             runtime?: string;
