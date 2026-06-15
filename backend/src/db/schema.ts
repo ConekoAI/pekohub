@@ -41,7 +41,7 @@ export const apiKeys = pgTable("api_keys", {
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   name: varchar("name", { length: 128 }).notNull(),
-  prefix: varchar("prefix", { length: 8 }).notNull(),
+  prefix: varchar("prefix", { length: 16 }).notNull(),
   hash: varchar("hash", { length: 64 }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()

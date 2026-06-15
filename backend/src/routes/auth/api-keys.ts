@@ -24,7 +24,10 @@ export default async function apiKeyRoutes(fastify: FastifyInstance) {
     }
 
     // Generate key: ph_<6-char prefix><24-char secret>
-    const prefix = "ph_" + crypto.randomBytes(3).toString("hex"); // ph_ + 6 hex = 8 chars total
+    //   prefix = "ph_" (3 chars) + 6 hex chars = 9 chars total
+    //   full   = 9 + 24 = 33 chars total (matches the `ph_…` format)
+    // The api_keys.prefix column is varchar(16) — plenty of headroom.
+    const prefix = "ph_" + crypto.randomBytes(3).toString("hex");
     const secret = crypto.randomBytes(18).toString("base64url"); // 24 chars
     const fullKey = prefix + secret;
 

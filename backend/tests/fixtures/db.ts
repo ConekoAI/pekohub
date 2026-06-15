@@ -24,7 +24,7 @@ const DDL_STATEMENTS = [
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name VARCHAR(128) NOT NULL,
-    prefix VARCHAR(8) NOT NULL,
+    prefix VARCHAR(16) NOT NULL,
     hash VARCHAR(64) NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
     last_used_at TIMESTAMPTZ
