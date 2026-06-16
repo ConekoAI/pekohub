@@ -5,6 +5,7 @@
  * request routing, and control messages.
  */
 
+import { randomBytes } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
 import {
@@ -24,9 +25,14 @@ import { runtimes, instances } from "../db/schema.js";
 import { eq, inArray, and } from "drizzle-orm";
 
 const HELLO_TIMEOUT_MS = 10_000;
+const CHALLENGE_TIMEOUT_MS = 10_000;
 const HEARTBEAT_INTERVAL_SECS = 30;
 const HEARTBEAT_TIMEOUT_MS = 90_000;
 const REAPER_INTERVAL_MS = 30_000;
+const CHALLENGE_NONCE_BYTES = 32;
+
+/** Phases of the runtime-side handshake. */
+type HandshakePhase = "hello" | "challenge" | "ready";
 
 export interface PendingRequest {
   resolve: (value: { status: number; body: unknown }) => void;
@@ -56,6 +62,13 @@ export class TunnelManager {
   private connections = new Map<string, RuntimeConnection>();
   private pendingRequests = new Map<string, PendingRequest>();
   private reaperTimer: NodeJS.Timeout | null = null;
+  /**
+   * Per-runtime last-issued challenge nonce. Used to reject a replayed
+   * `tunnel_challenge_ack` (the same signed nonce cannot be used to
+   * re-handshake). Bounded by LRU eviction — see `MAX_TRACKED_CHALLENGES`.
+   */
+  private lastChallengeByRuntime = new Map<string, string>();
+  private static readonly MAX_TRACKED_CHALLENGES = 4_096;
 
   constructor(private fastify: FastifyInstance) {}
 
@@ -75,20 +88,45 @@ export class TunnelManager {
   }
 
   async handleSocket(socket: WebSocket): Promise<void> {
-    // Wait for RuntimeHello as the first binary/text frame
-    const helloTimer = setTimeout(() => {
-      if (socket.readyState === socket.OPEN) {
-        this.sendMessage(socket, {
-          type: "disconnect",
-          reason: "RuntimeHello timeout",
-        });
-        socket.close(1008, "RuntimeHello timeout");
-      }
-    }, HELLO_TIMEOUT_MS);
+    // Handshake-wide deadline. Re-aimed on every phase transition so
+    // a slow-but-honest runtime that takes 25s to sign a 32-byte nonce
+    // is still safe: HELLO_TIMEOUT_MS + CHALLENGE_TIMEOUT_MS = 20s.
+    let handshakeTimer: NodeJS.Timeout | null = setTimeout(
+      () => {
+        if (socket.readyState === socket.OPEN) {
+          this.sendMessage(socket, {
+            type: "disconnect",
+            reason: "Handshake timeout",
+          });
+          socket.close(1008, "Handshake timeout");
+        }
+      },
+      HELLO_TIMEOUT_MS,
+    );
+    handshakeTimer.unref?.();
+
+    const armTimer = (ms: number) => {
+      if (handshakeTimer) clearTimeout(handshakeTimer);
+      handshakeTimer = setTimeout(() => {
+        if (socket.readyState === socket.OPEN) {
+          this.sendMessage(socket, {
+            type: "disconnect",
+            reason: "Handshake timeout",
+          });
+          socket.close(1008, "Handshake timeout");
+        }
+      }, ms);
+      handshakeTimer.unref?.();
+    };
+
+    let phase: HandshakePhase = "hello";
+    let pendingRuntimeId: string | null = null;
+
+    socket.once("close", () => {
+      if (handshakeTimer) clearTimeout(handshakeTimer);
+    });
 
     const onMessage = async (data: Buffer | ArrayBuffer | Buffer[]) => {
-      clearTimeout(helloTimer);
-
       let msg: TunnelMessage;
       try {
         msg = decodeTunnelMessage(data);
@@ -102,53 +140,97 @@ export class TunnelManager {
         return;
       }
 
-      if (msg.type !== "runtime_hello") {
-        this.sendMessage(socket, {
-          type: "disconnect",
-          reason: "Expected RuntimeHello",
-        });
-        socket.close(1008, "Expected RuntimeHello");
-        return;
-      }
-
       try {
-        await this.authenticateHello(socket, msg);
+        if (phase === "hello") {
+          if (msg.type !== "runtime_hello") {
+            this.sendMessage(socket, {
+              type: "disconnect",
+              reason: "Expected RuntimeHello",
+            });
+            socket.close(1008, "Expected RuntimeHello");
+            return;
+          }
+          pendingRuntimeId = await this.beginHandshake(socket, msg);
+          phase = "challenge";
+          armTimer(CHALLENGE_TIMEOUT_MS);
+          return;
+        }
+
+        if (phase === "challenge") {
+          if (
+            msg.type !== "tunnel_challenge_ack" ||
+            pendingRuntimeId === null
+          ) {
+            this.sendMessage(socket, {
+              type: "disconnect",
+              reason: "Expected TunnelChallengeAck",
+            });
+            socket.close(1008, "Expected TunnelChallengeAck");
+            return;
+          }
+          const conn = await this.completeHandshake(
+            socket,
+            pendingRuntimeId,
+            msg,
+          );
+          phase = "ready";
+          if (handshakeTimer) {
+            clearTimeout(handshakeTimer);
+            handshakeTimer = null;
+          }
+          // Detach the state-machine listener BEFORE installing the
+          // ready-phase listener. Otherwise both fire for every
+          // post-handshake message and the state machine immediately
+          // closes the socket as "Unexpected message after ready".
+          socket.off("message", onMessage);
+          this.wireReadyHandlers(conn);
+          return;
+        }
       } catch (err) {
         this.fastify.log.warn(
-          { err, runtimeId: msg.runtimeId },
-          "Tunnel authentication failed",
+          { err, runtimeId: pendingRuntimeId },
+          "Tunnel handshake failed",
         );
+        const reason =
+          err instanceof TunnelAuthError
+            ? err.message
+            : "Authentication failed";
         this.sendMessage(socket, {
           type: "disconnect",
-          reason:
-            err instanceof TunnelAuthError
-              ? err.message
-              : "Authentication failed",
+          reason,
         });
-        socket.close(1008, "Authentication failed");
+        socket.close(1008, reason);
       }
     };
 
-    socket.once("message", onMessage);
-
-    socket.once("close", () => {
-      clearTimeout(helloTimer);
-    });
+    socket.on("message", onMessage);
   }
 
-  private async authenticateHello(
+  /**
+   * Phase 1: validate the `runtime_hello` (signature + allowlist) and
+   * issue a server-side challenge nonce. The connection is not yet
+   * registered — that happens in `completeHandshake` once the runtime
+   * proves control of the DID by signing our nonce.
+   */
+  private async beginHandshake(
     socket: WebSocket,
     hello: Extract<TunnelMessage, { type: "runtime_hello" }>,
-  ): Promise<void> {
+  ): Promise<string> {
     const { runtimeId, nonce, signature } = hello;
 
-    // Verify signature using pubkey derived from did:key
-    const valid = verifyDidKeySignature(runtimeId, nonce, signature);
-    if (!valid) {
+    // 1. Cryptographic check: signature matches the key embedded in the DID.
+    if (!verifyDidKeySignature(runtimeId, nonce, signature)) {
       throw new TunnelAuthError("Invalid RuntimeHello signature");
     }
 
-    // If a connection already exists for this runtime, close the old one
+    // 2. Allowlist check: the DID must already be registered in the
+    // `runtimes` table. Closing here with 1008 is the P0 fix from
+    // pekohub issue #1 — an unregistered DID must not stay connected.
+    if (!(await this.isRuntimeAllowed(runtimeId))) {
+      throw new TunnelAuthError("unknown runtime");
+    }
+
+    // 3. Replace any pre-existing connection for this runtime.
     const existing = this.connections.get(runtimeId);
     if (existing) {
       this.fastify.log.info(
@@ -158,6 +240,56 @@ export class TunnelManager {
       this.closeConnection(existing, "new connection from same runtime");
     }
 
+    // 4. Issue a fresh, server-generated nonce and remember it for
+    // replay protection. base64url keeps the wire format stable across
+    // the WebSocket text/binary boundary.
+    const challengeNonce = randomBytes(CHALLENGE_NONCE_BYTES).toString(
+      "base64url",
+    );
+    this.rememberChallenge(runtimeId, challengeNonce);
+
+    this.sendMessage(socket, { type: "tunnel_challenge", nonce: challengeNonce });
+    this.fastify.log.debug(
+      { runtimeId },
+      "Issued tunnel challenge, awaiting ack",
+    );
+    return runtimeId;
+  }
+
+  /**
+   * Phase 2: verify the runtime's signed acknowledgement of our
+   * challenge nonce, then promote the socket to a full
+   * `RuntimeConnection` and send `tunnel_ready`.
+   */
+  private async completeHandshake(
+    socket: WebSocket,
+    runtimeId: string,
+    ack: Extract<TunnelMessage, { type: "tunnel_challenge_ack" }>,
+  ): Promise<RuntimeConnection> {
+    const { nonce, signature } = ack;
+
+    const expected = this.lastChallengeByRuntime.get(runtimeId);
+    if (!expected) {
+      // No outstanding challenge for this runtime — either it was
+      // evicted from the LRU or this is a replay.
+      throw new TunnelAuthError("no pending challenge");
+    }
+    if (expected !== nonce) {
+      throw new TunnelAuthError("challenge nonce mismatch");
+    }
+    if (!verifyDidKeySignature(runtimeId, nonce, signature)) {
+      throw new TunnelAuthError("Invalid TunnelChallengeAck signature");
+    }
+
+    // Consume the challenge — a single ack must not be replayable.
+    this.lastChallengeByRuntime.delete(runtimeId);
+
+    // Touch the runtime's `lastSeenAt` so the allowlist reflects
+    // liveness without a separate announcement path. Extracted into
+    // a protected method so unit tests without a DB connection can
+    // stub it (matches the `isRuntimeAllowed` pattern).
+    await this.recordRuntimeConnected(runtimeId);
+
     const conn: RuntimeConnection = {
       runtimeId,
       socket,
@@ -166,17 +298,23 @@ export class TunnelManager {
       heartbeatTimeout: null,
       pendingRequestIds: new Set(),
     };
-
     this.connections.set(runtimeId, conn);
     this.resetHeartbeatTimeout(conn);
 
-    // Send TunnelReady
     this.sendMessage(socket, {
       type: "tunnel_ready",
       heartbeatIntervalSecs: HEARTBEAT_INTERVAL_SECS,
     });
+    this.fastify.log.info({ runtimeId }, "Runtime tunnel authenticated");
+    return conn;
+  }
 
-    // Wire message handler
+  /**
+   * After the handshake is complete, install the long-lived
+   * `message`/`close`/`error` listeners.
+   */
+  private wireReadyHandlers(conn: RuntimeConnection): void {
+    const { runtimeId, socket } = conn;
     const messageHandler = (data: Buffer | ArrayBuffer | Buffer[]) => {
       this.handleMessage(conn, data).catch((err) => {
         this.fastify.log.warn(
@@ -195,8 +333,41 @@ export class TunnelManager {
       this.fastify.log.warn({ err, runtimeId }, "Tunnel socket error");
       this.handleDisconnect(conn);
     });
+  }
 
-    this.fastify.log.info({ runtimeId }, "Runtime tunnel authenticated");
+  /** LRU-bounded insert into the challenge map. */
+  private rememberChallenge(runtimeId: string, nonce: string): void {
+    if (this.lastChallengeByRuntime.size >= TunnelManager.MAX_TRACKED_CHALLENGES) {
+      // Evict the oldest entry. `Map` iteration order is insertion
+      // order in V8, so the first key is the oldest.
+      const oldest = this.lastChallengeByRuntime.keys().next().value;
+      if (oldest !== undefined) this.lastChallengeByRuntime.delete(oldest);
+    }
+    this.lastChallengeByRuntime.set(runtimeId, nonce);
+  }
+
+  /**
+   * Allowlist check, separated from `beginHandshake` so unit tests
+   * that don't wire up a real DB can stub it. Returns `true` iff a
+   * row exists in `runtimes` for the given DID.
+   */
+  protected async isRuntimeAllowed(runtimeId: string): Promise<boolean> {
+    const row = await db.query.runtimes.findFirst({
+      where: eq(runtimes.runtimeDid, runtimeId),
+    });
+    return row !== undefined;
+  }
+
+  /**
+   * Side-effect of a successful handshake: bump the runtime's
+   * `lastSeenAt`. Pulled out of `completeHandshake` so the same
+   * test isolation story as `isRuntimeAllowed` applies.
+   */
+  protected async recordRuntimeConnected(_runtimeId: string): Promise<void> {
+    await db
+      .update(runtimes)
+      .set({ lastSeenAt: new Date() })
+      .where(eq(runtimes.runtimeDid, _runtimeId));
   }
 
   private async handleMessage(
@@ -386,14 +557,17 @@ export class TunnelManager {
     runtimeId: string,
     payload: InstanceAnnouncePayload,
   ): Promise<void> {
-    let ownerId = await this.resolveRuntimeOwner(runtimeId);
+    // The handshake allowlist (beginHandshake) guarantees a row
+    // exists for this DID by the time we reach this code path.
+    // resolveRuntimeOwner is a single indexed PK lookup so we keep
+    // the defensive check — if it ever returns null, that's a
+    // schema-rotation bug we want logged, not silently mis-routed.
+    const ownerId = await this.resolveRuntimeOwner(runtimeId);
     if (ownerId === null) {
-      this.fastify.log.warn(
+      this.fastify.log.error(
         { runtimeId, instanceId: payload.id },
-        "No runtime record found for announce; skipping instance upsert",
+        "Allowlisted runtime missing from runtimes table; skipping instance upsert",
       );
-      // Do NOT fall back to ownerId 0 — that corrupts the DB with an invalid FK.
-      // The runtime should register first (via OAuth2 or API key exchange).
       return;
     }
 

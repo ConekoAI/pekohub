@@ -102,6 +102,18 @@ export type TunnelMessage =
       nonce: string;
       signature: string;
     }
+  | {
+      /** Server-issued challenge after `runtime_hello` is accepted. */
+      type: "tunnel_challenge";
+      /** Base64url-encoded 32-byte random nonce. */
+      nonce: string;
+    }
+  | {
+      /** Runtime's signed response to a `tunnel_challenge`. */
+      type: "tunnel_challenge_ack";
+      nonce: string;
+      signature: string;
+    }
   | { type: "tunnel_ready"; heartbeatIntervalSecs: number }
   | { type: "heartbeat"; seq: number }
   | { type: "heartbeat_ack"; seq: number }

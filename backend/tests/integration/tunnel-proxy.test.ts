@@ -153,6 +153,63 @@ function signHello(privateKey: Uint8Array, nonce: string): string {
   return Buffer.from(signature).toString("base64");
 }
 
+/**
+ * Pre-insert a `runtimes` row so the new handshake allowlist
+ * (pekohub issue #1) admits the runtime.
+ */
+async function seedRuntime(
+  testDb: TestDb,
+  did: string,
+  ownerId: number,
+  displayName = "Test Runtime",
+) {
+  await testDb.client.query(
+    `INSERT INTO runtimes (runtime_did, owner_id, display_name) VALUES ($1, $2, $3)
+     ON CONFLICT (runtime_did) DO NOTHING`,
+    [did, ownerId, displayName],
+  );
+}
+
+/**
+ * Run the full three-step handshake against a `MockWebSocket`:
+ *   1. send `runtime_hello`
+ *   2. read the server's `tunnel_challenge`
+ *   3. sign + send the `tunnel_challenge_ack`
+ * Returns when the connection is in the "ready" state.
+ */
+async function completeHandshake(
+  socket: MockWebSocket,
+  did: string,
+  privateKey: Uint8Array,
+  helloNonce = "nonce-1",
+): Promise<void> {
+  socket.triggerMessage({
+    type: "runtime_hello",
+    runtimeId: did,
+    nonce: helloNonce,
+    signature: signHello(privateKey, helloNonce),
+  });
+  // Wait for the server's challenge
+  for (let i = 0; i < 100 && !socket.sent.some((m) => m.type === "tunnel_challenge"); i++) {
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  const challenge = socket.sent.find((m) => m.type === "tunnel_challenge");
+  if (!challenge || challenge.type !== "tunnel_challenge") {
+    throw new Error("Server did not send tunnel_challenge");
+  }
+  socket.triggerMessage({
+    type: "tunnel_challenge_ack",
+    nonce: challenge.nonce,
+    signature: signHello(privateKey, challenge.nonce),
+  });
+  for (let i = 0; i < 100 && !socket.sent.some((m) => m.type === "tunnel_ready"); i++) {
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  if (!socket.sent.some((m) => m.type === "tunnel_ready")) {
+    throw new Error("Server did not send tunnel_ready");
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -213,24 +270,16 @@ describe("Tunnel Proxy Integration", () => {
         exposure: "public",
       });
 
+      // Allowlist: pekohub#1 requires the runtime to be in the
+      // `runtimes` table before the handshake can complete.
+      await seedRuntime(testDb, did, user.id);
+
       // Connect a mock runtime WebSocket
       const socket = new MockWebSocket();
       tunnelManager.handleSocket(socket as unknown as WebSocket);
 
-      // Wait a tick for the hello timer to be set up
-      await new Promise((r) => setTimeout(r, 10));
-
-      // Authenticate the runtime
-      const nonce1 = "nonce-1";
-      socket.triggerMessage({
-        type: "runtime_hello",
-        runtimeId: did,
-        nonce: nonce1,
-        signature: signHello(privateKey, nonce1),
-      });
-
-      // Wait for auth processing
-      await new Promise((r) => setTimeout(r, 50));
+      // Run the full handshake (hello → challenge → ack)
+      await completeHandshake(socket, did, privateKey, "nonce-1");
 
       // Verify tunnel is connected
       expect(tunnelManager.isRuntimeConnected(did)).toBe(true);
@@ -321,19 +370,12 @@ describe("Tunnel Proxy Integration", () => {
         status: "online",
         exposure: "public",
       });
+      await seedRuntime(testDb, did, user.id);
 
       const socket = new MockWebSocket();
       tunnelManager.handleSocket(socket as unknown as WebSocket);
-      await new Promise((r) => setTimeout(r, 10));
 
-      const nonce2 = "nonce-2";
-      socket.triggerMessage({
-        type: "runtime_hello",
-        runtimeId: did,
-        nonce: nonce2,
-        signature: signHello(privateKey, nonce2),
-      });
-      await new Promise((r) => setTimeout(r, 50));
+      await completeHandshake(socket, did, privateKey, "nonce-2");
 
       expect(tunnelManager.isRuntimeConnected(did)).toBe(true);
 
@@ -397,20 +439,15 @@ describe("Tunnel Proxy Integration", () => {
         allowedUsers: [String(user.id)],
       });
 
+      // Allowlist for the handshake (issue #1)
+      await seedRuntime(testDb, did, user.id);
+
       // Connect a mock runtime WebSocket
       const socket = new MockWebSocket();
       tunnelManager.handleSocket(socket as unknown as WebSocket);
-      await new Promise((r) => setTimeout(r, 10));
 
-      // Authenticate the runtime
-      const nonce = "nonce-private";
-      socket.triggerMessage({
-        type: "runtime_hello",
-        runtimeId: did,
-        nonce,
-        signature: signHello(privateKey, nonce),
-      });
-      await new Promise((r) => setTimeout(r, 50));
+      // Full handshake
+      await completeHandshake(socket, did, privateKey, "nonce-private");
       expect(tunnelManager.isRuntimeConnected(did)).toBe(true);
 
       // Make the HTTP chat request
@@ -458,19 +495,12 @@ describe("Tunnel Proxy Integration", () => {
         status: "online",
         exposure: "public",
       });
+      await seedRuntime(testDb, did, user.id);
 
       const socket = new MockWebSocket();
       tunnelManager.handleSocket(socket as unknown as WebSocket);
-      await new Promise((r) => setTimeout(r, 10));
 
-      const nonce3 = "nonce-3";
-      socket.triggerMessage({
-        type: "runtime_hello",
-        runtimeId: did,
-        nonce: nonce3,
-        signature: signHello(privateKey, nonce3),
-      });
-      await new Promise((r) => setTimeout(r, 50));
+      await completeHandshake(socket, did, privateKey, "nonce-3");
 
       const chatPromise = app.inject({
         method: "POST",
@@ -519,24 +549,14 @@ describe("Tunnel Proxy Integration", () => {
       const headers = await authHeaders(user);
       const { did, privateKey } = makeRuntimeIdentity();
 
-      // Insert runtime record for owner resolution
-      await testDb.client.query(
-        `INSERT INTO runtimes (runtime_did, owner_id, display_name) VALUES ($1, $2, $3)`,
-        [did, user.id, "Test Runtime"],
-      );
+      // Allowlist: insert runtime record for handshake (issue #1)
+      // and owner resolution.
+      await seedRuntime(testDb, did, user.id, "Test Runtime");
 
       const socket = new MockWebSocket();
       tunnelManager.handleSocket(socket as unknown as WebSocket);
-      await new Promise((r) => setTimeout(r, 10));
 
-      const nonce4 = "nonce-4";
-      socket.triggerMessage({
-        type: "runtime_hello",
-        runtimeId: did,
-        nonce: nonce4,
-        signature: signHello(privateKey, nonce4),
-      });
-      await new Promise((r) => setTimeout(r, 50));
+      await completeHandshake(socket, did, privateKey, "nonce-4");
 
       // Announce instance
       const instanceId = "a1b2c3d4-e5f6-47a8-b9c0-d1e2f3a4b5c6";
@@ -581,6 +601,40 @@ describe("Tunnel Proxy Integration", () => {
         const detail = JSON.parse(detailResp.payload);
         expect(detail.status).toBe("offline");
       }
+    });
+  });
+
+  describe("pekohub#1 allowlist", () => {
+    it("closes with 1008 within 1s for an unknown runtime DID", async () => {
+      const { tunnelManager } = await buildTunnelTestApp(testDb);
+      // NOTE: no seedRuntime() — the runtime is NOT in the runtimes table
+      const { did, privateKey } = makeRuntimeIdentity();
+      const socket = new MockWebSocket();
+      tunnelManager.handleSocket(socket as unknown as WebSocket);
+
+      const start = Date.now();
+      socket.triggerMessage({
+        type: "runtime_hello",
+        runtimeId: did,
+        nonce: "nonce-unknown",
+        signature: signHello(privateKey, "nonce-unknown"),
+      });
+
+      // Wait up to 1s for the close (acceptance criterion)
+      const deadline = start + 1_000;
+      while (!socket.closed && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      const elapsed = Date.now() - start;
+
+      expect(socket.closed).toBe(true);
+      expect(socket.closeCode).toBe(1008);
+      expect(elapsed).toBeLessThan(1_000);
+      const reason = socket.closeReason ?? "";
+      expect(reason).toMatch(/unknown runtime/);
+      // No challenge, no ready
+      expect(socket.sent.some((m) => m.type === "tunnel_challenge")).toBe(false);
+      expect(socket.sent.some((m) => m.type === "tunnel_ready")).toBe(false);
     });
   });
 });

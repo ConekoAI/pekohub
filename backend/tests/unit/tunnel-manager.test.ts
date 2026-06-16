@@ -47,6 +47,60 @@ function signHello(privateKey: Uint8Array, nonce: string): string {
   return Buffer.from(signature).toString("base64");
 }
 
+/**
+ * Run a complete handshake against a `MockWebSocket`: send the
+ * runtime_hello, wait for the server-issued `tunnel_challenge`, send
+ * back the signed ack, and return when the socket is "ready" (a
+ * `tunnel_ready` has been received).
+ *
+ * The allowlist check is stubbed in the test to either allow or deny
+ * the runtime — the handshake itself is the same either way.
+ */
+async function completeHandshake(
+  manager: TunnelManager,
+  socket: MockWebSocket,
+  did: string,
+  privateKey: Uint8Array,
+  helloNonce = "nonce-1",
+): Promise<TunnelMessage[]> {
+  socket.triggerMessage({
+    type: "runtime_hello",
+    runtimeId: did,
+    nonce: helloNonce,
+    signature: signHello(privateKey, helloNonce),
+  });
+  // Wait for the server to send `tunnel_challenge`
+  for (let i = 0; i < 50 && !socket.sent.some((m) => m.type === "tunnel_challenge"); i++) {
+    await new Promise((r) => setTimeout(r, 2));
+  }
+  const challenge = socket.sent.find((m) => m.type === "tunnel_challenge");
+  if (!challenge || challenge.type !== "tunnel_challenge") {
+    throw new Error("Server did not send tunnel_challenge");
+  }
+  // Sign the challenge nonce and ack
+  socket.triggerMessage({
+    type: "tunnel_challenge_ack",
+    nonce: challenge.nonce,
+    signature: signHello(privateKey, challenge.nonce),
+  });
+  // Wait for `tunnel_ready`
+  for (let i = 0; i < 50 && !socket.sent.some((m) => m.type === "tunnel_ready"); i++) {
+    await new Promise((r) => setTimeout(r, 2));
+  }
+  return socket.sent;
+}
+
+/** Stub the allowlist to allow the given DID. */
+function allowRuntime(manager: TunnelManager, did: string) {
+  vi.spyOn(manager as any, "isRuntimeAllowed").mockImplementation(
+    async (id: string) => id === did,
+  );
+  // No-op for the lastSeenAt bump so unit tests don't need a DB.
+  vi.spyOn(manager as any, "recordRuntimeConnected").mockResolvedValue(
+    undefined,
+  );
+}
+
 async function buildFastify() {
   const app = Fastify({ logger: false });
   app.decorate("config", { NODE_ENV: "test" });
@@ -64,26 +118,21 @@ describe("TunnelManager", () => {
     const manager = new TunnelManager(app);
     const socket = new MockWebSocket();
     const { did, privateKey } = makeRuntimeIdentity();
-    const nonce = "nonce-1";
+    allowRuntime(manager, did);
 
     manager.handleSocket(socket as any);
-    socket.triggerMessage({
-      type: "runtime_hello",
-      runtimeId: did,
-      nonce,
-      signature: signHello(privateKey, nonce),
-    });
+    await completeHandshake(manager, socket, did, privateKey);
 
-    await new Promise((r) => setTimeout(r, 20));
-
-    expect(socket.sent.length).toBeGreaterThanOrEqual(1);
-    expect(socket.sent[0].type).toBe("tunnel_ready");
+    expect(socket.sent.some((m) => m.type === "tunnel_challenge")).toBe(true);
+    expect(socket.sent.some((m) => m.type === "tunnel_ready")).toBe(true);
+    expect(socket.closed).toBe(false);
   });
 
   it("rejects an invalid RuntimeHello signature and closes socket", async () => {
     const manager = new TunnelManager(app);
     const socket = new MockWebSocket();
     const { did } = makeRuntimeIdentity();
+    allowRuntime(manager, did);
 
     manager.handleSocket(socket as any);
     socket.triggerMessage({
@@ -96,24 +145,173 @@ describe("TunnelManager", () => {
     await new Promise((r) => setTimeout(r, 20));
 
     expect(socket.closed).toBe(true);
-    expect(socket.sent.length).toBeGreaterThanOrEqual(1);
-    expect(socket.sent[0].type).toBe("disconnect");
+    expect(socket.closeCode).toBe(1008);
+    expect(socket.sent.some((m) => m.type === "disconnect")).toBe(true);
+  });
+
+  it("closes socket with 1008 for unknown runtime DID (issue #1 allowlist)", async () => {
+    const manager = new TunnelManager(app);
+    const socket = new MockWebSocket();
+    const { did, privateKey } = makeRuntimeIdentity();
+    // Allowlist returns false — the runtime is NOT in the runtimes table
+    vi.spyOn(manager as any, "isRuntimeAllowed").mockResolvedValue(false);
+
+    manager.handleSocket(socket as any);
+    socket.triggerMessage({
+      type: "runtime_hello",
+      runtimeId: did,
+      nonce: "nonce-unknown",
+      signature: signHello(privateKey, "nonce-unknown"),
+    });
+
+    // Wait up to 1s for the close (acceptance criterion)
+    const deadline = Date.now() + 1_000;
+    while (!socket.closed && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+
+    expect(socket.closed).toBe(true);
+    expect(socket.closeCode).toBe(1008);
+    const reason = socket.closeReason ?? "";
+    expect(reason).toMatch(/unknown runtime/);
+    // The runtime must NOT have received a challenge or a ready
+    expect(socket.sent.some((m) => m.type === "tunnel_challenge")).toBe(false);
+    expect(socket.sent.some((m) => m.type === "tunnel_ready")).toBe(false);
+  });
+
+  it("rejects a replayed tunnel_challenge_ack (same nonce reused)", async () => {
+    const manager = new TunnelManager(app);
+    const socket = new MockWebSocket();
+    const { did, privateKey } = makeRuntimeIdentity();
+    allowRuntime(manager, did);
+
+    manager.handleSocket(socket as any);
+    socket.triggerMessage({
+      type: "runtime_hello",
+      runtimeId: did,
+      nonce: "nonce-replay",
+      signature: signHello(privateKey, "nonce-replay"),
+    });
+    // Wait for the challenge
+    for (let i = 0; i < 50 && !socket.sent.some((m) => m.type === "tunnel_challenge"); i++) {
+      await new Promise((r) => setTimeout(r, 2));
+    }
+    const challenge = socket.sent.find(
+      (m) => m.type === "tunnel_challenge",
+    ) as Extract<TunnelMessage, { type: "tunnel_challenge" }>;
+    expect(challenge).toBeDefined();
+
+    // First ack — should succeed
+    socket.triggerMessage({
+      type: "tunnel_challenge_ack",
+      nonce: challenge.nonce,
+      signature: signHello(privateKey, challenge.nonce),
+    });
+    for (let i = 0; i < 50 && !socket.sent.some((m) => m.type === "tunnel_ready"); i++) {
+      await new Promise((r) => setTimeout(r, 2));
+    }
+    expect(socket.sent.some((m) => m.type === "tunnel_ready")).toBe(true);
+    const sentCountAfterReady = socket.sent.length;
+
+    // Now a second socket on the same manager — different runtime id
+    // but attempt to re-use the first runtime's challenge. We model
+    // this by sending an ack with a nonce that was already consumed
+    // (the manager no longer has it in its map). Easiest way: forge
+    // an ack whose nonce doesn't match any pending challenge.
+    const socket2 = new MockWebSocket();
+    const { did: did2, privateKey: pk2 } = makeRuntimeIdentity();
+    allowRuntime(manager, did2);
+    manager.handleSocket(socket2 as any);
+    socket2.triggerMessage({
+      type: "runtime_hello",
+      runtimeId: did2,
+      nonce: "nonce2",
+      signature: signHello(pk2, "nonce2"),
+    });
+    for (let i = 0; i < 50 && !socket2.sent.some((m) => m.type === "tunnel_challenge"); i++) {
+      await new Promise((r) => setTimeout(r, 2));
+    }
+    // Ack with the FIRST runtime's consumed challenge nonce — must be
+    // rejected because the manager's map has did2's nonce, not did's.
+    socket2.triggerMessage({
+      type: "tunnel_challenge_ack",
+      nonce: challenge.nonce,
+      signature: signHello(pk2, challenge.nonce),
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(socket2.closed).toBe(true);
+    expect(socket2.closeCode).toBe(1008);
+    expect(socket2.sent.some((m) => m.type === "tunnel_ready")).toBe(false);
+    // The first socket should NOT have been affected
+    expect(socket.sent.length).toBe(sentCountAfterReady);
+  });
+
+  it("rejects a tunnel_challenge_ack with mismatched nonce", async () => {
+    const manager = new TunnelManager(app);
+    const socket = new MockWebSocket();
+    const { did, privateKey } = makeRuntimeIdentity();
+    allowRuntime(manager, did);
+
+    manager.handleSocket(socket as any);
+    socket.triggerMessage({
+      type: "runtime_hello",
+      runtimeId: did,
+      nonce: "nonce-mismatch",
+      signature: signHello(privateKey, "nonce-mismatch"),
+    });
+    for (let i = 0; i < 50 && !socket.sent.some((m) => m.type === "tunnel_challenge"); i++) {
+      await new Promise((r) => setTimeout(r, 2));
+    }
+    // Send an ack with a wrong nonce
+    socket.triggerMessage({
+      type: "tunnel_challenge_ack",
+      nonce: "not-the-issued-nonce",
+      signature: signHello(privateKey, "not-the-issued-nonce"),
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(socket.closed).toBe(true);
+    expect(socket.closeCode).toBe(1008);
+    expect(socket.sent.some((m) => m.type === "tunnel_ready")).toBe(false);
+  });
+
+  it("rejects a tunnel_challenge_ack with bad signature", async () => {
+    const manager = new TunnelManager(app);
+    const socket = new MockWebSocket();
+    const { did, privateKey } = makeRuntimeIdentity();
+    allowRuntime(manager, did);
+
+    manager.handleSocket(socket as any);
+    socket.triggerMessage({
+      type: "runtime_hello",
+      runtimeId: did,
+      nonce: "nonce-bad-sig",
+      signature: signHello(privateKey, "nonce-bad-sig"),
+    });
+    for (let i = 0; i < 50 && !socket.sent.some((m) => m.type === "tunnel_challenge"); i++) {
+      await new Promise((r) => setTimeout(r, 2));
+    }
+    const challenge = socket.sent.find(
+      (m) => m.type === "tunnel_challenge",
+    ) as Extract<TunnelMessage, { type: "tunnel_challenge" }>;
+    socket.triggerMessage({
+      type: "tunnel_challenge_ack",
+      nonce: challenge.nonce,
+      signature: Buffer.from(new Uint8Array(64)).toString("base64"),
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(socket.closed).toBe(true);
+    expect(socket.closeCode).toBe(1008);
+    expect(socket.sent.some((m) => m.type === "tunnel_ready")).toBe(false);
   });
 
   it("routes a proxied request and resolves on proxied_response", async () => {
     const manager = new TunnelManager(app);
     const socket = new MockWebSocket();
     const { did, privateKey } = makeRuntimeIdentity();
-    const nonce = "nonce-2";
+    allowRuntime(manager, did);
 
     manager.handleSocket(socket as any);
-    socket.triggerMessage({
-      type: "runtime_hello",
-      runtimeId: did,
-      nonce,
-      signature: signHello(privateKey, nonce),
-    });
-    await new Promise((r) => setTimeout(r, 20));
+    await completeHandshake(manager, socket, did, privateKey, "nonce-2");
 
     const requestPromise = manager.sendProxiedRequest(did, {
       requestId: "req-1",
@@ -124,11 +322,9 @@ describe("TunnelManager", () => {
     });
 
     await new Promise((r) => setTimeout(r, 20));
-    expect(socket.sent.length).toBeGreaterThanOrEqual(2);
-    expect(socket.sent[1].type).toBe("proxied_request");
-
-    const proxied = socket.sent[1];
-    if (proxied.type !== "proxied_request") throw new Error("unexpected");
+    const proxied = socket.sent.find((m) => m.type === "proxied_request");
+    expect(proxied).toBeDefined();
+    if (proxied?.type !== "proxied_request") throw new Error("unexpected");
 
     socket.triggerMessage({
       type: "proxied_response",
@@ -163,16 +359,10 @@ describe("TunnelManager", () => {
     const manager = new TunnelManager(app);
     const socket = new MockWebSocket();
     const { did, privateKey } = makeRuntimeIdentity();
-    const nonce = "nonce-3";
+    allowRuntime(manager, did);
 
     manager.handleSocket(socket as any);
-    socket.triggerMessage({
-      type: "runtime_hello",
-      runtimeId: did,
-      nonce,
-      signature: signHello(privateKey, nonce),
-    });
-    await new Promise((r) => setTimeout(r, 20));
+    await completeHandshake(manager, socket, did, privateKey, "nonce-3");
 
     socket.triggerMessage({ type: "heartbeat", seq: 1 });
     await new Promise((r) => setTimeout(r, 20));
@@ -190,15 +380,10 @@ describe("TunnelManager", () => {
     const manager = new TunnelManager(app);
     const socket = new MockWebSocket();
     const { did, privateKey } = makeRuntimeIdentity();
+    allowRuntime(manager, did);
 
     manager.handleSocket(socket as any);
-    socket.triggerMessage({
-      type: "runtime_hello",
-      runtimeId: did,
-      nonce: "nonce-cleanup",
-      signature: signHello(privateKey, "nonce-cleanup"),
-    });
-    await new Promise((r) => setTimeout(r, 20));
+    await completeHandshake(manager, socket, did, privateKey, "nonce-cleanup");
 
     const requestPromise = manager.sendProxiedRequest(did, {
       requestId: "req-cleanup",
@@ -209,7 +394,6 @@ describe("TunnelManager", () => {
     });
     await new Promise((r) => setTimeout(r, 20));
 
-    // Trigger response — this previously threw ReferenceError due to missing `conn` variable
     socket.triggerMessage({
       type: "proxied_response",
       requestId: "req-cleanup",
@@ -226,15 +410,10 @@ describe("TunnelManager", () => {
     const manager = new TunnelManager(app);
     const socket = new MockWebSocket();
     const { did, privateKey } = makeRuntimeIdentity();
+    allowRuntime(manager, did);
 
     manager.handleSocket(socket as any);
-    socket.triggerMessage({
-      type: "runtime_hello",
-      runtimeId: did,
-      nonce: "nonce-stream",
-      signature: signHello(privateKey, "nonce-stream"),
-    });
-    await new Promise((r) => setTimeout(r, 20));
+    await completeHandshake(manager, socket, did, privateKey, "nonce-stream");
 
     const chunks: string[] = [];
     const streamPromise = manager.startStream(
@@ -262,7 +441,6 @@ describe("TunnelManager", () => {
     });
     await new Promise((r) => setTimeout(r, 10));
 
-    // pendingRequestIds should be cleaned up after each chunk to avoid leak
     const conn = (manager as any).connections.get(did);
     expect(conn.pendingRequestIds.has("req-stream")).toBe(false);
 
@@ -278,15 +456,10 @@ describe("TunnelManager", () => {
     const manager = new TunnelManager(app);
     const socket = new MockWebSocket();
     const { did, privateKey } = makeRuntimeIdentity();
+    allowRuntime(manager, did);
 
     manager.handleSocket(socket as any);
-    socket.triggerMessage({
-      type: "runtime_hello",
-      runtimeId: did,
-      nonce: "nonce-timer",
-      signature: signHello(privateKey, "nonce-timer"),
-    });
-    await new Promise((r) => setTimeout(r, 20));
+    await completeHandshake(manager, socket, did, privateKey, "nonce-timer");
 
     const requestPromise = manager.sendProxiedRequest(
       did,
@@ -297,7 +470,7 @@ describe("TunnelManager", () => {
         body: {},
         headers: {},
       },
-      100, // short timeout so we can observe timer behavior
+      100,
     );
     await new Promise((r) => setTimeout(r, 20));
 
@@ -314,7 +487,6 @@ describe("TunnelManager", () => {
 
     await requestPromise;
 
-    // Timer should be cleared after normal completion
     const pendingAfter = (manager as any).pendingRequests.get("req-timer");
     expect(pendingAfter).toBeUndefined();
   });
@@ -323,15 +495,10 @@ describe("TunnelManager", () => {
     const manager = new TunnelManager(app);
     const socket = new MockWebSocket();
     const { did, privateKey } = makeRuntimeIdentity();
+    allowRuntime(manager, did);
 
     manager.handleSocket(socket as any);
-    socket.triggerMessage({
-      type: "runtime_hello",
-      runtimeId: did,
-      nonce: "nonce-sink-err",
-      signature: signHello(privateKey, "nonce-sink-err"),
-    });
-    await new Promise((r) => setTimeout(r, 20));
+    await completeHandshake(manager, socket, did, privateKey, "nonce-sink-err");
 
     const errors: Error[] = [];
     const streamPromise = manager.startStream(
@@ -361,7 +528,6 @@ describe("TunnelManager", () => {
       ),
     });
 
-    // Should resolve even though onEnd threw
     await expect(streamPromise).resolves.toBeUndefined();
     expect(errors.length).toBeGreaterThanOrEqual(1);
   });
@@ -370,31 +536,21 @@ describe("TunnelManager", () => {
     const manager = new TunnelManager(app);
     const socket = new MockWebSocket();
     const { did, privateKey } = makeRuntimeIdentity();
+    allowRuntime(manager, did);
 
     manager.handleSocket(socket as any);
-    socket.triggerMessage({
-      type: "runtime_hello",
-      runtimeId: did,
-      nonce: "nonce-disconnect",
-      signature: signHello(privateKey, "nonce-disconnect"),
-    });
-    await new Promise((r) => setTimeout(r, 20));
+    await completeHandshake(manager, socket, did, privateKey, "nonce-disconnect");
 
     expect(manager.isRuntimeConnected(did)).toBe(true);
 
-    // Spy on propagateRuntimeOffline so the DB-less unit test can verify
-    // the disconnect flow without needing a real database.
     const propagateSpy = vi
       .spyOn(manager as any, "propagateRuntimeOffline")
       .mockResolvedValue(undefined);
 
-    // Trigger disconnect by closing the socket
     socket.close();
     await new Promise((r) => setTimeout(r, 20));
 
-    // Connection should be removed
     expect(manager.isRuntimeConnected(did)).toBe(false);
-    // propagateRuntimeOffline should have been called with the connection
     expect(propagateSpy).toHaveBeenCalledTimes(1);
     expect(propagateSpy.mock.calls[0][0].runtimeId).toBe(did);
 
@@ -405,24 +561,17 @@ describe("TunnelManager", () => {
     const manager = new TunnelManager(app);
     const socket = new MockWebSocket();
     const { did, privateKey } = makeRuntimeIdentity();
+    allowRuntime(manager, did);
 
     manager.handleSocket(socket as any);
-    socket.triggerMessage({
-      type: "runtime_hello",
-      runtimeId: did,
-      nonce: "nonce-no-instances",
-      signature: signHello(privateKey, "nonce-no-instances"),
-    });
-    await new Promise((r) => setTimeout(r, 20));
+    await completeHandshake(manager, socket, did, privateKey, "nonce-no-instances");
 
     expect(manager.isRuntimeConnected(did)).toBe(true);
 
-    // Spy on markRuntimeOffline so DB is never touched
     const markOfflineSpy = vi
       .spyOn(manager as any, "markRuntimeOffline")
       .mockResolvedValue(undefined);
 
-    // Trigger disconnect — should not throw even when DB returns no rows
     await expect(
       (manager as any).propagateRuntimeOffline(
         (manager as any).connections.get(did),
