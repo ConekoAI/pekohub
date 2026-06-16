@@ -170,6 +170,31 @@ describe("Instance API", () => {
       expect(body.runtimeId).toBe("runtime-secret");
     });
 
+    it("should redact allowedUsers and runtimeId for authenticated non-owner", async () => {
+      const app = await buildTestApp({ testDb });
+      const owner = await createUser(testDb.client, { namespace: "alice" });
+      const viewer = await createUser(testDb.client, { namespace: "bob" });
+      const headers = await authHeaders(viewer);
+      const instance = await createInstance(testDb.client, {
+        ownerId: owner.id,
+        name: "public-agent",
+        exposure: "public",
+        allowedUsers: [String(viewer.id)],
+        runtimeId: "runtime-secret",
+      });
+
+      const response = await app.inject({
+        method: "GET",
+        url: `/v1/instances/${instance.id}`,
+        headers,
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.payload);
+      expect(body.allowedUsers).toBeUndefined();
+      expect(body.runtimeId).toBeUndefined();
+    });
+
     it("should deny access to private instance without auth", async () => {
       const app = await buildTestApp({ testDb });
       const user = await createUser(testDb.client, { namespace: "alice" });
