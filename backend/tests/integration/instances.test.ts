@@ -122,13 +122,15 @@ describe("Instance API", () => {
       expect(response.statusCode).toBe(404);
     });
 
-    it("should allow access to public instance without auth", async () => {
+    it("should allow access to public instance without auth and redact sensitive fields", async () => {
       const app = await buildTestApp({ testDb });
       const user = await createUser(testDb.client, { namespace: "alice" });
       const instance = await createInstance(testDb.client, {
         ownerId: user.id,
         name: "public-agent",
         exposure: "public",
+        allowedUsers: ["999"],
+        runtimeId: "runtime-secret",
       });
 
       const response = await app.inject({
@@ -139,6 +141,33 @@ describe("Instance API", () => {
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
       expect(body.name).toBe("public-agent");
+      expect(body.allowedUsers).toBeUndefined();
+      expect(body.runtimeId).toBeUndefined();
+    });
+
+    it("should return full record including allowedUsers and runtimeId for owner", async () => {
+      const app = await buildTestApp({ testDb });
+      const user = await createUser(testDb.client, { namespace: "alice" });
+      const headers = await authHeaders(user);
+      const instance = await createInstance(testDb.client, {
+        ownerId: user.id,
+        name: "public-agent",
+        exposure: "public",
+        allowedUsers: [String(user.id)],
+        runtimeId: "runtime-secret",
+      });
+
+      const response = await app.inject({
+        method: "GET",
+        url: `/v1/instances/${instance.id}`,
+        headers,
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.payload);
+      expect(body.name).toBe("public-agent");
+      expect(body.allowedUsers).toEqual([String(user.id)]);
+      expect(body.runtimeId).toBe("runtime-secret");
     });
 
     it("should deny access to private instance without auth", async () => {

@@ -178,10 +178,24 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         // For unexposed, no auth means forbidden
         return reply.status(403).send({ error: "Forbidden" });
       }
+    } else {
+      // For public instances, try to authenticate so the owner can see the full record
+      try {
+        const user = await fastify.authenticate(request);
+        userId = user.id;
+      } catch {
+        // Anonymous access is allowed for public instances
+      }
     }
 
     if (!instanceService.canAccess(instance, userId)) {
       return reply.status(403).send({ error: "Forbidden" });
+    }
+
+    const isOwner = userId !== null && instance.ownerId === userId;
+    if (!isOwner) {
+      const { allowedUsers, runtimeId, ...rest } = instance;
+      return rest;
     }
 
     return instance;
