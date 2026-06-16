@@ -23,18 +23,24 @@ const mockDbQueries = {
     findFirst: vi.fn(),
     findMany: vi.fn(),
   },
+  blobs: {
+    findFirst: vi.fn(),
+  },
 };
 
 const mockDbInsert = vi.fn();
 const mockDbUpdate = vi.fn();
+const mockDbDelete = vi.fn();
 
 export function resetMocks() {
   mockDbQueries.bundles.findFirst.mockReset();
   mockDbQueries.bundles.findMany.mockReset();
   mockDbQueries.bundleVersions.findFirst.mockReset();
   mockDbQueries.bundleVersions.findMany.mockReset();
+  mockDbQueries.blobs.findFirst.mockReset();
   mockDbInsert.mockClear();
   mockDbUpdate.mockClear();
+  mockDbDelete.mockClear();
 }
 
 vi.mock("../../../db/index.js", () => ({
@@ -48,6 +54,9 @@ vi.mock("../../../db/index.js", () => ({
       set: vi.fn().mockReturnThis(),
       where: vi.fn().mockReturnThis(),
       returning: vi.fn(),
+    }),
+    delete: mockDbDelete.mockReturnValue({
+      where: vi.fn().mockReturnThis(),
     }),
   },
 }));
@@ -107,6 +116,21 @@ async function buildApp(): Promise<FastifyInstance> {
       .fn()
       .mockResolvedValue({ hits: [], total: 0, page: 1, perPage: 20 }),
     deleteInstance: vi.fn().mockResolvedValue(undefined),
+  });
+
+  // Mock storage
+  const storageMap = new Map<string, Buffer>();
+  app.decorate("storage", {
+    put: async (key: string, body: Buffer) => {
+      storageMap.set(key, body);
+    },
+    get: async (key: string) => storageMap.get(key) ?? Buffer.from([]),
+    exists: async (key: string) => storageMap.has(key),
+    delete: async (key: string) => {
+      storageMap.delete(key);
+    },
+    getSignedGetUrl: async () => "http://signed",
+    getSignedPutUrl: async () => "http://signed",
   });
 
   await app.register(bundleRoutes, { prefix: "/v1" });
@@ -306,6 +330,55 @@ describe("Bundle API Routes", () => {
       const body = JSON.parse(res.body);
       expect(body.name).toBe("beta");
       expect(body.forkedFrom).toBe("acme/alpha");
+    });
+  });
+
+  describe("DELETE /v1/bundles/:namespace/:name", () => {
+    it("deletes a bundle and removes orphaned blobs from storage", async () => {
+      const bundle = {
+        id: 1,
+        namespace: "acme",
+        name: "alpha",
+      };
+
+      const digest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+      const storageKey = `blobs/${digest}`;
+
+      mockDbQueries.bundles.findFirst.mockResolvedValue(bundle);
+      mockDbQueries.bundleVersions.findMany.mockResolvedValue([
+        {
+          id: 10,
+          bundleId: 1,
+          version: "v1.0.0",
+          digest,
+          manifestJson: {
+            layers: [{ digest }],
+            config: { digest },
+          },
+          size: 100,
+        },
+      ]);
+
+      // No other versions reference this digest → blob is orphaned
+      mockDbQueries.bundleVersions.findMany.mockResolvedValue([]);
+      mockDbQueries.blobs.findFirst.mockResolvedValue({
+        digest,
+        storageKey,
+        size: 100,
+      });
+
+      // Pre-seed storage
+      await app.storage.put(storageKey, Buffer.from("blob content"));
+      expect(await app.storage.exists(storageKey)).toBe(true);
+
+      const res = await app.inject({
+        method: "DELETE",
+        url: "/v1/bundles/acme/alpha",
+      });
+
+      expect(res.statusCode).toBe(204);
+      // Blob should be removed from storage within the same request
+      expect(await app.storage.exists(storageKey)).toBe(false);
     });
   });
 });

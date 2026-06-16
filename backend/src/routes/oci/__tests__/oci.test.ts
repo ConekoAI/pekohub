@@ -9,9 +9,11 @@ import {
 } from "vitest";
 import Fastify, { type FastifyInstance } from "fastify";
 import crypto from "node:crypto";
+import { pullStats } from "../../../db/schema.js";
 
 // Set NODE_ENV=development BEFORE importing routes (so process.env check in manifests.ts picks it up)
 process.env.NODE_ENV = "development";
+process.env.PULL_STATS_THROTTLE_MS = "1000"; // 1s throttle for tests
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -62,6 +64,11 @@ vi.mock("../../../db/index.js", () => ({
       where: vi.fn().mockReturnThis(),
     }),
   },
+}));
+
+vi.mock("../../../services/throttle.js", () => ({
+  shouldRecordPullStats: vi.fn().mockResolvedValue(true),
+  resetThrottleForTests: vi.fn(),
 }));
 
 // Import routes after mocking db
@@ -343,6 +350,40 @@ describe("OCI Distribution Spec Routes", () => {
       expect(res.headers["docker-content-digest"]).toBe(digest);
       expect(res.headers["content-type"]).toBe("application/octet-stream");
       expect(res.body).toBe("hello world");
+    });
+
+    it("delegates throttling to shouldRecordPullStats", async () => {
+      const { shouldRecordPullStats } = await import(
+        "../../../services/throttle.js"
+      );
+      const digest = sha256("throttle me");
+      mockDbQueries.blobs.findFirst.mockResolvedValue({
+        digest,
+        size: 12,
+        mediaType: "application/octet-stream",
+        storageKey: `blobs/${digest}`,
+      });
+      mockDbQueries.bundles.findFirst.mockResolvedValue({ id: 1 });
+      await app.storage.put(`blobs/${digest}`, Buffer.from("throttle me"));
+
+      // First request: throttle says "yes" → stats written
+      (shouldRecordPullStats as any).mockResolvedValueOnce(true);
+      const res1 = await app.inject({
+        method: "GET",
+        url: `/v2/ns/name/blobs/${digest}`,
+      });
+      expect(res1.statusCode).toBe(200);
+      expect(mockDbInsert).toHaveBeenCalled();
+      mockDbInsert.mockClear();
+
+      // Second request: throttle says "no" → stats skipped
+      (shouldRecordPullStats as any).mockResolvedValueOnce(false);
+      const res2 = await app.inject({
+        method: "GET",
+        url: `/v2/ns/name/blobs/${digest}`,
+      });
+      expect(res2.statusCode).toBe(200);
+      expect(mockDbInsert).not.toHaveBeenCalled();
     });
   });
 
