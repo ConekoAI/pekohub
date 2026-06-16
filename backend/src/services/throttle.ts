@@ -20,7 +20,7 @@ const DIGEST_TTL_MS = Number(process.env.PULL_STATS_THROTTLE_MS ?? 60_000);
 const NAMESPACE_TTL_MS = Number(
   process.env.PULL_STATS_NAMESPACE_TTL_MS ?? 60_000,
 );
-const NAMESPACE_MAX = Number(process.env.PULL_STATS_NAMESPACE_MAX ?? 60);
+export const NAMESPACE_MAX = Number(process.env.PULL_STATS_NAMESPACE_MAX ?? 60);
 
 /** In-memory LRU cache entry */
 interface LruEntry {
@@ -31,12 +31,18 @@ interface LruEntry {
 class LruThrottle {
   private map = new Map<string, LruEntry>();
   private maxSize: number;
+  private sweepTimer: NodeJS.Timeout;
 
   constructor(maxSize = 100_000) {
     this.maxSize = maxSize;
     // Periodic sweep to evict expired entries
     const sweepInterval = Math.max(DIGEST_TTL_MS, 10_000);
-    setInterval(() => this.sweep(), sweepInterval);
+    this.sweepTimer = setInterval(() => this.sweep(), sweepInterval);
+  }
+
+  close() {
+    clearInterval(this.sweepTimer);
+    this.map.clear();
   }
 
   private sweep() {
@@ -98,6 +104,10 @@ class RedisThrottle {
     this.client.connect().catch(() => {
       // Connection errors are handled by the error listener above
     });
+  }
+
+  async close() {
+    await this.client.quit().catch(() => {});
   }
 
   /** Set-nx style check: returns true if key already exists (throttled). */
@@ -163,7 +173,7 @@ export async function shouldRecordPullStats(
     return false;
   }
 
-  // Per-namespace throttle (sliding window counter)
+  // Per-namespace throttle (fixed-window counter with PEXPIRE refresh)
   const nsKey = `pull:ns:${ip}:${namespace}`;
   const nsThrottled = await throttle.incrementAndCheck(
     nsKey,
@@ -181,8 +191,9 @@ export async function shouldRecordPullStats(
 /** For testing: reset the global throttle instance and clear state */
 export function resetThrottleForTests(): void {
   if (globalThrottle instanceof LruThrottle) {
-    // The LruThrottle has no public clear method; we just drop the reference
-    // and let GC collect it. A new instance will be created on next check.
+    globalThrottle.close();
+  } else if (globalThrottle instanceof RedisThrottle) {
+    globalThrottle.close().catch(() => {});
   }
   globalThrottle = null;
 }

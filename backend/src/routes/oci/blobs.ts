@@ -6,7 +6,7 @@ import crypto from "node:crypto";
 import { pipeline } from "node:stream/promises";
 import { Writable } from "node:stream";
 import { auditService } from "../../services/audit.js";
-import { shouldRecordPullStats } from "../../services/throttle.js";
+import { shouldRecordPullStats, NAMESPACE_MAX } from "../../services/throttle.js";
 
 /**
  * OCI Distribution Spec: Blob operations
@@ -57,34 +57,43 @@ export default async function blobRoutes(fastify: FastifyInstance) {
     let bundleForAudit:
       | { id: number; name: string; namespace: string }
       | undefined;
+    let throttled = false;
     try {
       const { namespace, name } = request.params as {
         namespace: string;
         name: string;
       };
-      const bundle = await db.query.bundles.findFirst({
-        where: and(eq(bundles.namespace, namespace), eq(bundles.name, name)),
-      });
-      if (
-        bundle &&
-        (await shouldRecordPullStats(request.ip, digest, namespace))
-      ) {
-        bundleForAudit = bundle;
-        await db
-          .insert(pullStats)
-          .values({
-            bundleId: bundle.id,
-            date: new Date(),
-            count: 1,
-          })
-          .onConflictDoUpdate({
-            target: [pullStats.bundleId, pullStats.date],
-            set: { count: sql`${pullStats.count} + 1` },
-          });
-        await db
-          .update(bundles)
-          .set({ pullCount: sql`${bundles.pullCount} + 1` })
-          .where(eq(bundles.id, bundle.id));
+
+      // Check throttle first to avoid the bundle DB lookup when throttled
+      const shouldRecord = await shouldRecordPullStats(
+        request.ip,
+        digest,
+        namespace,
+      );
+      if (!shouldRecord) {
+        throttled = true;
+      } else {
+        const bundle = await db.query.bundles.findFirst({
+          where: and(eq(bundles.namespace, namespace), eq(bundles.name, name)),
+        });
+        if (bundle) {
+          bundleForAudit = bundle;
+          await db
+            .insert(pullStats)
+            .values({
+              bundleId: bundle.id,
+              date: new Date(),
+              count: 1,
+            })
+            .onConflictDoUpdate({
+              target: [pullStats.bundleId, pullStats.date],
+              set: { count: sql`${pullStats.count} + 1` },
+            });
+          await db
+            .update(bundles)
+            .set({ pullCount: sql`${bundles.pullCount} + 1` })
+            .where(eq(bundles.id, bundle.id));
+        }
       }
     } catch (err) {
       // Don't fail the request if stats tracking fails
@@ -97,6 +106,10 @@ export default async function blobRoutes(fastify: FastifyInstance) {
     reply.header("Content-Type", blob.mediaType ?? "application/octet-stream");
     reply.header("Docker-Content-Digest", blob.digest);
     reply.header("Cache-Control", "public, max-age=31536000, immutable");
+    if (throttled) {
+      reply.header("X-RateLimit-Limit", String(NAMESPACE_MAX));
+      reply.header("X-RateLimit-Remaining", "0");
+    }
 
     return data;
   });
