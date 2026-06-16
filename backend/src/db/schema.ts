@@ -207,7 +207,7 @@ export const pullStats = pgTable(
     count: integer("count").default(1).notNull(),
   },
   (table) => ({
-    bundleDateIdx: index("bundle_date_idx").on(table.bundleId, table.date),
+    bundleDateIdx: uniqueIndex("bundle_date_idx").on(table.bundleId, table.date),
   }),
 );
 

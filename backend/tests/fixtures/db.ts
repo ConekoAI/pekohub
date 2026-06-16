@@ -94,7 +94,7 @@ const DDL_STATEMENTS = [
     count INTEGER DEFAULT 1 NOT NULL
   );`,
 
-  `CREATE INDEX IF NOT EXISTS bundle_date_idx ON pull_stats(bundle_id, date);`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS bundle_date_idx ON pull_stats(bundle_id, date);`,
 
   `CREATE TABLE IF NOT EXISTS audit_logs (
     id SERIAL PRIMARY KEY,

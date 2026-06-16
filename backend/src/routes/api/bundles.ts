@@ -275,6 +275,42 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
       fastify.log.warn({ err }, "Failed to delete bundle from Meilisearch");
     }
 
+    // Delete orphaned blobs and their S3 objects immediately
+    // (instead of waiting up to 7 days for the GC window)
+    if (referencedDigests.size > 0) {
+      const digestsArray = Array.from(referencedDigests);
+      // Find which digests are still referenced by other bundles' versions
+      const otherVersions = await db.query.bundleVersions.findMany({
+        where: inArray(bundleVersions.digest, digestsArray),
+      });
+      const stillReferenced = new Set<string>();
+      for (const v of otherVersions) {
+        const manifest = v.manifestJson as Record<string, unknown>;
+        const layers = (manifest.layers ?? []) as Array<{ digest: string }>;
+        const config = manifest.config as { digest?: string } | undefined;
+        if (config?.digest) stillReferenced.add(config.digest);
+        for (const layer of layers) stillReferenced.add(layer.digest);
+      }
+
+      const orphanedDigests = digestsArray.filter(
+        (d) => !stillReferenced.has(d),
+      );
+
+      for (const digest of orphanedDigests) {
+        try {
+          const blob = await db.query.blobs.findFirst({
+            where: eq(blobs.digest, digest),
+          });
+          if (blob) {
+            await fastify.storage.delete(blob.storageKey);
+            await db.delete(blobs).where(eq(blobs.digest, digest));
+          }
+        } catch (err) {
+          fastify.log.warn({ err, digest }, "Failed to delete orphaned blob");
+        }
+      }
+    }
+
     // Fire-and-forget audit log
     const userId = (user as { id?: number }).id;
     await auditService.logDelete(namespace, userId, `${namespace}/${name}`, {

@@ -9,9 +9,11 @@ import {
 } from "vitest";
 import Fastify, { type FastifyInstance } from "fastify";
 import crypto from "node:crypto";
+import { pullStats } from "../../../db/schema.js";
 
 // Set NODE_ENV=development BEFORE importing routes (so process.env check in manifests.ts picks it up)
 process.env.NODE_ENV = "development";
+process.env.PULL_STATS_THROTTLE_MS = "1000"; // 1s throttle for tests
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -343,6 +345,33 @@ describe("OCI Distribution Spec Routes", () => {
       expect(res.headers["docker-content-digest"]).toBe(digest);
       expect(res.headers["content-type"]).toBe("application/octet-stream");
       expect(res.body).toBe("hello world");
+    });
+
+    it("throttles pull_stats writes for repeated pulls of same digest from same IP", async () => {
+      const digest = sha256("throttle me");
+      mockDbQueries.blobs.findFirst.mockResolvedValue({
+        digest,
+        size: 12,
+        mediaType: "application/octet-stream",
+        storageKey: `blobs/${digest}`,
+      });
+      mockDbQueries.bundles.findFirst.mockResolvedValue({ id: 1 });
+      await app.storage.put(`blobs/${digest}`, Buffer.from("throttle me"));
+
+      // Fire 10 rapid requests from the same IP (default inject IP is 127.0.0.1)
+      for (let i = 0; i < 10; i++) {
+        const res = await app.inject({
+          method: "GET",
+          url: `/v2/ns/name/blobs/${digest}`,
+        });
+        expect(res.statusCode).toBe(200);
+      }
+
+      // pull_stats insert should have been called exactly once (first pull)
+      const pullStatsCalls = mockDbInsert.mock.calls.filter(
+        (call: any) => call[0] === pullStats,
+      );
+      expect(pullStatsCalls.length).toBeLessThanOrEqual(1);
     });
   });
 

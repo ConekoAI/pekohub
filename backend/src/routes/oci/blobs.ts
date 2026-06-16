@@ -8,6 +8,27 @@ import { Writable } from "node:stream";
 import { auditService } from "../../services/audit.js";
 
 /**
+ * Simple in-memory throttle for per-digest pull stats.
+ * Key: `${ip}:${digest}` → timestamp of last stats write.
+ * TTL is configurable via PULL_STATS_THROTTLE_MS (default 60s).
+ */
+const pullStatsThrottle = new Map<string, number>();
+const PULL_STATS_THROTTLE_MS = Number(
+  process.env.PULL_STATS_THROTTLE_MS ?? 60_000,
+);
+
+function isThrottled(ip: string, digest: string): boolean {
+  const key = `${ip}:${digest}`;
+  const last = pullStatsThrottle.get(key);
+  const now = Date.now();
+  if (last && now - last < PULL_STATS_THROTTLE_MS) {
+    return true;
+  }
+  pullStatsThrottle.set(key, now);
+  return false;
+}
+
+/**
  * OCI Distribution Spec: Blob operations
  * HEAD /v2/{namespace}/{name}/blobs/{digest}
  * GET  /v2/{namespace}/{name}/blobs/{digest}
@@ -52,7 +73,7 @@ export default async function blobRoutes(fastify: FastifyInstance) {
       });
     }
 
-    // Increment pull stats
+    // Increment pull stats (throttled per IP+digest)
     let bundleForAudit:
       | { id: number; name: string; namespace: string }
       | undefined;
@@ -64,7 +85,7 @@ export default async function blobRoutes(fastify: FastifyInstance) {
       const bundle = await db.query.bundles.findFirst({
         where: and(eq(bundles.namespace, namespace), eq(bundles.name, name)),
       });
-      if (bundle) {
+      if (bundle && !isThrottled(request.ip, digest)) {
         bundleForAudit = bundle;
         await db
           .insert(pullStats)
