@@ -9,6 +9,7 @@ import {
 import { authHeaders } from "../fixtures/auth.js";
 import type { TestDb } from "../fixtures/db.js";
 import crypto from "node:crypto";
+import { resetThrottleForTests } from "../../src/services/throttle.js";
 
 function sha256(buffer: Buffer | string): string {
   return "sha256:" + crypto.createHash("sha256").update(buffer).digest("hex");
@@ -23,6 +24,7 @@ describe("OCI Distribution API", () => {
 
   beforeEach(async () => {
     await resetTables(testDb.client);
+    resetThrottleForTests();
   });
 
   afterAll(async () => {

@@ -9,6 +9,7 @@ import {
 } from "../fixtures/factories.js";
 import { authHeaders } from "../fixtures/auth.js";
 import type { TestDb } from "../fixtures/db.js";
+import { resetThrottleForTests } from "../../src/services/throttle.js";
 
 describe("Bundle API", () => {
   let testDb: TestDb;
@@ -19,6 +20,7 @@ describe("Bundle API", () => {
 
   beforeEach(async () => {
     await resetTables(testDb.client);
+    resetThrottleForTests();
   });
 
   afterAll(async () => {

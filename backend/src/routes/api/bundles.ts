@@ -276,7 +276,13 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
     }
 
     // Delete orphaned blobs and their S3 objects immediately
-    // (instead of waiting up to 7 days for the GC window)
+    // (instead of waiting up to 7 days for the GC window).
+    //
+    // NOTE: There is a narrow race window where a concurrent upload could
+    // reference one of these digests after the `otherVersions` check but before
+    // the DB delete. In practice uploads are much slower than this loop, and
+    // the window is a few milliseconds. A full fix would require a serializable
+    // transaction or advisory lock, which is left for a future hardening PR.
     if (referencedDigests.size > 0) {
       const digestsArray = Array.from(referencedDigests);
       // Find which digests are still referenced by other bundles' versions
@@ -302,8 +308,11 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
             where: eq(blobs.digest, digest),
           });
           if (blob) {
-            await fastify.storage.delete(blob.storageKey);
+            // Delete DB row first so the digest cannot be referenced again
+            // even if S3 deletion fails. A background sweep can clean up the
+            // S3 orphan later.
             await db.delete(blobs).where(eq(blobs.digest, digest));
+            await fastify.storage.delete(blob.storageKey);
           }
         } catch (err) {
           fastify.log.warn({ err, digest }, "Failed to delete orphaned blob");

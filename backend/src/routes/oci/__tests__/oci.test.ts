@@ -66,6 +66,11 @@ vi.mock("../../../db/index.js", () => ({
   },
 }));
 
+vi.mock("../../../services/throttle.js", () => ({
+  shouldRecordPullStats: vi.fn().mockResolvedValue(true),
+  resetThrottleForTests: vi.fn(),
+}));
+
 // Import routes after mocking db
 const { default: ociRoutes } = await import("../index.js");
 
@@ -347,7 +352,10 @@ describe("OCI Distribution Spec Routes", () => {
       expect(res.body).toBe("hello world");
     });
 
-    it("throttles pull_stats writes for repeated pulls of same digest from same IP", async () => {
+    it("delegates throttling to shouldRecordPullStats", async () => {
+      const { shouldRecordPullStats } = await import(
+        "../../../services/throttle.js"
+      );
       const digest = sha256("throttle me");
       mockDbQueries.blobs.findFirst.mockResolvedValue({
         digest,
@@ -358,20 +366,24 @@ describe("OCI Distribution Spec Routes", () => {
       mockDbQueries.bundles.findFirst.mockResolvedValue({ id: 1 });
       await app.storage.put(`blobs/${digest}`, Buffer.from("throttle me"));
 
-      // Fire 10 rapid requests from the same IP (default inject IP is 127.0.0.1)
-      for (let i = 0; i < 10; i++) {
-        const res = await app.inject({
-          method: "GET",
-          url: `/v2/ns/name/blobs/${digest}`,
-        });
-        expect(res.statusCode).toBe(200);
-      }
+      // First request: throttle says "yes" → stats written
+      (shouldRecordPullStats as any).mockResolvedValueOnce(true);
+      const res1 = await app.inject({
+        method: "GET",
+        url: `/v2/ns/name/blobs/${digest}`,
+      });
+      expect(res1.statusCode).toBe(200);
+      expect(mockDbInsert).toHaveBeenCalled();
+      mockDbInsert.mockClear();
 
-      // pull_stats insert should have been called exactly once (first pull)
-      const pullStatsCalls = mockDbInsert.mock.calls.filter(
-        (call: any) => call[0] === pullStats,
-      );
-      expect(pullStatsCalls.length).toBeLessThanOrEqual(1);
+      // Second request: throttle says "no" → stats skipped
+      (shouldRecordPullStats as any).mockResolvedValueOnce(false);
+      const res2 = await app.inject({
+        method: "GET",
+        url: `/v2/ns/name/blobs/${digest}`,
+      });
+      expect(res2.statusCode).toBe(200);
+      expect(mockDbInsert).not.toHaveBeenCalled();
     });
   });
 
