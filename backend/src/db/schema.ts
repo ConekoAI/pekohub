@@ -276,6 +276,14 @@ export const instances = pgTable(
 
     // Monetization hooks (future)
     monetization: jsonb("monetization").default('{"enabled":false}'),
+
+    // Issue #14: per-agent DID, the key the cross-runtime `a2a_send`
+    // resolver ([peko-runtime#29](https://github.com/ConekoAI/peko-runtime/issues/29))
+    // uses to look up a host via `/v1/agents/by-did/:did`. Set by the
+    // runtime on `instance_announce` (peko-runtime#34) and unique when
+    // present. Nullable so pre-#34 runtimes and migrations keep
+    // working; the by-did endpoint simply 404s when the column is null.
+    agentDid: varchar("agent_did", { length: 512 }),
   },
   (table) => ({
     ownerIdIdx: index("idx_instances_owner_id").on(table.ownerId),
@@ -288,6 +296,13 @@ export const instances = pgTable(
     publishedAtIdx: index("idx_instances_published_at").on(table.publishedAt),
     featuredIdx: index("idx_instances_featured").on(table.featured),
     categoryIdx: index("idx_instances_category").on(table.category),
+    // Issue #14: B-tree unique on `agent_did` so the by-did resolver is
+    // a single indexed lookup. Postgres treats NULLs as distinct in
+    // unique indexes, so pre-#14 rows (where `agent_did IS NULL`) don't
+    // conflict with each other.
+    agentDidUniqueIdx: uniqueIndex("idx_instances_agent_did").on(
+      table.agentDid,
+    ),
   }),
 );
 

@@ -16,6 +16,7 @@ import ociRoutes from "./routes/oci/index.js";
 import searchApiRoutes from "./routes/api/search.js";
 import bundleApiRoutes from "./routes/api/bundles.js";
 import instanceRoutes from "./routes/api/instances.js";
+import agentDirectoryRoutes from "./routes/api/agents.js";
 import adminRoutes from "./routes/api/admin.js";
 import oauthRoutes from "./routes/auth/oauth.js";
 import apiKeyRoutes from "./routes/auth/api-keys.js";
@@ -119,6 +120,11 @@ async function main() {
   await app.register(searchApiRoutes, { prefix: "/v1" });
   await app.register(bundleApiRoutes, { prefix: "/v1" });
   await app.register(instanceRoutes, { prefix: "/v1" });
+  // Issue #14: agent directory (by-did / by-handle) for the cross-runtime
+  // a2a_send resolver. Mounted under /v1 to match the rest of the
+  // public API; both endpoints require auth (JWT or API key) so
+  // `fastify.authenticate` is the gate.
+  await app.register(agentDirectoryRoutes, { prefix: "/v1" });
   await app.register(adminRoutes, { prefix: "/v1/admin" });
   await app.register(oauthRoutes, { prefix: "/v1/auth" });
   await app.register(apiKeyRoutes, { prefix: "/v1/auth" });

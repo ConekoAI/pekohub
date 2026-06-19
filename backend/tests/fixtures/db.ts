@@ -147,7 +147,11 @@ const DDL_STATEMENTS = [
     weekly_quota INTEGER,
     published_at TIMESTAMPTZ,
     featured BOOLEAN DEFAULT FALSE,
-    monetization JSONB DEFAULT '{"enabled":false}'
+    monetization JSONB DEFAULT '{"enabled":false}',
+    -- Issue #14: per-agent DID, populated by the runtime's
+    -- instance_announce message (peko-runtime#34) and indexed by
+    -- the by-did resolver.
+    agent_did VARCHAR(512)
   );`,
   `CREATE INDEX IF NOT EXISTS idx_instances_owner_id ON instances(owner_id);`,
   `CREATE INDEX IF NOT EXISTS idx_instances_runtime_id ON instances(runtime_id);`,
@@ -156,6 +160,12 @@ const DDL_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_instances_published_at ON instances(published_at);`,
   `CREATE INDEX IF NOT EXISTS idx_instances_featured ON instances(featured);`,
   `CREATE INDEX IF NOT EXISTS idx_instances_category ON instances(category);`,
+  // Issue #14: unique B-tree on `agent_did` so the by-did resolver
+  // (GET /v1/agents/by-did/:did) is a single indexed lookup. We
+  // mirror the production migration (0007_add_agent_did.sql) — NULLs
+  // are distinct in unique indexes, so pre-upgrade rows (all NULL)
+  // don't conflict with each other.
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_instances_agent_did ON instances(agent_did);`,
 
   // Runtimes table (for tunnel owner resolution)
   `CREATE TABLE IF NOT EXISTS runtimes (

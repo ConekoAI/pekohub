@@ -71,6 +71,8 @@ export interface TestInstance {
   weeklyQuota: number | null;
   publishedAt: Date | null;
   featured: boolean;
+  // Issue #14: per-agent DID, optional; not all test instances need one.
+  agentDid: string | null;
 }
 
 /**
@@ -223,13 +225,13 @@ export async function createInstance(
       id, type, name, owner_id, owner_principal, runtime_id, runtime_display_name, bundle_ref,
       status, exposure, allowed_users, allowed_principals, capabilities, metadata,
       public_name, description, tags, category, tos_required, tos_text,
-      daily_quota, weekly_quota, published_at, featured
+      daily_quota, weekly_quota, published_at, featured, agent_did
     )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
      RETURNING id, type, name, owner_id, owner_principal, runtime_id, runtime_display_name, bundle_ref,
        status, exposure, allowed_users, allowed_principals, last_seen_at, created_at, capabilities, metadata,
        public_name, description, tags, category, tos_required, tos_text,
-       daily_quota, weekly_quota, published_at, featured`,
+       daily_quota, weekly_quota, published_at, featured, agent_did`,
     [
       id,
       type,
@@ -257,6 +259,8 @@ export async function createInstance(
       overrides.weeklyQuota ?? null,
       overrides.publishedAt ?? null,
       overrides.featured ?? false,
+      // Issue #14: per-agent DID. Optional — most tests don't care.
+      overrides.agentDid ?? null,
     ],
   );
 
@@ -286,5 +290,6 @@ export async function createInstance(
     weeklyQuota: row.weekly_quota ?? null,
     publishedAt: row.published_at ?? null,
     featured: row.featured ?? false,
+    agentDid: row.agent_did ?? null,
   } as TestInstance;
 }

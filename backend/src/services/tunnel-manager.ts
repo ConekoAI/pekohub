@@ -590,6 +590,10 @@ export class TunnelManager {
         allowedPrincipals: payload.allowedPrincipals,
         capabilities: payload.capabilities,
         metadata: payload.metadata,
+        // Issue #14: per-agent DID. Pre-#34 runtimes omit the field;
+        // the service layer leaves the existing column alone in that
+        // case (see `upsertFromAnnounce`).
+        agentDid: payload.agentDid,
       });
     } catch (err) {
       this.fastify.log.warn(

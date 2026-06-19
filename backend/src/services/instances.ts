@@ -1,5 +1,5 @@
 import { db } from "../db/index.js";
-import { instances } from "../db/schema.js";
+import { instances, users } from "../db/schema.js";
 import { eq, and, sql, desc, count, gte, lt } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import {
@@ -191,6 +191,13 @@ export interface InstanceRecord {
     priceCents: number | null;
     stripeProductId: string | null;
   };
+
+  // Issue #14: per-agent DID, set by the runtime on `instance_announce`
+  // (peko-runtime#34). The by-did resolver
+  // (`GET /v1/agents/by-did/:did`) hits the unique index on this
+  // column. Nullable for pre-#34 peers; the by-did endpoint 404s
+  // when null.
+  agentDid: string | null;
 }
 
 export interface CreateInstanceInput {
@@ -218,6 +225,10 @@ export interface CreateInstanceInput {
   tosText?: string;
   dailyQuota?: number;
   weeklyQuota?: number;
+
+  // Issue #14: per-agent DID, set on `instance_announce`
+  // (peko-runtime#34). Unique when present.
+  agentDid?: string | null;
 }
 
 export interface UpdateInstanceInput {
@@ -241,6 +252,12 @@ export interface UpdateInstanceInput {
   weeklyQuota?: number;
   publishedAt?: Date | null;
   featured?: boolean;
+
+  // Issue #14: per-agent DID. Set by the runtime on `instance_announce`
+  // (peko-runtime#34) and re-keyed by the cross-runtime `a2a_send`
+  // resolver ([peko-runtime#29]). Setting to `null` clears the column
+  // (e.g. if a runtime downgrades to pre-#34).
+  agentDid?: string | null;
 }
 
 export interface ListInstancesOptions {
@@ -257,6 +274,45 @@ export interface ListInstancesOptions {
 export interface ListInstancesResult {
   data: InstanceRecord[];
   total: number;
+}
+
+// ── Agent directory resolution (issue #14) ─────────────────────────────────
+
+/**
+ * The payload returned by `GET /v1/agents/by-did/:did` and
+ * `GET /v1/agents/by-handle/:owner/:agent_name` on a hit. This is the
+ * minimum the runtime's cross-runtime `a2a_send`
+ * ([peko-runtime#29](https://github.com/ConekoAI/peko-runtime/issues/29))
+ * needs to dispatch: where to send, who the agent is, and what the
+ * caller is allowed to assume about access (so the runtime can decide
+ * whether to even attempt a tunnel open).
+ */
+export interface AgentTargetResolution {
+  runtimeId: string;
+  instanceId: string;
+  agentDid: string;
+  ownerPrincipal: Principal;
+  exposure: InstanceExposure;
+}
+
+/**
+ * Status of a directory lookup. Distinct from a boolean so the route
+ * layer can return the right HTTP code (404 vs 403) without re-running
+ * the access check.
+ *
+ *   - `hit`    → found, caller is allowed. Route returns 200.
+ *   - `miss`   → not found (no row, or DID not set, or wrong owner/name).
+ *                Route returns 404.
+ *   - `denied` → found, but the caller fails `principalCanAccess`.
+ *                Route returns 403 — the existence-vs-permission
+ *                distinction is preserved for legitimate callers per
+ *                the issue's acceptance criteria.
+ */
+export type AgentTargetResolutionStatus = "hit" | "miss" | "denied";
+
+export interface AgentTargetResolutionResult {
+  status: AgentTargetResolutionStatus;
+  resolution?: AgentTargetResolution;
 }
 
 export interface ProxiedRequestPayload {
@@ -378,6 +434,12 @@ export class InstanceService {
         tosText: input.tosText ?? null,
         dailyQuota: input.dailyQuota ?? null,
         weeklyQuota: input.weeklyQuota ?? null,
+        // Issue #14: only set when the caller supplies a value;
+        // otherwise leave the column null so pre-#14 runtimes still
+        // create valid rows. Drizzle treats `undefined` as "don't
+        // include in the INSERT", so the default `null` from the
+        // schema applies.
+        agentDid: input.agentDid ?? undefined,
       })
       .returning();
 
@@ -482,6 +544,7 @@ export class InstanceService {
     if (input.weeklyQuota !== undefined) values.weeklyQuota = input.weeklyQuota;
     if (input.publishedAt !== undefined) values.publishedAt = input.publishedAt;
     if (input.featured !== undefined) values.featured = input.featured;
+    if (input.agentDid !== undefined) values.agentDid = input.agentDid;
 
     if (Object.keys(values).length === 0) {
       return this.getById(id);
@@ -504,6 +567,132 @@ export class InstanceService {
     return result.length > 0;
   }
 
+  // ── Agent directory lookups (issue #14) ────────────────────────────────────
+
+  /**
+   * Look up an instance by its per-agent DID. The runtime sets this on
+   * `instance_announce` (peko-runtime#34) and the cross-runtime
+   * `a2a_send` resolver uses it as its primary key
+   * ([peko-runtime#29](https://github.com/ConekoAI/peko-runtime/issues/29)).
+   *
+   * Hits the `idx_instances_agent_did` unique index — single
+   * row, regardless of how many instances exist. Returns `null`
+   * when the row exists but the DID is null (shouldn't happen with
+   * the unique index, but the type system is permissive), and
+   * `null` when no row matches. Caller distinguishes via the helper
+   * {@link resolveAgentTarget} when it also needs the access check.
+   */
+  async getByDid(did: string): Promise<InstanceRecord | null> {
+    const row = await db.query.instances.findFirst({
+      where: eq(instances.agentDid, did),
+    });
+    return row ? this.toRecord(row) : null;
+  }
+
+  /**
+   * Look up an instance by `{owner_namespace, agent_name}`. Used by
+   * `GET /v1/agents/by-handle/:owner/:agent_name` and the
+   * runtime-side client when the caller has only the human-readable
+   * handle.
+   *
+   * v1 is user-namespace only — Team-kind owners (pekohub#8) will
+   * require a second join or a new column, so the team branch is
+   * intentionally not yet implemented.
+   *
+   * Returns `null` when either the owner namespace doesn't exist or
+   * the owner has no instance with that name. The route layer
+   * collapses those to 404; the access check then runs in
+   * {@link resolveAgentTarget}.
+   */
+  async getByHandle(
+    owner: string,
+    agentName: string,
+  ): Promise<InstanceRecord | null> {
+    const ownerRow = await db.query.users.findFirst({
+      where: eq(users.namespace, owner),
+    });
+    if (!ownerRow) return null;
+
+    const row = await db.query.instances.findFirst({
+      where: and(
+        eq(instances.ownerId, ownerRow.id),
+        eq(instances.name, agentName),
+      ),
+    });
+    return row ? this.toRecord(row) : null;
+  }
+
+  /**
+   * Resolve a `TargetSpec` (by-did or by-handle) into a host. The
+   * cross-runtime `a2a_send` ([peko-runtime#29]) calls this on the
+   * hub to learn where to dispatch.
+   *
+   * The result carries an explicit status (`hit` / `miss` / `denied`)
+   * so the route layer can pick the right HTTP code without
+   * re-running the access check. This is the existence-vs-permission
+   * distinction the issue's acceptance criteria require.
+   *
+   * `Public` exposure short-circuits the check (mirrors `canAccess`).
+   * For non-public exposure, the resolved owner is gated by
+   * `principalCanAccess` — a `User` owner is a direct match; a
+   * `Team` owner is gated on team membership (gated on pekohub#8;
+   * until then, the team-members lookup returns `[]` and Team
+   * owners deny).
+   */
+  async resolveAgentTarget(
+    spec: import("@pekohub/shared").TargetSpec,
+    caller: CallerPrincipal,
+  ): Promise<AgentTargetResolutionResult> {
+    const instance =
+      spec.kind === "by-did"
+        ? await this.getByDid(spec.did)
+        : await this.getByHandle(spec.owner, spec.agentName);
+
+    if (!instance) {
+      return { status: "miss" };
+    }
+    if (!instance.agentDid) {
+      // The unique index treats nulls as distinct, so a row with a
+      // null agent_did shouldn't be reachable through the by-did
+      // resolver — but the by-handle path can land here (e.g. a
+      // pre-#34 runtime that announces without an agent_did). Treat
+      // as miss for the by-did path; the by-handle caller still gets
+      // a meaningful hit (the by-handle wire format doesn't promise
+      // a DID). We only return miss on by-did.
+      if (spec.kind === "by-did") {
+        return { status: "miss" };
+      }
+    }
+
+    const owner = resolveOwnerPrincipal(instance);
+    // An ownerless row is the same as a miss for access purposes —
+    // there's no principal to grant access, and a public exposure
+    // would have been handled in `canAccess` at the call site if
+    // the caller wanted to use it.
+    if (owner === null) {
+      return { status: "miss" };
+    }
+
+    if (instance.exposure === "public" || (await principalCanAccess(owner, caller))) {
+      return {
+        status: "hit",
+        resolution: {
+          runtimeId: instance.runtimeId,
+          instanceId: instance.id,
+          // The payload always includes the agent_did so the runtime
+          // can echo it back to its own audit log. If the by-handle
+          // path found a pre-#34 row with no DID, we report an empty
+          // string (the runtime can use the handle as fallback).
+          agentDid: instance.agentDid ?? "",
+          ownerPrincipal: owner,
+          exposure: instance.exposure,
+        },
+      };
+    }
+
+    return { status: "denied" };
+  }
+
   async upsertFromAnnounce(
     input: CreateInstanceInput,
   ): Promise<InstanceRecord> {
@@ -520,6 +709,11 @@ export class InstanceService {
         metadata: input.metadata,
       };
       if (input.bundleRef !== undefined) values.bundleRef = input.bundleRef;
+      // Issue #14: persist the per-agent DID on re-announce. Treat
+      // `undefined` (pre-#34 runtime that doesn't send the field)
+      // as "leave the existing value alone" — otherwise a downgrade
+      // would silently clear the column.
+      if (input.agentDid !== undefined) values.agentDid = input.agentDid;
       const updated = await this.update(input.id!, values);
       return updated!;
     }
@@ -680,6 +874,8 @@ export class InstanceService {
         stripeProductId:
           (monetization.stripeProductId as string | null) ?? null,
       },
+      // Issue #14: per-agent DID from `instance_announce` (peko-runtime#34).
+      agentDid: row.agentDid ?? null,
     };
   }
 }

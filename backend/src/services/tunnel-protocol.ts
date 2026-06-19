@@ -85,6 +85,14 @@ export interface InstanceAnnouncePayload {
   allowedPrincipals?: Principal[];
   capabilities?: string[];
   metadata?: Record<string, unknown>;
+  // Issue #14: per-agent DID, written to `instances.agent_did` and
+  // indexed by the by-did resolver
+  // (`GET /v1/agents/by-did/:did`,
+  // [peko-runtime#29](https://github.com/ConekoAI/peko-runtime/issues/29)).
+  // Optional so pre-#34 runtimes still announce cleanly. Omit to
+  // clear on a re-announce? No — `undefined` means "leave the
+  // existing value alone" in the service layer.
+  agentDid?: string;
 }
 
 export interface InstanceHeartbeatPayload {
