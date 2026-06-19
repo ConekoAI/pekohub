@@ -195,6 +195,66 @@ describe("Instance API", () => {
       expect(body.runtimeId).toBeUndefined();
     });
 
+    // Issue #11: the new typed columns (`owner_principal`,
+    // `allowed_principals`) are also sensitive — they leak the owner's
+    // identity and the allow-list. They join the redaction list for
+    // non-owners.
+    it("should redact ownerPrincipal and allowedPrincipals for non-owner", async () => {
+      const app = await buildTestApp({ testDb });
+      const owner = await createUser(testDb.client, { namespace: "alice" });
+      const viewer = await createUser(testDb.client, { namespace: "bob" });
+      const headers = await authHeaders(viewer);
+      const instance = await createInstance(testDb.client, {
+        ownerId: owner.id,
+        name: "typed-agent",
+        exposure: "public",
+        ownerPrincipal: { kind: "agent", id: "helper" },
+        allowedPrincipals: [{ kind: "agent", id: "helper" }],
+      });
+
+      const response = await app.inject({
+        method: "GET",
+        url: `/v1/instances/${instance.id}`,
+        headers,
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.payload);
+      expect(body.ownerPrincipal).toBeUndefined();
+      expect(body.allowedPrincipals).toBeUndefined();
+    });
+
+    it("should return ownerPrincipal and allowedPrincipals for the owner", async () => {
+      const app = await buildTestApp({ testDb });
+      const owner = await createUser(testDb.client, { namespace: "alice" });
+      const headers = await authHeaders(owner);
+      const instance = await createInstance(testDb.client, {
+        ownerId: owner.id,
+        // Typed owner matches the legacy `ownerId` — the user that
+        // registered the row is the resolved owner.
+        ownerPrincipal: { kind: "user", id: String(owner.id) },
+        name: "owner-view",
+        exposure: "private",
+        allowedPrincipals: [{ kind: "user", id: String(owner.id) }],
+      });
+
+      const response = await app.inject({
+        method: "GET",
+        url: `/v1/instances/${instance.id}`,
+        headers,
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.payload);
+      expect(body.ownerPrincipal).toEqual({
+        kind: "user",
+        id: String(owner.id),
+      });
+      expect(body.allowedPrincipals).toEqual([
+        { kind: "user", id: String(owner.id) },
+      ]);
+    });
+
     it("should deny access to private instance without auth", async () => {
       const app = await buildTestApp({ testDb });
       const user = await createUser(testDb.client, { namespace: "alice" });

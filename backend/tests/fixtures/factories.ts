@@ -206,7 +206,11 @@ export async function createBundleWithVersions(
  */
 export async function createInstance(
   client: PGlite,
-  overrides: Partial<TestInstance> & { ownerId: number },
+  overrides: Partial<TestInstance> & {
+    ownerId: number;
+    ownerPrincipal?: unknown;
+    allowedPrincipals?: unknown[];
+  },
 ): Promise<TestInstance> {
   const id = overrides.id ?? crypto.randomUUID();
   const type = overrides.type ?? "agent";
@@ -216,14 +220,14 @@ export async function createInstance(
 
   const result = await client.query(
     `INSERT INTO instances (
-      id, type, name, owner_id, runtime_id, runtime_display_name, bundle_ref,
-      status, exposure, allowed_users, capabilities, metadata,
+      id, type, name, owner_id, owner_principal, runtime_id, runtime_display_name, bundle_ref,
+      status, exposure, allowed_users, allowed_principals, capabilities, metadata,
       public_name, description, tags, category, tos_required, tos_text,
       daily_quota, weekly_quota, published_at, featured
     )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
-     RETURNING id, type, name, owner_id, runtime_id, runtime_display_name, bundle_ref,
-       status, exposure, allowed_users, last_seen_at, created_at, capabilities, metadata,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+     RETURNING id, type, name, owner_id, owner_principal, runtime_id, runtime_display_name, bundle_ref,
+       status, exposure, allowed_users, allowed_principals, last_seen_at, created_at, capabilities, metadata,
        public_name, description, tags, category, tos_required, tos_text,
        daily_quota, weekly_quota, published_at, featured`,
     [
@@ -231,12 +235,16 @@ export async function createInstance(
       type,
       name,
       overrides.ownerId,
+      overrides.ownerPrincipal !== undefined
+        ? JSON.stringify(overrides.ownerPrincipal)
+        : null,
       runtimeId,
       overrides.runtimeDisplayName ?? null,
       overrides.bundleRef ?? null,
       overrides.status ?? "offline",
       overrides.exposure ?? "unexposed",
       JSON.stringify(overrides.allowedUsers ?? []),
+      JSON.stringify(overrides.allowedPrincipals ?? []),
       JSON.stringify(overrides.capabilities ?? []),
       JSON.stringify(overrides.metadata ?? {}),
       overrides.publicName ?? null,

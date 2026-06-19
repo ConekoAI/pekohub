@@ -3,6 +3,7 @@ import { db } from "../../db/index.js";
 import { instances, users } from "../../db/schema.js";
 import {
   instanceService,
+  type CallerPrincipal,
   type InstanceExposure,
   type InstanceStatus,
   type InstanceType,
@@ -10,6 +11,7 @@ import {
 import {
   eq,
   and,
+  or,
   sql,
   desc,
   count,
@@ -18,6 +20,50 @@ import {
   gte,
 } from "drizzle-orm";
 import { z } from "zod";
+import { parsePrincipal } from "@pekohub/shared";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Caller extraction (issue #11)
+//
+// The hub identifies who's knocking on an instance endpoint by combining
+// two sources:
+//
+// 1. JWT auth — `fastify.authenticate(request)` returns a user record
+//    if the request carries a valid Bearer token. This is the human-user
+//    path.
+// 2. Runtime-attested principal — `x-pekohub-caller-principal` header,
+//    set by the runtime on bridge requests that originate from a
+//    non-User principal (e.g. `Principal::Agent("helper")` from a
+//    `a2a_send` masquerade, per peko-runtime#24).
+//
+// The runtime-attested header is honoured only when present and
+// parseable. The JWT path is the fallback. This lets the issue #11
+// regression test (a runtime-originated Agent chat) flow through the
+// hub's HTTP chat endpoint without a human JWT.
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function extractCallerPrincipal(
+  fastify: FastifyInstance,
+  request: FastifyRequest,
+): Promise<CallerPrincipal> {
+  const header = request.headers["x-pekohub-caller-principal"];
+  if (typeof header === "string" && header.length > 0) {
+    const parsed = parsePrincipal(header);
+    if (parsed) {
+      return parsed;
+    }
+    fastify.log.warn(
+      { header },
+      "Unparseable x-pekohub-caller-principal header — falling back to JWT auth",
+    );
+  }
+  try {
+    const user = await fastify.authenticate(request);
+    return { kind: "user", id: String(user.id) };
+  } catch {
+    return null;
+  }
+}
 
 const ListQuerySchema = z.object({
   status: z.enum(["online", "offline", "busy", "error"]).optional(),
@@ -166,35 +212,38 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       return reply.status(404).send({ error: "Instance not found" });
     }
 
-    let userId: number | null = null;
-    if (instance.exposure === "private" || instance.exposure === "unexposed") {
-      try {
-        const user = await fastify.authenticate(request);
-        userId = user.id;
-      } catch {
-        if (instance.exposure === "private") {
-          return reply.status(401).send({ error: "Authentication required" });
-        }
-        // For unexposed, no auth means forbidden
-        return reply.status(403).send({ error: "Forbidden" });
+    // Issue #11: caller is a typed Principal, not just a user id.
+    // For private/unexposed, the access check itself requires a
+    // non-null caller; for public, anonymous is fine.
+    const caller = await extractCallerPrincipal(fastify, request);
+    if (
+      (instance.exposure === "private" || instance.exposure === "unexposed") &&
+      caller === null
+    ) {
+      if (instance.exposure === "private") {
+        return reply.status(401).send({ error: "Authentication required" });
       }
-    } else {
-      // For public instances, try to authenticate so the owner can see the full record
-      try {
-        const user = await fastify.authenticate(request);
-        userId = user.id;
-      } catch {
-        // Anonymous access is allowed for public instances
-      }
-    }
-
-    if (!instanceService.canAccess(instance, userId)) {
       return reply.status(403).send({ error: "Forbidden" });
     }
 
-    const isOwner = userId !== null && instance.ownerId === userId;
+    if (!(await instanceService.canAccess(instance, caller))) {
+      return reply.status(403).send({ error: "Forbidden" });
+    }
+
+    const isOwner =
+      caller !== null && (await instanceService.isOwner(instance, caller));
     if (!isOwner) {
-      const { allowedUsers, runtimeId, ...rest } = instance;
+      // Redact owner-only fields from the public-facing record.
+      // ownerPrincipal is the typed principal (sensitive — leaks the
+      // owner's identity) so it joins the redaction list. allowedPrincipals
+      // and allowedUsers expose the allow-list (also sensitive).
+      const {
+        allowedUsers,
+        allowedPrincipals,
+        ownerPrincipal,
+        runtimeId,
+        ...rest
+      } = instance;
       return rest;
     }
 
@@ -283,7 +332,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         return reply.status(404).send({ error: "Instance not found" });
       }
 
-      if (instance.ownerId !== user.id) {
+      if (!(await instanceService.isOwner(instance, user.id))) {
         return reply.status(403).send({ error: "Forbidden" });
       }
 
@@ -359,7 +408,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         return reply.status(404).send({ error: "Instance not found" });
       }
 
-      if (instance.ownerId !== user.id) {
+      if (!(await instanceService.isOwner(instance, user.id))) {
         return reply.status(403).send({ error: "Forbidden" });
       }
 
@@ -454,12 +503,17 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       // Notify runtime via tunnel control channel
       if (fastify.tunnelManager.isRuntimeConnected(instance.runtimeId)) {
         tunnelStatus = "opened";
+        // Issue #11: send the typed allow-list when present. Pre-#11
+        // runtimes will only see `allowedUserIds` and ignore
+        // `allowedPrincipals`; post-#11 runtimes prefer the typed
+        // list and ignore the legacy one.
         await fastify.tunnelRouter.sendControl(instance.runtimeId, {
           type: "exposure_update",
           payload: {
             instanceId: id,
             exposure,
             allowedUserIds: allowed_users,
+            allowedPrincipals: updated!.allowedPrincipals,
           },
         });
       } else {
@@ -486,7 +540,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         return reply.status(404).send({ error: "Instance not found" });
       }
 
-      if (instance.ownerId !== user.id) {
+      if (!(await instanceService.isOwner(instance, user.id))) {
         return reply.status(403).send({ error: "Forbidden" });
       }
 
@@ -539,7 +593,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         return reply.status(404).send({ error: "Instance not found" });
       }
 
-      if (instance.ownerId !== user.id) {
+      if (!(await instanceService.isOwner(instance, user.id))) {
         return reply.status(403).send({ error: "Forbidden" });
       }
 
@@ -563,24 +617,18 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       return reply.status(404).send({ error: "Instance not found" });
     }
 
-    // Auth + availability check
-    let userId: number | null = null;
-    if (instance.exposure === "private" || instance.exposure === "unexposed") {
-      try {
-        const user = await fastify.authenticate(request);
-        if (user.id == null) {
-          fastify.log.warn(
-            { instanceId: id, exposure: instance.exposure },
-            "Authenticated user missing id after fastify.authenticate — cannot build x-pekohub-user-id",
-          );
-          return reply.status(500).send({ error: "Internal Server Error" });
-        }
-        userId = user.id;
-      } catch {
-        return reply.status(401).send({ error: "Authentication required" });
-      }
+    // Issue #11: caller resolution — JWT user OR runtime-attested
+    // principal via `x-pekohub-caller-principal`. For private/unexposed
+    // exposure the access check itself requires a non-null caller, so
+    // a missing header + missing JWT is handled by the 403 path below.
+    const caller = await extractCallerPrincipal(fastify, request);
+    if (
+      (instance.exposure === "private" || instance.exposure === "unexposed") &&
+      caller === null
+    ) {
+      return reply.status(401).send({ error: "Authentication required" });
     }
-    if (!instanceService.canChat(instance, userId)) {
+    if (!(await instanceService.canChat(instance, caller))) {
       if (instance.status === "offline" || instance.exposure === "unexposed") {
         return reply.status(503).send({ error: "Service Unavailable" });
       }
@@ -616,7 +664,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       body.data,
       { "content-type": "application/json" },
       reply,
-      userId !== null ? { id: userId } : null,
+      caller,
     );
   });
 
@@ -628,24 +676,14 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       return reply.status(404).send({ error: "Instance not found" });
     }
 
-    // Auth + availability check
-    let userId: number | null = null;
-    if (instance.exposure === "private" || instance.exposure === "unexposed") {
-      try {
-        const user = await fastify.authenticate(request);
-        if (user.id == null) {
-          fastify.log.warn(
-            { instanceId: id, exposure: instance.exposure },
-            "Authenticated user missing id after fastify.authenticate — cannot build x-pekohub-user-id",
-          );
-          return reply.status(500).send({ error: "Internal Server Error" });
-        }
-        userId = user.id;
-      } catch {
-        return reply.status(401).send({ error: "Authentication required" });
-      }
+    const caller = await extractCallerPrincipal(fastify, request);
+    if (
+      (instance.exposure === "private" || instance.exposure === "unexposed") &&
+      caller === null
+    ) {
+      return reply.status(401).send({ error: "Authentication required" });
     }
-    if (!instanceService.canChat(instance, userId)) {
+    if (!(await instanceService.canChat(instance, caller))) {
       if (instance.status === "offline" || instance.exposure === "unexposed") {
         return reply.status(503).send({ error: "Service Unavailable" });
       }
@@ -661,7 +699,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         {},
         { "content-type": "application/json" },
         reply,
-        userId !== null ? { id: userId } : null,
+        caller,
       );
     } catch (err) {
       fastify.log.warn({ err, instanceId: id }, "Stream proxy failed");
@@ -729,6 +767,14 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     async (request, reply) => {
       const user = request.user;
 
+      // Issue #11: also match the typed `allowed_principals` JSONB
+      // column. Pre-#11 runtimes only populated the legacy
+      // `allowed_users` column, so we OR the two checks during the
+      // one-release back-compat window.
+      const userIdStr = String(user.id);
+      const legacyMatch = sql`${instances.allowedUsers} @> ${JSON.stringify([userIdStr])}::jsonb`;
+      const typedMatch = sql`${instances.allowedPrincipals} @> ${JSON.stringify([{ kind: "user", id: userIdStr }])}::jsonb`;
+
       const rows = await db
         .select({
           id: instances.id,
@@ -743,7 +789,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         .where(
           and(
             eq(instances.exposure, "private"),
-            sql`${instances.allowedUsers} @> ${JSON.stringify([String(user.id)])}::jsonb`,
+            or(legacyMatch, typedMatch),
           ),
         )
         .orderBy(desc(instances.lastSeenAt));
@@ -1045,7 +1091,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         return reply.status(404).send({ error: "Instance not found" });
       }
 
-      if (instance.ownerId !== user.id) {
+      if (!(await instanceService.isOwner(instance, user.id))) {
         return reply.status(403).send({ error: "Forbidden" });
       }
 

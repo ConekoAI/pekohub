@@ -577,12 +577,17 @@ export class TunnelManager {
         type: payload.type,
         name: payload.name,
         ownerId,
+        // Issue #11: typed owner from the runtime. When absent
+        // (pre-#11 runtime), the service layer backfills from
+        // `ownerId` via `Principal::User(ownerId)`.
+        ownerPrincipal: payload.owner ?? null,
         runtimeId,
         runtimeDisplayName: payload.runtimeDisplayName,
         bundleRef: payload.bundleRef,
         status: payload.status,
         exposure: payload.exposure,
         allowedUsers: payload.allowedUsers,
+        allowedPrincipals: payload.allowedPrincipals,
         capabilities: payload.capabilities,
         metadata: payload.metadata,
       });
