@@ -195,6 +195,66 @@ describe("Instance API", () => {
       expect(body.runtimeId).toBeUndefined();
     });
 
+    // Issue #11: the new typed columns (`owner_principal`,
+    // `allowed_principals`) are also sensitive — they leak the owner's
+    // identity and the allow-list. They join the redaction list for
+    // non-owners.
+    it("should redact ownerPrincipal and allowedPrincipals for non-owner", async () => {
+      const app = await buildTestApp({ testDb });
+      const owner = await createUser(testDb.client, { namespace: "alice" });
+      const viewer = await createUser(testDb.client, { namespace: "bob" });
+      const headers = await authHeaders(viewer);
+      const instance = await createInstance(testDb.client, {
+        ownerId: owner.id,
+        name: "typed-agent",
+        exposure: "public",
+        ownerPrincipal: { kind: "agent", id: "helper" },
+        allowedPrincipals: [{ kind: "agent", id: "helper" }],
+      });
+
+      const response = await app.inject({
+        method: "GET",
+        url: `/v1/instances/${instance.id}`,
+        headers,
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.payload);
+      expect(body.ownerPrincipal).toBeUndefined();
+      expect(body.allowedPrincipals).toBeUndefined();
+    });
+
+    it("should return ownerPrincipal and allowedPrincipals for the owner", async () => {
+      const app = await buildTestApp({ testDb });
+      const owner = await createUser(testDb.client, { namespace: "alice" });
+      const headers = await authHeaders(owner);
+      const instance = await createInstance(testDb.client, {
+        ownerId: owner.id,
+        // Typed owner matches the legacy `ownerId` — the user that
+        // registered the row is the resolved owner.
+        ownerPrincipal: { kind: "user", id: String(owner.id) },
+        name: "owner-view",
+        exposure: "private",
+        allowedPrincipals: [{ kind: "user", id: String(owner.id) }],
+      });
+
+      const response = await app.inject({
+        method: "GET",
+        url: `/v1/instances/${instance.id}`,
+        headers,
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.payload);
+      expect(body.ownerPrincipal).toEqual({
+        kind: "user",
+        id: String(owner.id),
+      });
+      expect(body.allowedPrincipals).toEqual([
+        { kind: "user", id: String(owner.id) },
+      ]);
+    });
+
     it("should deny access to private instance without auth", async () => {
       const app = await buildTestApp({ testDb });
       const user = await createUser(testDb.client, { namespace: "alice" });
@@ -397,6 +457,34 @@ describe("Instance API", () => {
       const response = await app.inject({
         method: "POST",
         url: `/v1/instances/${instance.id}/chat`,
+        payload: { message: "hello" },
+      });
+
+      expect(response.statusCode).toBe(401);
+    });
+
+    // Review #12 P1: the inbound `x-pekohub-caller-principal` header
+    // is no longer trusted without an independent JWT/API-key auth
+    // proof. A bare header claim must NOT bypass the chat auth gate.
+    it("rejects a private-instance chat with a bare x-pekohub-caller-principal header (no JWT)", async () => {
+      const app = await buildTestApp({ testDb });
+      const owner = await createUser(testDb.client, { namespace: "alice" });
+      const instance = await createInstance(testDb.client, {
+        ownerId: owner.id,
+        name: "private-agent",
+        exposure: "private",
+      });
+
+      const response = await app.inject({
+        method: "POST",
+        url: `/v1/instances/${instance.id}/chat`,
+        headers: {
+          // Header claims to be the owner — but no JWT. The fix
+          // requires JWT first; the header is never honoured in
+          // isolation. Pre-fix, this would have been accepted as
+          // `Principal::User("<owner.id>")` and proxied through.
+          "x-pekohub-caller-principal": `user:${owner.id}`,
+        },
         payload: { message: "hello" },
       });
 

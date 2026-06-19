@@ -13,7 +13,11 @@ import {
 } from "drizzle-orm/pg-core";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { BundleTypes, ExtensionTypes } from "@pekohub/shared";
+import {
+  BundleTypes,
+  ExtensionTypes,
+  type Principal,
+} from "@pekohub/shared";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Users & Namespaces
@@ -221,9 +225,19 @@ export const instances = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     type: varchar("type", { length: 10 }).notNull(), // 'agent' | 'team'
     name: varchar("name", { length: 255 }).notNull(),
+    // Legacy owner reference — kept for one release so peers on the
+    // pre-ADR-039 hub continue to work. New code should treat
+    // `ownerPrincipal` (or the resolved owner) as the source of truth
+    // and use this column only as a backfill target.
     ownerId: integer("owner_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    // Typed owner per ADR-039 / peko-runtime's `Principal` enum. Nullable
+    // because pre-upgrade rows have no value; `resolveOwnerPrincipal`
+    // falls back to `Principal::User(ownerId)` in that case. The
+    // empty-sentinel `Principal::User("")` is treated the same way
+    // (see `EMPTY_OWNER_PRINCIPAL` in @pekohub/shared).
+    ownerPrincipal: jsonb("owner_principal").$type<Principal | null>(),
     runtimeId: varchar("runtime_id", { length: 255 }).notNull(),
     runtimeDisplayName: varchar("runtime_display_name", { length: 255 }),
     bundleRef: varchar("bundle_ref", { length: 255 }),
@@ -231,7 +245,14 @@ export const instances = pgTable(
     exposure: varchar("exposure", { length: 20 })
       .notNull()
       .default("unexposed"),
-    allowedUsers: jsonb("allowed_users").default("[]"),
+    // Legacy: array of bare user-id strings (User-kind principals only).
+    // Kept for one release for back-compat with pre-#11 runtimes.
+    allowedUsers: jsonb("allowed_users").$type<string[]>().default([]),
+    // Typed allow-list per ADR-039. Each entry is a `Principal`. Replaces
+    // `allowedUsers` once peers are all on #11+.
+    allowedPrincipals: jsonb("allowed_principals")
+      .$type<Principal[]>()
+      .default([]),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()

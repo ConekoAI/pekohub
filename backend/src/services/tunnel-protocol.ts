@@ -5,6 +5,8 @@
  * Messages are serialized as JSON and sent over the WebSocket as binary frames.
  */
 
+import type { Principal } from "@pekohub/shared";
+
 export interface RuntimeHelloPayload {
   runtimeId: string; // did:key format
   nonce: string;
@@ -69,7 +71,18 @@ export interface InstanceAnnouncePayload {
   runtimeDisplayName?: string;
   status: InstanceStatus;
   exposure: InstanceExposure;
+  // Issue #11: typed owner per ADR-039. When present, the hub stores
+  // it as `owner_principal` and the access checks use it. When absent,
+  // the hub falls back to the legacy numeric `ownerId` (the user that
+  // owns the runtime, via the `runtimes` table). Pre-#11 runtimes
+  // never send this.
+  owner?: Principal;
+  // Legacy: bare user-id strings. Pre-#11 runtimes only send this.
+  // Hub backfills `allowedPrincipals` from this for User-kind entries.
   allowedUsers?: string[];
+  // Issue #11: typed allow-list per ADR-039. Each entry is a Principal.
+  // When present, takes precedence over `allowedUsers`.
+  allowedPrincipals?: Principal[];
   capabilities?: string[];
   metadata?: Record<string, unknown>;
 }
@@ -87,7 +100,10 @@ export interface InstanceDeregisterPayload {
 export interface ExposureUpdatePayload {
   instanceId: string;
   exposure: InstanceExposure;
+  /** Legacy: bare user-id strings (User-kind principals). */
   allowedUserIds?: string[];
+  /** Issue #11: typed allow-list. Takes precedence over `allowedUserIds`. */
+  allowedPrincipals?: Principal[];
 }
 
 export interface StatusUpdatePayload {
