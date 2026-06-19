@@ -463,6 +463,34 @@ describe("Instance API", () => {
       expect(response.statusCode).toBe(401);
     });
 
+    // Review #12 P1: the inbound `x-pekohub-caller-principal` header
+    // is no longer trusted without an independent JWT/API-key auth
+    // proof. A bare header claim must NOT bypass the chat auth gate.
+    it("rejects a private-instance chat with a bare x-pekohub-caller-principal header (no JWT)", async () => {
+      const app = await buildTestApp({ testDb });
+      const owner = await createUser(testDb.client, { namespace: "alice" });
+      const instance = await createInstance(testDb.client, {
+        ownerId: owner.id,
+        name: "private-agent",
+        exposure: "private",
+      });
+
+      const response = await app.inject({
+        method: "POST",
+        url: `/v1/instances/${instance.id}/chat`,
+        headers: {
+          // Header claims to be the owner — but no JWT. The fix
+          // requires JWT first; the header is never honoured in
+          // isolation. Pre-fix, this would have been accepted as
+          // `Principal::User("<owner.id>")` and proxied through.
+          "x-pekohub-caller-principal": `user:${owner.id}`,
+        },
+        payload: { message: "hello" },
+      });
+
+      expect(response.statusCode).toBe(401);
+    });
+
     it("should allow chat to public instance without auth", async () => {
       const app = await buildTestApp({ testDb });
       const user = await createUser(testDb.client, { namespace: "alice" });

@@ -20,9 +20,16 @@ export const PrincipalKinds = ['user', 'agent', 'team', 'public'] as const;
 export type PrincipalKind = (typeof PrincipalKinds)[number];
 
 export const Principal = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('user'), id: z.string().min(1) }),
-  z.object({ kind: z.literal('agent'), id: z.string().min(1) }),
-  z.object({ kind: z.literal('team'), id: z.string().min(1) }),
+  // `id: z.string()` (no `.min(1)`) so the empty-sentinel
+  // `{ kind: 'user', id: '' }` is schema-valid. The empty check is
+  // gated at `isEmptyOwnerPrincipal` so it doesn't leak into every
+  // schema that embeds `Principal`. The runtime migration writes
+  // this exact shape (see
+  // `peko-runtime/src/runtime/migration.rs:170-171, 234-235`) so the
+  // schema must accept it.
+  z.object({ kind: z.literal('user'), id: z.string() }),
+  z.object({ kind: z.literal('agent'), id: z.string() }),
+  z.object({ kind: z.literal('team'), id: z.string() }),
   z.object({ kind: z.literal('public') }),
 ]);
 export type Principal = z.infer<typeof Principal>;
@@ -35,6 +42,10 @@ export type Principal = z.infer<typeof Principal>;
  * legacy instances that never had an `owner` block. PekoHub treats this
  * as "use the legacy `ownerId` column instead" — see
  * `resolveOwnerPrincipal` in the instances service.
+ *
+ * Schema-valid now that the Zod discriminated union allows empty ids
+ * (see the comment on the `Principal` definition). The semantic check
+ * is gated at `isEmptyOwnerPrincipal`.
  */
 export const EMPTY_OWNER_PRINCIPAL: Principal = { kind: 'user', id: '' };
 

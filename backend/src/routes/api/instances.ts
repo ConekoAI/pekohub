@@ -20,43 +20,35 @@ import {
   gte,
 } from "drizzle-orm";
 import { z } from "zod";
-import { parsePrincipal } from "@pekohub/shared";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Caller extraction (issue #11)
+// Caller extraction (issue #11, review #12 P1 fix)
 //
-// The hub identifies who's knocking on an instance endpoint by combining
-// two sources:
+// The hub identifies who's knocking on an instance endpoint by the
+// JWT (or API key) carried in the request — `fastify.authenticate`.
+// A previous draft also honoured the inbound `x-pekohub-caller-principal`
+// header, but that header travels on the public v1 HTTP API, so
+// honouring it without an independent auth proof would have let any
+// client spoof `Principal::User("42")` (or any Agent/Team id) and
+// gain access. Per the review on PR #12, the safe pattern is:
 //
-// 1. JWT auth — `fastify.authenticate(request)` returns a user record
-//    if the request carries a valid Bearer token. This is the human-user
-//    path.
-// 2. Runtime-attested principal — `x-pekohub-caller-principal` header,
-//    set by the runtime on bridge requests that originate from a
-//    non-User principal (e.g. `Principal::Agent("helper")` from a
-//    `a2a_send` masquerade, per peko-runtime#24).
+//   - JWT/API-key auth is mandatory.
+//   - The header is **only** consulted as a refinement after the user
+//     is established; today no caller path needs refinement, so the
+//     header is dropped entirely on the inbound side.
 //
-// The runtime-attested header is honoured only when present and
-// parseable. The JWT path is the fallback. This lets the issue #11
-// regression test (a runtime-originated Agent chat) flow through the
-// hub's HTTP chat endpoint without a human JWT.
+// Agent-caller support (the issue #11 regression test) will require
+// a runtime-issued JWT or signed header, which is its own follow-up.
+// The outbound direction (hub → runtime bridge) still sets
+// `x-pekohub-caller-principal` in `tunnel-router.ts`'s
+// `bridgeHeadersFor` — the runtime-side reader of that header is
+// gated on peko-runtime#16.
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function extractCallerPrincipal(
   fastify: FastifyInstance,
   request: FastifyRequest,
 ): Promise<CallerPrincipal> {
-  const header = request.headers["x-pekohub-caller-principal"];
-  if (typeof header === "string" && header.length > 0) {
-    const parsed = parsePrincipal(header);
-    if (parsed) {
-      return parsed;
-    }
-    fastify.log.warn(
-      { header },
-      "Unparseable x-pekohub-caller-principal header — falling back to JWT auth",
-    );
-  }
   try {
     const user = await fastify.authenticate(request);
     return { kind: "user", id: String(user.id) };

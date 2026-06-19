@@ -3,7 +3,7 @@ import { instances } from "../db/schema.js";
 import { eq, and, sql, desc, count, gte, lt } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import {
-  type Principal,
+  Principal,
   isEmptyOwnerPrincipal,
   parsePrincipal,
 } from "@pekohub/shared";
@@ -289,6 +289,48 @@ export interface StreamChunkPayload {
  */
 function parseAllowEntry(s: string): Principal | null {
   return parsePrincipal(s);
+}
+
+// ── JSONB defensive parsers (issue #11 review #12 P1) ──────────────────────
+
+/**
+ * Validate a raw JSONB value from the `owner_principal` column through
+ * the Zod schema. The column's TypeScript type is `Principal | null`
+ * (Drizzle `$type` is a compile-time cast only — there is no runtime
+ * check), so any garbage that lands in the column would otherwise flow
+ * straight into `principalCanAccess`. A `null`/missing JSONB returns
+ * `null` (the "no owner asserted" case, which is then backfilled from
+ * the legacy `ownerId` by `resolveOwnerPrincipal`). Anything that
+ * doesn't match the discriminated union returns `null` as well — the
+ * safe "ignore" default, not the raw garbage.
+ *
+ * Exported for unit tests.
+ */
+export function parsePrincipalJsonb(
+  raw: unknown,
+): Principal | null {
+  if (raw === null || raw === undefined) return null;
+  const result = Principal.safeParse(raw);
+  return result.success ? result.data : null;
+}
+
+/**
+ * Validate each entry of a raw JSONB value from the `allowed_principals`
+ * column. Malformed entries are filtered out of the returned list
+ * (rather than failing the whole row) so a single bad row in the
+ * allow-list doesn't lock out a legitimate caller. The expected
+ * column shape is `Principal[]`; a non-array value returns `[]`.
+ *
+ * Exported for unit tests.
+ */
+export function parsePrincipalArrayJsonb(raw: unknown): Principal[] {
+  if (!Array.isArray(raw)) return [];
+  const out: Principal[] = [];
+  for (const entry of raw) {
+    const parsed = Principal.safeParse(entry);
+    if (parsed.success) out.push(parsed.data);
+  }
+  return out;
 }
 
 // ── Service ────────────────────────────────────────────────────────────────
@@ -595,14 +637,23 @@ export class InstanceService {
       type: row.type as InstanceType,
       name: row.name,
       ownerId: row.ownerId,
-      ownerPrincipal: (row.ownerPrincipal as Principal | null) ?? null,
+      // Issue #11 review #12 P1: validate the JSONB columns through
+      // Zod so a malformed row (e.g. `{"kind": "user", "id": null}`
+      // from a future migration bug, a manual psql edit, or a backfill
+      // that goes wrong) cannot flow through unchecked into
+      // `principalCanAccess` — where `null === null` would silently
+      // grant access. A malformed owner drops to `null` (which makes
+      // the row ownerless and triggers the legacy `ownerId`
+      // backfill in `resolveOwnerPrincipal`). A malformed allow-list
+      // entry is filtered out of `allowedPrincipals`.
+      ownerPrincipal: parsePrincipalJsonb(row.ownerPrincipal),
       runtimeId: row.runtimeId,
       runtimeDisplayName: row.runtimeDisplayName,
       bundleRef: row.bundleRef,
       status: row.status as InstanceStatus,
       exposure: row.exposure as InstanceExposure,
       allowedUsers: (row.allowedUsers as string[]) ?? [],
-      allowedPrincipals: (row.allowedPrincipals as Principal[]) ?? [],
+      allowedPrincipals: parsePrincipalArrayJsonb(row.allowedPrincipals),
       lastSeenAt: row.lastSeenAt,
       createdAt: row.createdAt,
       capabilities: (row.capabilities as string[]) ?? [],
