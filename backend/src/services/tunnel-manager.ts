@@ -79,13 +79,15 @@ export interface RuntimeConnection {
 /**
  * Cross-runtime a2a correlation entry (issue #16). Mirrors the
  * `pendingRequests` pattern for proxyChat: keyed by `requestId`,
- * carries the caller's socket so a response can be relayed back, and
- * a TTL timer so a non-responsive target doesn't leak entries.
+ * carries both sockets so a response can be relayed back AND the
+ * target can be notified if the caller disappears mid-flight, plus a
+ * TTL timer so a non-responsive target doesn't leak entries.
  */
 interface A2AInFlightEntry {
   callerRuntimeId: string;
   callerSocket: WebSocket;
   targetRuntimeId: string;
+  targetSocket: WebSocket;
   timer: NodeJS.Timeout;
 }
 
@@ -506,13 +508,24 @@ export class TunnelManager {
       }
 
       case "runtime_hello":
+      case "tunnel_challenge":
+      case "tunnel_challenge_ack":
       case "tunnel_ready":
+      case "heartbeat_ack":
       case "proxied_request":
-      case "exposure_update":
-      case "status_update":
-      case "agent_to_agent_request":
-      case "agent_to_agent_response": {
-        // Unexpected direction (server-originated only)
+      case "exposure_update": {
+        // Server-originated only — the runtime should not be sending
+        // these. The list above is the *exhaustive* set of server-only
+        // types (per the `TunnelMessage` union); if a new
+        // server-originated type is added to the union, this list must
+        // be updated (the `never` check below catches the gap at
+        // compile time).
+        //
+        // (Handshake-only types `tunnel_challenge` and
+        // `tunnel_challenge_ack` are filtered out by the phase checks
+        // in `handleSocket`, but listing them here is defensive — if
+        // the handshake logic ever changes, we still log a warning
+        // instead of crashing on the `never` cast.)
         this.fastify.log.warn(
           { type: msg.type, runtimeId: conn.runtimeId },
           "Unexpected tunnel message direction from runtime",
@@ -521,11 +534,16 @@ export class TunnelManager {
       }
 
       default: {
-        // Exhaustiveness fallback
+        // Exhaustiveness fallback: any unhandled runtime-originated
+        // type lands here. If the union grows, this branch is the
+        // signal that we forgot to handle it above (the compiler
+        // narrows `msg` to `never` once the cases above are exhaustive).
+        const _exhaustive: never = msg;
         this.fastify.log.warn(
-          { type: (msg as TunnelMessage).type, runtimeId: conn.runtimeId },
-          "Unknown tunnel message type",
+          { type: (_exhaustive as TunnelMessage).type, runtimeId: conn.runtimeId },
+          "Unknown tunnel message type from runtime",
         );
+        break;
       }
     }
   }
@@ -898,6 +916,7 @@ export class TunnelManager {
       callerRuntimeId: conn.runtimeId,
       callerSocket: conn.socket,
       targetRuntimeId: target.runtimeId,
+      targetSocket: targetConn.socket,
       timer,
     });
   }
@@ -922,10 +941,21 @@ export class TunnelManager {
 
   /**
    * Sweep `a2aInFlight` for entries touching a runtime that just
-   * disconnected. The surviving side (if any) gets an
-   * `internal_error` synthesized response; we don't try to figure out
-   * which side is which because the caller can't act on it usefully
-   * and the entry is going away either way.
+   * disconnected. Symmetric: the *surviving* side gets an
+   * `internal_error` synthesized response so it doesn't carry a
+   * request whose peer is gone.
+   *
+   *   - caller disconnects → notify the target (`internal_error`).
+   *     Without this, the target's eventual reply would be silently
+   *     dropped at `handleAgentToAgentResponse` (no in-flight entry)
+   *     and the target runtime would carry the request until its own
+   *     a2a timeout.
+   *
+   *   - target disconnects → notify the caller. (This was the
+   *     pre-existing single-side behavior; the caller-side
+   *     `target_offline` synthesized response at forwarding time only
+   *     fires for a never-connected target. A target that drops
+   *     mid-flight is a separate failure mode.)
    */
   private cleanupA2AForRuntime(runtimeId: string): void {
     for (const [requestId, entry] of this.a2aInFlight) {
@@ -937,8 +967,8 @@ export class TunnelManager {
         this.a2aInFlight.delete(requestId);
         const survivorSocket =
           entry.callerRuntimeId === runtimeId
-            ? undefined // caller is gone
-            : entry.callerSocket; // tell the caller their peer vanished
+            ? entry.targetSocket // tell the target its caller vanished
+            : entry.callerSocket; // tell the caller its peer vanished
         if (survivorSocket && survivorSocket.readyState === survivorSocket.OPEN) {
           this.sendA2AErrorResponse(
             survivorSocket,

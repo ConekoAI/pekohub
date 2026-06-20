@@ -564,4 +564,67 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
     // is being cleaned up by `cleanupA2AForRuntime`.
     expect(err.code).toBe("internal_error");
   });
+
+  it("notifies the target when the caller disconnects mid-flight (symmetric cleanup)", async () => {
+    const { tunnelManager } = await buildForwardingTestApp(testDb);
+
+    const ownerA = await createUser(testDb.client, { namespace: "alice" });
+    const ownerB = await createUser(testDb.client, { namespace: "bob" });
+
+    const idA = makeRuntimeIdentity();
+    const idB = makeRuntimeIdentity();
+    await seedRuntime(testDb, idA.did, ownerA.id);
+    await seedRuntime(testDb, idB.did, ownerB.id);
+
+    const DID_B_AGENT = "did:peko:agent:target-b";
+    await createInstance(testDb.client, {
+      ownerId: ownerB.id,
+      ownerPrincipal: { kind: "user", id: String(ownerB.id) },
+      name: "target-b",
+      runtimeId: idB.did,
+      exposure: "public",
+      agentDid: DID_B_AGENT,
+    });
+
+    const socketA = new MockWebSocket();
+    const socketB = new MockWebSocket();
+    tunnelManager.handleSocket(socketA.asWebSocket());
+    tunnelManager.handleSocket(socketB.asWebSocket());
+    await completeHandshake(socketA, idA.did, idA.privateKey);
+    await completeHandshake(socketB, idB.did, idB.privateKey);
+
+    socketA.triggerMessage({
+      type: "agent_to_agent_request",
+      requestId: "req-caller-dies",
+      callerRuntimeId: idA.did,
+      callerAgentDid: "caller-a",
+      targetAgentDid: DID_B_AGENT,
+      message: "hi",
+      signature: "x",
+    });
+
+    await flush();
+    expect(
+      socketB.sent.some((m) => m.type === "agent_to_agent_request"),
+    ).toBe(true);
+
+    // A dies. Without the symmetric cleanup, B would carry this
+    // request until its own a2a timeout — and the eventual reply
+    // would be silently dropped at `handleAgentToAgentResponse` (no
+    // in-flight entry). With the fix, B gets an `internal_error`
+    // synthesized response so it can release any local state.
+    socketA.close(1006, "abnormal");
+    await flush();
+
+    const resp = socketB.sent.find(
+      (m) =>
+        m.type === "agent_to_agent_response" &&
+        m.requestId === "req-caller-dies",
+    );
+    expect(resp).toBeDefined();
+    if (resp?.type !== "agent_to_agent_response") throw new Error("unexpected");
+    const err = parseSynthesizedError(resp.payload);
+    expect(err.code).toBe("internal_error");
+    expect(err.message).toMatch(/peer runtime disconnected/i);
+  });
 });
