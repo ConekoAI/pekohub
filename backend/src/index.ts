@@ -23,6 +23,7 @@ import apiKeyRoutes from "./routes/auth/api-keys.js";
 
 import { GarbageCollector } from "./services/gc.js";
 import { Scheduler } from "./services/scheduler.js";
+import { metrics } from "./services/metrics.js";
 
 async function main() {
   const app = Fastify({
@@ -112,6 +113,11 @@ async function main() {
     version: "0.1.0",
     deployedVia: "github-actions",
   }));
+
+  // Issue #16: in-process counter snapshot. Intentionally unauthenticated
+  // — the counters are diagnostic, not authoritative, and exposing them
+  // on a sidecar / metrics-scrape path is the typical deployment.
+  app.get("/metrics", async () => metrics.snapshot());
 
   // OCI Distribution Spec routes — registered via single aggregator
   await app.register(ociRoutes);

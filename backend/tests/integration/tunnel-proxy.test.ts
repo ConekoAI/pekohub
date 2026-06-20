@@ -2,54 +2,20 @@ import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
-import { EventEmitter } from "events";
-import { ed25519 } from "@noble/curves/ed25519.js";
-import { base58 } from "@scure/base";
 
 import { createTestDb, resetTables } from "../fixtures/db.js";
 import { createUser, createInstance } from "../fixtures/factories.js";
 import { authHeaders } from "../fixtures/auth.js";
+import { MockWebSocket, completeHandshake, seedRuntime, makeRuntimeIdentity, signHello } from "../fixtures/tunnel.js";
 import configPlugin from "../../src/plugins/config.js";
 import authPlugin from "../../src/plugins/auth.js";
 import { setDb } from "../../src/db/index.js";
 import { TunnelManager } from "../../src/services/tunnel-manager.js";
 import { TunnelRouter } from "../../src/services/tunnel-router.js";
-import { encodeTunnelMessage, type TunnelMessage } from "../../src/services/tunnel-protocol.js";
 import instanceRoutes from "../../src/routes/api/instances.js";
 
 import type { TestDb } from "../fixtures/db.js";
 import type { WebSocket } from "ws";
-
-const ED25519_PUB_MULTICODEC = new Uint8Array([0xed, 0x01]);
-
-// ---------------------------------------------------------------------------
-// Mock WebSocket that captures sent messages and can trigger received ones
-// ---------------------------------------------------------------------------
-
-class MockWebSocket extends EventEmitter {
-  OPEN = 1;
-  readyState = 1;
-  sent: TunnelMessage[] = [];
-  closed = false;
-  closeCode?: number;
-  closeReason?: string;
-
-  send(data: Buffer) {
-    this.sent.push(JSON.parse(data.toString("utf8")) as TunnelMessage);
-  }
-
-  close(code?: number, reason?: string) {
-    this.closed = true;
-    this.closeCode = code;
-    this.closeReason = reason;
-    this.readyState = 3;
-    this.emit("close");
-  }
-
-  triggerMessage(msg: TunnelMessage) {
-    this.emit("message", Buffer.from(JSON.stringify(msg), "utf8"));
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Test harness: build app with REAL tunnel manager + router
@@ -133,81 +99,6 @@ async function buildTunnelTestApp(testDb: TestDb) {
   process.env = originalEnv;
 
   return { app, tunnelManager, tunnelRouter };
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function makeRuntimeIdentity(): { did: string; privateKey: Uint8Array } {
-  const { secretKey } = ed25519.keygen();
-  const publicKey = ed25519.getPublicKey(secretKey);
-  const encoded = base58.encode(
-    new Uint8Array([...ED25519_PUB_MULTICODEC, ...publicKey]),
-  );
-  return { did: `did:key:z${encoded}`, privateKey: secretKey };
-}
-
-function signHello(privateKey: Uint8Array, nonce: string): string {
-  const signature = ed25519.sign(new TextEncoder().encode(nonce), privateKey);
-  return Buffer.from(signature).toString("base64");
-}
-
-/**
- * Pre-insert a `runtimes` row so the new handshake allowlist
- * (pekohub issue #1) admits the runtime.
- */
-async function seedRuntime(
-  testDb: TestDb,
-  did: string,
-  ownerId: number,
-  displayName = "Test Runtime",
-) {
-  await testDb.client.query(
-    `INSERT INTO runtimes (runtime_did, owner_id, display_name) VALUES ($1, $2, $3)
-     ON CONFLICT (runtime_did) DO NOTHING`,
-    [did, ownerId, displayName],
-  );
-}
-
-/**
- * Run the full three-step handshake against a `MockWebSocket`:
- *   1. send `runtime_hello`
- *   2. read the server's `tunnel_challenge`
- *   3. sign + send the `tunnel_challenge_ack`
- * Returns when the connection is in the "ready" state.
- */
-async function completeHandshake(
-  socket: MockWebSocket,
-  did: string,
-  privateKey: Uint8Array,
-  helloNonce = "nonce-1",
-): Promise<void> {
-  socket.triggerMessage({
-    type: "runtime_hello",
-    runtimeId: did,
-    nonce: helloNonce,
-    signature: signHello(privateKey, helloNonce),
-  });
-  // Wait for the server's challenge
-  for (let i = 0; i < 100 && !socket.sent.some((m) => m.type === "tunnel_challenge"); i++) {
-    await new Promise((r) => setTimeout(r, 5));
-  }
-  const challenge = socket.sent.find((m) => m.type === "tunnel_challenge");
-  if (!challenge || challenge.type !== "tunnel_challenge") {
-    throw new Error("Server did not send tunnel_challenge");
-  }
-  socket.triggerMessage({
-    type: "tunnel_challenge_ack",
-    nonce: challenge.nonce,
-    signature: signHello(privateKey, challenge.nonce),
-  });
-  for (let i = 0; i < 100 && !socket.sent.some((m) => m.type === "tunnel_ready"); i++) {
-    await new Promise((r) => setTimeout(r, 5));
-  }
-  if (!socket.sent.some((m) => m.type === "tunnel_ready")) {
-    throw new Error("Server did not send tunnel_ready");
-  }
 }
 
 // ---------------------------------------------------------------------------
