@@ -43,11 +43,6 @@ describe("parseSubjectJsonb (review #12 P1)", () => {
       });
     });
 
-    it("accepts a Team principal", () => {
-      const raw: unknown = { kind: "team", id: "eng" };
-      expect(parseSubjectJsonb(raw)).toEqual({ kind: "team", id: "eng" });
-    });
-
     it("accepts a Public principal (no id field)", () => {
       const raw: unknown = { kind: "public" };
       expect(parseSubjectJsonb(raw)).toEqual({ kind: "public" });
@@ -133,16 +128,15 @@ describe("parseSubjectArrayJsonb (review #12 P1)", () => {
       { kind: "user", id: "1" },
       { kind: "user", id: null }, // malicious
       { kind: "principal", id: "helper" },
-      "not a principal", // garbage
+      "not a subject", // garbage
       null, // garbage
       { kind: "user" }, // missing id
-      { kind: "team", id: "eng" },
+      { kind: "team", id: "eng" }, // Team variant removed in ADR-041 — silently filtered
     ];
     const parsed = parseSubjectArrayJsonb(raw);
     expect(parsed).toEqual([
       { kind: "user", id: "1" },
       { kind: "principal", id: "helper" },
-      { kind: "team", id: "eng" },
     ]);
   });
 

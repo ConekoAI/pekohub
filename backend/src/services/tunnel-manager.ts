@@ -489,12 +489,12 @@ export class TunnelManager {
       }
 
       case "principal_to_principal_request": {
-        await this.handleAgentToAgentRequest(conn, msg);
+        await this.handlePrincipalToPrincipalRequest(conn, msg);
         break;
       }
 
       case "principal_to_principal_response": {
-        this.handleAgentToAgentResponse(conn, msg);
+        this.handlePrincipalToPrincipalResponse(conn, msg);
         break;
       }
 
@@ -770,7 +770,7 @@ export class TunnelManager {
     });
   }
 
-  private async handleAgentToAgentRequest(
+  private async handlePrincipalToPrincipalRequest(
     conn: RuntimeConnection,
     req: Extract<TunnelMessage, { type: "principal_to_principal_request" }>,
   ): Promise<void> {
@@ -836,10 +836,10 @@ export class TunnelManager {
       );
       return;
     }
-    const callerAgent: Subject = { kind: "principal", id: req.callerPrincipalDid };
+    const callerSubject: Subject = { kind: "principal", id: req.callerPrincipalDid };
     if (
       target.exposure !== "public" &&
-      !(await subjectCanAccess(owner, callerAgent))
+      !(await subjectCanAccess(owner, callerSubject))
     ) {
       metrics.inc(CounterName.HubA2AForbidden);
       this.fastify.log.warn(
@@ -920,7 +920,7 @@ export class TunnelManager {
     });
   }
 
-  private handleAgentToAgentResponse(
+  private handlePrincipalToPrincipalResponse(
     _conn: RuntimeConnection,
     resp: Extract<TunnelMessage, { type: "principal_to_principal_response" }>,
   ): void {
@@ -946,7 +946,7 @@ export class TunnelManager {
    *
    *   - caller disconnects → notify the target (`internal_error`).
    *     Without this, the target's eventual reply would be silently
-   *     dropped at `handleAgentToAgentResponse` (no in-flight entry)
+   *     dropped at `handlePrincipalToPrincipalResponse` (no in-flight entry)
    *     and the target runtime would carry the request until its own
    *     a2a timeout.
    *

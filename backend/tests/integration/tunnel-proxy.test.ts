@@ -455,7 +455,7 @@ describe("Tunnel Proxy Integration", () => {
         type: "instance_announce",
         payload: {
           id: instanceId,
-          type: "agent",
+          type: "principal",
           name: "announced-agent",
           status: "online",
           exposure: "public",

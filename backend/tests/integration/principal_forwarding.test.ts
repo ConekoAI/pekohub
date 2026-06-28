@@ -3,12 +3,12 @@
  *
  * Pinned to the acceptance criteria from the issue:
  *
- *   - forward-success: signed AgentToAgentRequest from runtime A's tunnel
- *     reaches runtime B's tunnel verbatim; AgentToAgentResponse is
+ *   - forward-success: signed PrincipalToPrincipalRequest from runtime A's tunnel
+ *     reaches runtime B's tunnel verbatim; PrincipalToPrincipalResponse is
  *     correlated back to A.
  *   - source-allowlist-reject: `callerRuntimeId` mismatch → close A's
  *     tunnel + log, no message to B.
- *   - target-missing: unknown `targetAgentDid` → structured error
+ *   - target-missing: unknown `targetPrincipalDid` → structured error
  *     response to caller.
  *   - target-offline: target runtime not connected → structured error
  *     response to caller.
@@ -128,7 +128,7 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
     await testDb.client.close();
   });
 
-  it("forwards a signed AgentToAgentRequest from A to B verbatim, and correlates the response back", async () => {
+  it("forwards a signed PrincipalToPrincipalRequest from A to B verbatim, and correlates the response back", async () => {
     const { tunnelManager } = await buildForwardingTestApp(testDb);
 
     // Owner of A and B (separate user accounts so ACL is meaningful).
@@ -185,11 +185,11 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
     const SIGNATURE = "deadbeef-a2a-signature";
     const REQUEST_ID = "req-forward-success-1";
     socketA.triggerMessage({
-      type: "agent_to_agent_request",
+      type: "principal_to_principal_request",
       requestId: REQUEST_ID,
       callerRuntimeId: idA.did,
-      callerAgentDid: "caller-a",
-      targetAgentDid: DID_B_AGENT,
+      callerPrincipalDid: "caller-a",
+      targetPrincipalDid: DID_B_AGENT,
       message: "hi from A",
       signature: SIGNATURE,
     });
@@ -198,14 +198,14 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
 
     // B received the envelope verbatim — including `signature`.
     const receivedByB = socketB.sent.find(
-      (m) => m.type === "agent_to_agent_request",
+      (m) => m.type === "principal_to_principal_request",
     );
     expect(receivedByB).toBeDefined();
-    if (receivedByB?.type !== "agent_to_agent_request") throw new Error("unexpected");
+    if (receivedByB?.type !== "principal_to_principal_request") throw new Error("unexpected");
     expect(receivedByB.requestId).toBe(REQUEST_ID);
     expect(receivedByB.callerRuntimeId).toBe(idA.did);
-    expect(receivedByB.callerAgentDid).toBe("caller-a");
-    expect(receivedByB.targetAgentDid).toBe(DID_B_AGENT);
+    expect(receivedByB.callerPrincipalDid).toBe("caller-a");
+    expect(receivedByB.targetPrincipalDid).toBe(DID_B_AGENT);
     expect(receivedByB.message).toBe("hi from A");
     expect(receivedByB.signature).toBe(SIGNATURE); // untouched
 
@@ -214,7 +214,7 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
 
     // B replies — the hub correlates back to A.
     socketB.triggerMessage({
-      type: "agent_to_agent_response",
+      type: "principal_to_principal_response",
       requestId: REQUEST_ID,
       payload: "pong from B",
     });
@@ -222,10 +222,10 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
     await flush();
 
     const receivedByA = socketA.sent.find(
-      (m) => m.type === "agent_to_agent_response",
+      (m) => m.type === "principal_to_principal_response",
     );
     expect(receivedByA).toBeDefined();
-    if (receivedByA?.type !== "agent_to_agent_response") throw new Error("unexpected");
+    if (receivedByA?.type !== "principal_to_principal_response") throw new Error("unexpected");
     expect(receivedByA.requestId).toBe(REQUEST_ID);
     expect(receivedByA.payload).toBe("pong from B");
   });
@@ -262,11 +262,11 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
     // A claims to be sending on behalf of B's runtime DID — the
     // hub should detect this and close A's tunnel.
     socketA.triggerMessage({
-      type: "agent_to_agent_request",
+      type: "principal_to_principal_request",
       requestId: "req-impersonation",
       callerRuntimeId: idB.did, // claim ≠ authed runtime
-      callerAgentDid: "caller-a",
-      targetAgentDid: DID_B_AGENT,
+      callerPrincipalDid: "caller-a",
+      targetPrincipalDid: DID_B_AGENT,
       message: "hi",
       signature: "x",
     });
@@ -281,7 +281,7 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
 
     // B saw nothing.
     expect(
-      socketB.sent.some((m) => m.type === "agent_to_agent_request"),
+      socketB.sent.some((m) => m.type === "principal_to_principal_request"),
     ).toBe(false);
 
     // Counter incremented.
@@ -302,11 +302,11 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
     await completeHandshake(socketA, idA.did, idA.privateKey);
 
     socketA.triggerMessage({
-      type: "agent_to_agent_request",
+      type: "principal_to_principal_request",
       requestId: "req-target-missing",
       callerRuntimeId: idA.did,
-      callerAgentDid: "caller-a",
-      targetAgentDid: "did:peko:agent:not-on-file",
+      callerPrincipalDid: "caller-a",
+      targetPrincipalDid: "did:peko:agent:not-on-file",
       message: "hi",
       signature: "x",
     });
@@ -315,11 +315,11 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
 
     const resp = socketA.sent.find(
       (m) =>
-        m.type === "agent_to_agent_response" &&
+        m.type === "principal_to_principal_response" &&
         m.requestId === "req-target-missing",
     );
     expect(resp).toBeDefined();
-    if (resp?.type !== "agent_to_agent_response") throw new Error("unexpected");
+    if (resp?.type !== "principal_to_principal_response") throw new Error("unexpected");
     const err = parseSynthesizedError(resp.payload);
     expect(err.code).toBe("target_not_found");
     expect(err.message).toMatch(/did:peko:agent:not-on-file/);
@@ -354,11 +354,11 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
     await completeHandshake(socketA, idA.did, idA.privateKey);
 
     socketA.triggerMessage({
-      type: "agent_to_agent_request",
+      type: "principal_to_principal_request",
       requestId: "req-target-offline",
       callerRuntimeId: idA.did,
-      callerAgentDid: "caller-a",
-      targetAgentDid: DID_B_AGENT,
+      callerPrincipalDid: "caller-a",
+      targetPrincipalDid: DID_B_AGENT,
       message: "hi",
       signature: "x",
     });
@@ -367,11 +367,11 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
 
     const resp = socketA.sent.find(
       (m) =>
-        m.type === "agent_to_agent_response" &&
+        m.type === "principal_to_principal_response" &&
         m.requestId === "req-target-offline",
     );
     expect(resp).toBeDefined();
-    if (resp?.type !== "agent_to_agent_response") throw new Error("unexpected");
+    if (resp?.type !== "principal_to_principal_response") throw new Error("unexpected");
     const err = parseSynthesizedError(resp.payload);
     expect(err.code).toBe("target_offline");
     expect(err.message).toMatch(new RegExp(idB.did));
@@ -409,11 +409,11 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
     await completeHandshake(socketB, idB.did, idB.privateKey);
 
     socketA.triggerMessage({
-      type: "agent_to_agent_request",
+      type: "principal_to_principal_request",
       requestId: "req-forbidden",
       callerRuntimeId: idA.did,
-      callerAgentDid: "caller-a",
-      targetAgentDid: DID_B_AGENT,
+      callerPrincipalDid: "caller-a",
+      targetPrincipalDid: DID_B_AGENT,
       message: "hi",
       signature: "x",
     });
@@ -422,18 +422,18 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
 
     const resp = socketA.sent.find(
       (m) =>
-        m.type === "agent_to_agent_response" &&
+        m.type === "principal_to_principal_response" &&
         m.requestId === "req-forbidden",
     );
     expect(resp).toBeDefined();
-    if (resp?.type !== "agent_to_agent_response") throw new Error("unexpected");
+    if (resp?.type !== "principal_to_principal_response") throw new Error("unexpected");
     const err = parseSynthesizedError(resp.payload);
     expect(err.code).toBe("forbidden");
 
     expect(metrics.snapshot()[CounterName.HubA2AForbidden]).toBe(1);
     // B never received anything.
     expect(
-      socketB.sent.some((m) => m.type === "agent_to_agent_request"),
+      socketB.sent.some((m) => m.type === "principal_to_principal_request"),
     ).toBe(false);
   });
 
@@ -471,11 +471,11 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
     await completeHandshake(socketB, idB.did, idB.privateKey);
 
     socketA.triggerMessage({
-      type: "agent_to_agent_request",
+      type: "principal_to_principal_request",
       requestId: "req-timeout",
       callerRuntimeId: idA.did,
-      callerAgentDid: "caller-a",
-      targetAgentDid: DID_B_AGENT,
+      callerPrincipalDid: "caller-a",
+      targetPrincipalDid: DID_B_AGENT,
       message: "hi",
       signature: "x",
     });
@@ -483,7 +483,7 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
     // B got the request, but never replies.
     await flush();
     const reachedB = socketB.sent.some(
-      (m) => m.type === "agent_to_agent_request",
+      (m) => m.type === "principal_to_principal_request",
     );
     expect(reachedB).toBe(true);
 
@@ -492,11 +492,11 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
 
     const resp = socketA.sent.find(
       (m) =>
-        m.type === "agent_to_agent_response" &&
+        m.type === "principal_to_principal_response" &&
         m.requestId === "req-timeout",
     );
     expect(resp).toBeDefined();
-    if (resp?.type !== "agent_to_agent_response") throw new Error("unexpected");
+    if (resp?.type !== "principal_to_principal_response") throw new Error("unexpected");
     const err = parseSynthesizedError(resp.payload);
     expect(err.code).toBe("timeout");
 
@@ -532,18 +532,18 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
     await completeHandshake(socketB, idB.did, idB.privateKey);
 
     socketA.triggerMessage({
-      type: "agent_to_agent_request",
+      type: "principal_to_principal_request",
       requestId: "req-peer-dies",
       callerRuntimeId: idA.did,
-      callerAgentDid: "caller-a",
-      targetAgentDid: DID_B_AGENT,
+      callerPrincipalDid: "caller-a",
+      targetPrincipalDid: DID_B_AGENT,
       message: "hi",
       signature: "x",
     });
 
     await flush();
     expect(
-      socketB.sent.some((m) => m.type === "agent_to_agent_request"),
+      socketB.sent.some((m) => m.type === "principal_to_principal_request"),
     ).toBe(true);
 
     // B dies.
@@ -552,11 +552,11 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
 
     const resp = socketA.sent.find(
       (m) =>
-        m.type === "agent_to_agent_response" &&
+        m.type === "principal_to_principal_response" &&
         m.requestId === "req-peer-dies",
     );
     expect(resp).toBeDefined();
-    if (resp?.type !== "agent_to_agent_response") throw new Error("unexpected");
+    if (resp?.type !== "principal_to_principal_response") throw new Error("unexpected");
     const err = parseSynthesizedError(resp.payload);
     // When the target disconnects, the survivor (caller) gets an
     // `internal_error` synthesized response — there's no specific
@@ -594,23 +594,23 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
     await completeHandshake(socketB, idB.did, idB.privateKey);
 
     socketA.triggerMessage({
-      type: "agent_to_agent_request",
+      type: "principal_to_principal_request",
       requestId: "req-caller-dies",
       callerRuntimeId: idA.did,
-      callerAgentDid: "caller-a",
-      targetAgentDid: DID_B_AGENT,
+      callerPrincipalDid: "caller-a",
+      targetPrincipalDid: DID_B_AGENT,
       message: "hi",
       signature: "x",
     });
 
     await flush();
     expect(
-      socketB.sent.some((m) => m.type === "agent_to_agent_request"),
+      socketB.sent.some((m) => m.type === "principal_to_principal_request"),
     ).toBe(true);
 
     // A dies. Without the symmetric cleanup, B would carry this
     // request until its own a2a timeout — and the eventual reply
-    // would be silently dropped at `handleAgentToAgentResponse` (no
+    // would be silently dropped at `handlePrincipalToPrincipalResponse` (no
     // in-flight entry). With the fix, B gets an `internal_error`
     // synthesized response so it can release any local state.
     socketA.close(1006, "abnormal");
@@ -618,11 +618,11 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
 
     const resp = socketB.sent.find(
       (m) =>
-        m.type === "agent_to_agent_response" &&
+        m.type === "principal_to_principal_response" &&
         m.requestId === "req-caller-dies",
     );
     expect(resp).toBeDefined();
-    if (resp?.type !== "agent_to_agent_response") throw new Error("unexpected");
+    if (resp?.type !== "principal_to_principal_response") throw new Error("unexpected");
     const err = parseSynthesizedError(resp.payload);
     expect(err.code).toBe("internal_error");
     expect(err.message).toMatch(/peer runtime disconnected/i);

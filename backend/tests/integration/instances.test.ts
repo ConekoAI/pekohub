@@ -29,12 +29,12 @@ describe("Instance API", () => {
       await createInstance(testDb.client, {
         ownerId: user.id,
         name: "agent-1",
-        type: "agent",
+        type: "principal",
       });
       await createInstance(testDb.client, {
         ownerId: user.id,
         name: "agent-2",
-        type: "agent",
+        type: "principal",
       });
 
       const response = await app.inject({
@@ -129,7 +129,7 @@ describe("Instance API", () => {
         ownerId: user.id,
         name: "public-agent",
         exposure: "public",
-        allowedPrincipals: ["999"],
+        allowedPrincipals: [{ kind: "user", id: "999" }],
         runtimeId: "runtime-secret",
       });
 
@@ -153,7 +153,7 @@ describe("Instance API", () => {
         ownerId: user.id,
         name: "public-agent",
         exposure: "public",
-        allowedPrincipals: [String(user.id)],
+        allowedPrincipals: [{ kind: "user", id: String(user.id) }],
         runtimeId: "runtime-secret",
       });
 
@@ -166,7 +166,7 @@ describe("Instance API", () => {
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
       expect(body.name).toBe("public-agent");
-      expect(body.allowedPrincipals).toEqual([String(user.id)]);
+      expect(body.allowedPrincipals).toEqual([{ kind: "user", id: String(user.id) }]);
       expect(body.runtimeId).toBe("runtime-secret");
     });
 
@@ -179,7 +179,7 @@ describe("Instance API", () => {
         ownerId: owner.id,
         name: "public-agent",
         exposure: "public",
-        allowedPrincipals: [String(viewer.id)],
+        allowedPrincipals: [{ kind: "user", id: String(viewer.id) }],
         runtimeId: "runtime-secret",
       });
 
@@ -284,7 +284,7 @@ describe("Instance API", () => {
         url: "/v1/instances",
         headers,
         payload: {
-          type: "agent",
+          type: "principal",
           name: "new-agent",
           runtime_id: "runtime-abc",
           exposure: "public",
@@ -294,7 +294,7 @@ describe("Instance API", () => {
       expect(response.statusCode).toBe(201);
       const body = JSON.parse(response.payload);
       expect(body.name).toBe("new-agent");
-      expect(body.type).toBe("agent");
+      expect(body.type).toBe("principal");
       expect(body.runtimeId).toBe("runtime-abc");
       expect(body.exposure).toBe("public");
     });
@@ -305,7 +305,7 @@ describe("Instance API", () => {
         method: "POST",
         url: "/v1/instances",
         payload: {
-          type: "agent",
+          type: "principal",
           name: "new-agent",
           runtime_id: "runtime-abc",
         },
@@ -640,7 +640,7 @@ describe("Instance API", () => {
         ownerId: owner.id,
         name: "shared-agent",
         exposure: "private",
-        allowedPrincipals: [String(viewer.id)],
+        allowedPrincipals: [{ kind: "user", id: String(viewer.id) }],
         status: "online",
       });
 

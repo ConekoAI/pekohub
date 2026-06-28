@@ -9,7 +9,7 @@ import { setDb } from "../../src/db/index.js";
 import searchApiRoutes from "../../src/routes/api/search.js";
 import bundleApiRoutes from "../../src/routes/api/bundles.js";
 import instanceRoutes from "../../src/routes/api/instances.js";
-import principalDirectoryRoutes from "../../src/routes/api/agents.js";
+import principalDirectoryRoutes from "../../src/routes/api/principals.js";
 import adminRoutes from "../../src/routes/api/admin.js";
 import oauthRoutes from "../../src/routes/auth/oauth.js";
 import apiKeyRoutes from "../../src/routes/auth/api-keys.js";

@@ -132,13 +132,13 @@ describe("parseTargetSpecPath", () => {
   it("round-trips by-did and by-handle", () => {
     const byDid = {
       kind: "by-did" as const,
-      did: "did:peko:agent:deadbeef",
+      did: "did:peko:principal:deadbeef",
     };
     expect(parseTargetSpecPath(formatTargetSpecPath(byDid))).toEqual(byDid);
 
     const byHandle = {
       kind: "by-handle" as const,
-      owner: "team-eng",
+      owner: "alice",
       principalName: "code-reviewer",
     };
     expect(parseTargetSpecPath(formatTargetSpecPath(byHandle))).toEqual(

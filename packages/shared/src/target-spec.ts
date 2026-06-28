@@ -101,12 +101,12 @@ export function parseTargetSpecPath(s: string): TargetSpec | null {
   const idx = s.indexOf('/');
   if (idx < 0) return null;
   const owner = s.slice(0, idx);
-  const agentName = s.slice(idx + 1);
-  if (owner === '' || agentName === '') return null;
+  const principalName = s.slice(idx + 1);
+  if (owner === '' || principalName === '') return null;
   const parsed = RemoteByHandle.safeParse({
     kind: 'by-handle',
     owner,
-    agentName,
+    principalName,
   });
   return parsed.success ? parsed.data : null;
 }

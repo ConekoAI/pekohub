@@ -131,7 +131,6 @@ const DDL_STATEMENTS = [
     bundle_ref VARCHAR(255),
     status VARCHAR(20) DEFAULT 'offline' NOT NULL,
     exposure VARCHAR(20) DEFAULT 'unexposed' NOT NULL,
-    allowed_principals JSONB DEFAULT '[]',
     allowed_principals JSONB DEFAULT '[]'::jsonb NOT NULL,
     last_seen_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
