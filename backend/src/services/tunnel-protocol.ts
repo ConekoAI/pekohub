@@ -36,7 +36,7 @@ export interface TunnelProxiedRequest {
 export interface HttpProxiedRequest {
   requestId: string;
   instanceId: string;
-  agentName: string;
+  principalName: string;
   method: "chat" | "stream";
   body: unknown;
   headers: Record<string, string>;
@@ -72,27 +72,27 @@ export interface InstanceAnnouncePayload {
   status: InstanceStatus;
   exposure: InstanceExposure;
   // Issue #11: typed owner per ADR-039. When present, the hub stores
-  // it as `owner_principal` and the access checks use it. When absent,
+  // it as `owner_subject` and the access checks use it. When absent,
   // the hub falls back to the legacy numeric `ownerId` (the user that
   // owns the runtime, via the `runtimes` table). Pre-#11 runtimes
   // never send this.
   owner?: Principal;
   // Legacy: bare user-id strings. Pre-#11 runtimes only send this.
   // Hub backfills `allowedPrincipals` from this for User-kind entries.
-  allowedUsers?: string[];
+  allowedPrincipals?: string[];
   // Issue #11: typed allow-list per ADR-039. Each entry is a Principal.
-  // When present, takes precedence over `allowedUsers`.
+  // When present, takes precedence over `allowedPrincipals`.
   allowedPrincipals?: Principal[];
   capabilities?: string[];
   metadata?: Record<string, unknown>;
-  // Issue #14: per-agent DID, written to `instances.agent_did` and
+  // Issue #14: per-agent DID, written to `instances.principal_did` and
   // indexed by the by-did resolver
-  // (`GET /v1/agents/by-did/:did`,
+  // (`GET /v1/principals/by-did/:did`,
   // [peko-runtime#29](https://github.com/ConekoAI/peko-runtime/issues/29)).
   // Optional so pre-#34 runtimes still announce cleanly. Omit to
   // clear on a re-announce? No — `undefined` means "leave the
   // existing value alone" in the service layer.
-  agentDid?: string;
+  principalDid?: string;
 }
 
 export interface InstanceHeartbeatPayload {

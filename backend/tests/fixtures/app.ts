@@ -9,7 +9,7 @@ import { setDb } from "../../src/db/index.js";
 import searchApiRoutes from "../../src/routes/api/search.js";
 import bundleApiRoutes from "../../src/routes/api/bundles.js";
 import instanceRoutes from "../../src/routes/api/instances.js";
-import agentDirectoryRoutes from "../../src/routes/api/agents.js";
+import principalDirectoryRoutes from "../../src/routes/api/agents.js";
 import adminRoutes from "../../src/routes/api/admin.js";
 import oauthRoutes from "../../src/routes/auth/oauth.js";
 import apiKeyRoutes from "../../src/routes/auth/api-keys.js";
@@ -111,7 +111,7 @@ export async function buildTestApp(options: TestAppOptions) {
   await app.register(bundleApiRoutes, { prefix: "/v1" });
   await app.register(instanceRoutes, { prefix: "/v1" });
   // Issue #14: agent directory (by-did / by-handle) for tests.
-  await app.register(agentDirectoryRoutes, { prefix: "/v1" });
+  await app.register(principalDirectoryRoutes, { prefix: "/v1" });
   await app.register(adminRoutes, { prefix: "/v1/admin" });
   await app.register(oauthRoutes, { prefix: "/v1/auth" });
   await app.register(apiKeyRoutes, { prefix: "/v1/auth" });
@@ -213,7 +213,7 @@ function createMockTunnelRouter(
     async proxyChat(
       runtimeId: string,
       instanceId: string,
-      _agentName: string,
+      _principalName: string,
       body: unknown,
       headers: Record<string, string>,
       reply: any,
@@ -226,7 +226,7 @@ function createMockTunnelRouter(
     async proxyStream(
       runtimeId: string,
       instanceId: string,
-      _agentName: string,
+      _principalName: string,
       body: unknown,
       headers: Record<string, string>,
       reply: any,

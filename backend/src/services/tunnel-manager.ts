@@ -21,7 +21,7 @@ import {
 import { verifyDidKeySignature, TunnelAuthError } from "./tunnel-crypto.js";
 import {
   instanceService,
-  principalCanAccess,
+  subjectCanAccess,
   resolveOwnerPrincipal,
   type InstanceStatus,
 } from "./instances.js";
@@ -663,20 +663,20 @@ export class TunnelManager {
         // Issue #11: typed owner from the runtime. When absent
         // (pre-#11 runtime), the service layer backfills from
         // `ownerId` via `Principal::User(ownerId)`.
-        ownerPrincipal: payload.owner ?? null,
+        ownerSubject: payload.owner ?? null,
         runtimeId,
         runtimeDisplayName: payload.runtimeDisplayName,
         bundleRef: payload.bundleRef,
         status: payload.status,
         exposure: payload.exposure,
-        allowedUsers: payload.allowedUsers,
+        allowedPrincipals: payload.allowedPrincipals,
         allowedPrincipals: payload.allowedPrincipals,
         capabilities: payload.capabilities,
         metadata: payload.metadata,
         // Issue #14: per-agent DID. Pre-#34 runtimes omit the field;
         // the service layer leaves the existing column alone in that
         // case (see `upsertFromAnnounce`).
-        agentDid: payload.agentDid,
+        principalDid: payload.principalDid,
       });
     } catch (err) {
       this.fastify.log.warn(
@@ -814,7 +814,7 @@ export class TunnelManager {
         conn.socket,
         req.requestId,
         "target_not_found",
-        `No instance with agent_did ${req.targetAgentDid}`,
+        `No instance with principal_did ${req.targetAgentDid}`,
       );
       return;
     }
@@ -822,7 +822,7 @@ export class TunnelManager {
     // 3. Hub-side ACL (defense in depth). The caller runtime already
     //    passed the directory ACL at resolve time, but we re-check
     //    here against the row we're actually routing to. Public
-    //    exposure short-circuits the ACL — matches `resolveAgentTarget`
+    //    exposure short-circuits the ACL — matches `resolvePrincipalTarget`
     //    in `instances.ts`. The caller is presented as an Agent-kind
     //    principal carrying its DID.
     const owner = resolveOwnerPrincipal(target);
@@ -837,10 +837,10 @@ export class TunnelManager {
       );
       return;
     }
-    const callerAgent: Principal = { kind: "agent", id: req.callerAgentDid };
+    const callerAgent: Principal = { kind: "principal", id: req.callerAgentDid };
     if (
       target.exposure !== "public" &&
-      !(await principalCanAccess(owner, callerAgent))
+      !(await subjectCanAccess(owner, callerAgent))
     ) {
       metrics.inc(CounterName.HubA2AForbidden);
       this.fastify.log.warn(
@@ -1136,7 +1136,7 @@ export class TunnelManager {
       this.sendMessage(conn.socket, {
         type: "proxied_request",
         requestId: request.requestId,
-        agent: request.agentName,
+        agent: request.principalName,
         payload: Array.from(encodeHttpRequestBody(request)),
       });
 

@@ -3,7 +3,7 @@ import { db } from "../../db/index.js";
 import { instances, users } from "../../db/schema.js";
 import {
   instanceService,
-  type CallerPrincipal,
+  type CallerSubject,
   type InstanceExposure,
   type InstanceStatus,
   type InstanceType,
@@ -45,10 +45,10 @@ import { z } from "zod";
 // gated on peko-runtime#16.
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function extractCallerPrincipal(
+async function extractCallerSubject(
   fastify: FastifyInstance,
   request: FastifyRequest,
-): Promise<CallerPrincipal> {
+): Promise<CallerSubject> {
   try {
     const user = await fastify.authenticate(request);
     return { kind: "user", id: String(user.id) };
@@ -74,7 +74,7 @@ const CreateBodySchema = z.object({
   bundle_ref: z.string().max(255).optional(),
   status: z.enum(["online", "offline", "busy", "error"]).optional(),
   exposure: z.enum(["private", "public", "unexposed"]).optional(),
-  allowed_users: z.array(z.string()).optional(),
+  allowed_principals: z.array(z.string()).optional(),
   capabilities: z.array(z.string()).optional(),
   metadata: z.record(z.unknown()).optional(),
 
@@ -104,7 +104,7 @@ const UpdateBodySchema = z.object({
   runtime_display_name: z.string().max(255).optional(),
   status: z.enum(["online", "offline", "busy", "error"]).optional(),
   exposure: z.enum(["private", "public", "unexposed"]).optional(),
-  allowed_users: z.array(z.string()).optional(),
+  allowed_principals: z.array(z.string()).optional(),
   metadata: z.record(z.unknown()).optional(),
 
   // Public profile
@@ -130,7 +130,7 @@ const UpdateBodySchema = z.object({
 
 const UpdateExposureBodySchema = z.object({
   exposure: z.enum(["private", "public", "unexposed"]),
-  allowed_users: z.array(z.string()).optional(),
+  allowed_principals: z.array(z.string()).optional(),
   public_profile: z
     .object({
       public_name: z.string().min(1).max(255),
@@ -207,7 +207,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     // Issue #11: caller is a typed Principal, not just a user id.
     // For private/unexposed, the access check itself requires a
     // non-null caller; for public, anonymous is fine.
-    const caller = await extractCallerPrincipal(fastify, request);
+    const caller = await extractCallerSubject(fastify, request);
     if (
       (instance.exposure === "private" || instance.exposure === "unexposed") &&
       caller === null
@@ -226,13 +226,13 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       caller !== null && (await instanceService.isOwner(instance, caller));
     if (!isOwner) {
       // Redact owner-only fields from the public-facing record.
-      // ownerPrincipal is the typed principal (sensitive — leaks the
+      // ownerSubject is the typed principal (sensitive — leaks the
       // owner's identity) so it joins the redaction list. allowedPrincipals
-      // and allowedUsers expose the allow-list (also sensitive).
+      // and allowedPrincipals expose the allow-list (also sensitive).
       const {
-        allowedUsers,
         allowedPrincipals,
-        ownerPrincipal,
+        allowedPrincipals,
+        ownerSubject,
         runtimeId,
         ...rest
       } = instance;
@@ -268,7 +268,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         bundleRef: body.data.bundle_ref,
         status: body.data.status,
         exposure: body.data.exposure,
-        allowedUsers: body.data.allowed_users,
+        allowedPrincipals: body.data.allowed_principals,
         capabilities: body.data.capabilities,
         metadata: body.data.metadata,
         publicName: body.data.public_name,
@@ -343,7 +343,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         runtimeDisplayName: body.data.runtime_display_name,
         status: body.data.status,
         exposure: body.data.exposure,
-        allowedUsers: body.data.allowed_users,
+        allowedPrincipals: body.data.allowed_principals,
         metadata: body.data.metadata,
         publicName: body.data.public_name,
         description: body.data.description,
@@ -420,7 +420,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           });
       }
 
-      const { exposure, allowed_users, public_profile } = body.data;
+      const { exposure, allowed_principals, public_profile } = body.data;
       const from = instance.exposure;
 
       // Validate transition
@@ -440,8 +440,8 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       const updateInput: Parameters<typeof instanceService.update>[1] = {
         exposure,
       };
-      if (exposure === "private" && allowed_users !== undefined) {
-        updateInput.allowedUsers = allowed_users;
+      if (exposure === "private" && allowed_principals !== undefined) {
+        updateInput.allowedPrincipals = allowed_principals;
       }
       if (exposure === "public" && public_profile) {
         updateInput.publicName = public_profile.public_name;
@@ -504,7 +504,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           payload: {
             instanceId: id,
             exposure,
-            allowedUserIds: allowed_users,
+            allowedUserIds: allowed_principals,
             allowedPrincipals: updated!.allowedPrincipals,
           },
         });
@@ -613,7 +613,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     // principal via `x-pekohub-caller-principal`. For private/unexposed
     // exposure the access check itself requires a non-null caller, so
     // a missing header + missing JWT is handled by the 403 path below.
-    const caller = await extractCallerPrincipal(fastify, request);
+    const caller = await extractCallerSubject(fastify, request);
     if (
       (instance.exposure === "private" || instance.exposure === "unexposed") &&
       caller === null
@@ -668,7 +668,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       return reply.status(404).send({ error: "Instance not found" });
     }
 
-    const caller = await extractCallerPrincipal(fastify, request);
+    const caller = await extractCallerSubject(fastify, request);
     if (
       (instance.exposure === "private" || instance.exposure === "unexposed") &&
       caller === null
@@ -761,10 +761,10 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
 
       // Issue #11: also match the typed `allowed_principals` JSONB
       // column. Pre-#11 runtimes only populated the legacy
-      // `allowed_users` column, so we OR the two checks during the
+      // `allowed_principals` column, so we OR the two checks during the
       // one-release back-compat window.
       const userIdStr = String(user.id);
-      const legacyMatch = sql`${instances.allowedUsers} @> ${JSON.stringify([userIdStr])}::jsonb`;
+      const legacyMatch = sql`${instances.allowedPrincipals} @> ${JSON.stringify([userIdStr])}::jsonb`;
       const typedMatch = sql`${instances.allowedPrincipals} @> ${JSON.stringify([{ kind: "user", id: userIdStr }])}::jsonb`;
 
       const rows = await db
@@ -772,7 +772,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           id: instances.id,
           ownerId: instances.ownerId,
           ownerName: users.displayName,
-          agentName: instances.name,
+          principalName: instances.name,
           publicName: instances.publicName,
           status: instances.status,
         })
@@ -791,7 +791,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           id: r.id,
           ownerId: r.ownerId,
           ownerName: r.ownerName,
-          agentName: r.agentName,
+          principalName: r.principalName,
           publicName: r.publicName,
           status: r.status as InstanceStatus,
         })),
@@ -942,10 +942,10 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
   });
 
   // ── Public instance page data ──────────────────────────────────────────────
-  fastify.get("/public/agents/:owner/:agentName", async (request, reply) => {
-    const { owner, agentName } = request.params as {
+  fastify.get("/public/agents/:owner/:principalName", async (request, reply) => {
+    const { owner, principalName } = request.params as {
       owner: string;
-      agentName: string;
+      principalName: string;
     };
 
     const ownerRow = await db.query.users.findFirst({
@@ -958,7 +958,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     const instance = await db.query.instances.findFirst({
       where: and(
         eq(instances.ownerId, ownerRow.id),
-        eq(instances.name, agentName),
+        eq(instances.name, principalName),
         eq(instances.exposure, "public"),
       ),
     });
@@ -987,11 +987,11 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
 
   // ── Public chat proxy ──────────────────────────────────────────────────────
   fastify.post(
-    "/public/agents/:owner/:agentName/chat",
+    "/public/agents/:owner/:principalName/chat",
     async (request, reply) => {
-      const { owner, agentName } = request.params as {
+      const { owner, principalName } = request.params as {
         owner: string;
-        agentName: string;
+        principalName: string;
       };
 
       // IP-based rate limiting for anonymous public access
@@ -1023,7 +1023,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       const instance = await db.query.instances.findFirst({
         where: and(
           eq(instances.ownerId, ownerRow.id),
-          eq(instances.name, agentName),
+          eq(instances.name, principalName),
           eq(instances.exposure, "public"),
         ),
       });
