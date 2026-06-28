@@ -125,13 +125,13 @@ const DDL_STATEMENTS = [
     type VARCHAR(10) NOT NULL,
     name VARCHAR(255) NOT NULL,
     owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    owner_principal JSONB,
+    owner_subject JSONB,
     runtime_id VARCHAR(255) NOT NULL,
     runtime_display_name VARCHAR(255),
     bundle_ref VARCHAR(255),
     status VARCHAR(20) DEFAULT 'offline' NOT NULL,
     exposure VARCHAR(20) DEFAULT 'unexposed' NOT NULL,
-    allowed_users JSONB DEFAULT '[]',
+    allowed_principals JSONB DEFAULT '[]',
     allowed_principals JSONB DEFAULT '[]'::jsonb NOT NULL,
     last_seen_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
@@ -151,7 +151,7 @@ const DDL_STATEMENTS = [
     -- Issue #14: per-agent DID, populated by the runtime's
     -- instance_announce message (peko-runtime#34) and indexed by
     -- the by-did resolver.
-    agent_did VARCHAR(512)
+    principal_did VARCHAR(512)
   );`,
   `CREATE INDEX IF NOT EXISTS idx_instances_owner_id ON instances(owner_id);`,
   `CREATE INDEX IF NOT EXISTS idx_instances_runtime_id ON instances(runtime_id);`,
@@ -160,12 +160,12 @@ const DDL_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_instances_published_at ON instances(published_at);`,
   `CREATE INDEX IF NOT EXISTS idx_instances_featured ON instances(featured);`,
   `CREATE INDEX IF NOT EXISTS idx_instances_category ON instances(category);`,
-  // Issue #14: unique B-tree on `agent_did` so the by-did resolver
-  // (GET /v1/agents/by-did/:did) is a single indexed lookup. We
-  // mirror the production migration (0007_add_agent_did.sql) — NULLs
+  // Issue #14: unique B-tree on `principal_did` so the by-did resolver
+  // (GET /v1/principals/by-did/:did) is a single indexed lookup. We
+  // mirror the production migration (0007_add_principal_did.sql) — NULLs
   // are distinct in unique indexes, so pre-upgrade rows (all NULL)
   // don't conflict with each other.
-  `CREATE UNIQUE INDEX IF NOT EXISTS idx_instances_agent_did ON instances(agent_did);`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_instances_principal_did ON instances(principal_did);`,
 
   // Runtimes table (for tunnel owner resolution)
   `CREATE TABLE IF NOT EXISTS runtimes (

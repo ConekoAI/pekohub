@@ -111,11 +111,11 @@ describe("GET /metrics (issue #16)", () => {
     const DID_B_AGENT = "did:peko:agent:target-b";
     await createInstance(testDb.client, {
       ownerId: ownerB.id,
-      ownerPrincipal: { kind: "user", id: String(ownerB.id) },
+      ownerSubject: { kind: "user", id: String(ownerB.id) },
       name: "target-b",
       runtimeId: idB.did,
       exposure: "public",
-      agentDid: DID_B_AGENT,
+      principalDid: DID_B_AGENT,
     });
 
     const socketA = new MockWebSocket();
@@ -164,11 +164,11 @@ describe("GET /metrics (issue #16)", () => {
     const DID_B_AGENT = "did:peko:agent:target-b";
     await createInstance(testDb.client, {
       ownerId: ownerB.id,
-      ownerPrincipal: { kind: "user", id: String(ownerB.id) },
+      ownerSubject: { kind: "user", id: String(ownerB.id) },
       name: "target-b",
       runtimeId: idB.did,
       exposure: "private",
-      agentDid: DID_B_AGENT,
+      principalDid: DID_B_AGENT,
     });
 
     const socketA = new MockWebSocket();

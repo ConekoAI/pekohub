@@ -1,7 +1,7 @@
 /**
  * Shared tunnel test fixtures.
  *
- * Extracted from `tunnel-proxy.test.ts` so that `agent_forwarding.test.ts`
+ * Extracted from `tunnel-proxy.test.ts` so that `principal_forwarding.test.ts`
  * (issue #16) can reuse the same mock WebSocket + handshake helpers
  * without copy-pasting the auth and signing logic.
  *

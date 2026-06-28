@@ -3,37 +3,24 @@ import { instances, users } from "../db/schema.js";
 import { eq, and, sql, desc, count, gte, lt } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import {
-  Principal,
-  isEmptyOwnerPrincipal,
-  parsePrincipal,
+  Subject,
+  isEmptyOwnerSubject,
+  parseSubject,
 } from "@pekohub/shared";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Caller model
 //
-// `CallerPrincipal` is the union of the things that can knock on PekoHub's
+// `CallerSubject` is the union of the things that can knock on PekoHub's
 // HTTP /v1/instances/:id/* endpoints. Today that's only authenticated
-// users (kind = "user"). Post-#11, runtime-attested agent callers can
-// also arrive — they're identified by a Principal with kind = "agent",
-// transported in an `x-pekohub-caller-principal` header on the bridge
-// request. Anonymous traffic (no auth, no header) maps to `null`.
+// users (kind = "user"). Post-#11, runtime-attested principal callers
+// can also arrive — they're identified by a Subject with kind =
+// "principal", transported in an `x-pekohub-caller-principal` header
+// on the bridge request. Anonymous traffic (no auth, no header) maps
+// to `null`.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type CallerPrincipal = Principal | null;
-
-// ── Lookup stubs (TODO: replace with real tables once the teams model lands) ─
-
-/**
- * Resolve the user ids that belong to a team.
- *
- * Gated on peko-runtime#11 (teams model). Until that lands, every team
- * is treated as having no members — which is the safe default: an
- * Agent-owned instance owned by a Team denies all access until the
- * team-membership table exists, rather than silently allowing everyone.
- */
-async function teamMembersOf(_teamId: string): Promise<string[]> {
-  return [];
-}
+export type CallerSubject = Subject | null;
 
 // ── Backfill shim ──────────────────────────────────────────────────────────
 
@@ -42,23 +29,23 @@ async function teamMembersOf(_teamId: string): Promise<string[]> {
  *
  * Three cases, in order of preference:
  *
- * 1. `instance.ownerPrincipal` is set and is not the empty sentinel
- *    `Principal::User("")` → use it.
- * 2. Otherwise, fall back to `Principal::User(instance.ownerId)`. This
- *    covers both pre-#11 rows (no `owner_principal` column at all) and
+ * 1. `instance.ownerSubject` is set and is not the empty sentinel
+ *    `Subject::User("")` → use it.
+ * 2. Otherwise, fall back to `Subject::User(instance.ownerId)`. This
+ *    covers both pre-#11 rows (no `owner_subject` column at all) and
  *    post-#11 rows that were backfilled by the runtime migration with
  *    the empty sentinel
  *    ([peko-runtime/src/runtime/migration.rs:170-171, 234-235]).
  * 3. If even `ownerId` is null, return `null` (truly ownerless row).
  */
-export function resolveOwnerPrincipal(
-  instance: Pick<InstanceRecord, "ownerId" | "ownerPrincipal">,
-): Principal | null {
+export function resolveOwnerSubject(
+  instance: Pick<InstanceRecord, "ownerId" | "ownerSubject">,
+): Subject | null {
   if (
-    instance.ownerPrincipal &&
-    !isEmptyOwnerPrincipal(instance.ownerPrincipal)
+    instance.ownerSubject &&
+    !isEmptyOwnerSubject(instance.ownerSubject)
   ) {
-    return instance.ownerPrincipal;
+    return instance.ownerSubject;
   }
   if (instance.ownerId) {
     return { kind: "user", id: String(instance.ownerId) };
@@ -66,26 +53,22 @@ export function resolveOwnerPrincipal(
   return null;
 }
 
-// ── Core access predicate (issue #11) ──────────────────────────────────────
+// ── Core access predicate (issue #11, ADR-041 clean break) ────────────────
 
 /**
- * Issue #11: the core access predicate. Replaces the ~9
- * `instance.ownerId !== user.id` sites in `routes/api/instances.ts`.
+ * ADR-041: the core access predicate. The Team subject variant was
+ * removed; only `User` and `Principal` carry per-instance identity.
  *
- * `owner` is the resolved owner (see `resolveOwnerPrincipal`).
- * `caller` is the request's CallerPrincipal. `teamMembers` is a
- * lookup function for Team-kind owners; passed in so the function is
- * trivially mockable in unit tests and so the team-membership table
- * can land later without touching this signature.
+ * `owner` is the resolved owner (see `resolveOwnerSubject`).
+ * `caller` is the request's `CallerSubject`.
  *
- * Returns `Promise<boolean>` because the Team case needs an async DB
- * lookup. The User and Agent cases short-circuit synchronously before
- * the await.
+ * Returns `Promise<boolean>` so the function signature is forward
+ * compatible with future async lookups (e.g. delegations); today's
+ * path short-circuits synchronously.
  */
-export async function principalCanAccess(
-  owner: Principal,
-  caller: CallerPrincipal,
-  teamMembers: (teamId: string) => Promise<string[]> = teamMembersOf,
+export async function subjectCanAccess(
+  owner: Subject,
+  caller: CallerSubject,
 ): Promise<boolean> {
   // Public owner → world-readable, regardless of caller.
   if (owner.kind === "public") return true;
@@ -98,16 +81,11 @@ export async function principalCanAccess(
   // Same kind + same id → owner is the caller.
   if (owner.kind === caller.kind && owner.id === caller.id) return true;
 
-  // Team owner: caller must be a team member.
-  if (owner.kind === "team" && caller.kind === "user") {
-    const members = await teamMembers(owner.id);
-    return members.includes(caller.id);
-  }
-
-  // Cross-kind pairs and Agent→User / User→Agent are denied by
-  // default. The cross-kind guard is the whole point of the
-  // typed-principal model: `Principal::User("alice")` must not match
-  // `Principal::Agent("alice")` even though their string ids collide.
+  // Cross-kind pairs and Principal→User / User→Principal are denied
+  // by default. The cross-kind guard is the whole point of the
+  // typed-subject model: `Subject::User("alice")` must not match
+  // `Subject::Principal("alice")` even though their string ids
+  // collide.
   return false;
 }
 
@@ -115,23 +93,17 @@ export async function principalCanAccess(
 
 /**
  * True if `caller` matches the instance's typed `allowedPrincipals`
- * allow-list OR the legacy `allowedUsers` allow-list (User-kind only).
+ * allow-list.
  *
  * Public-kind callers are never on an allow-list (public access goes
  * through `instance.exposure === "public"` at a higher level).
  */
 function principalInAllowList(
-  instance: Pick<InstanceRecord, "allowedUsers" | "allowedPrincipals">,
-  caller: CallerPrincipal,
+  instance: Pick<InstanceRecord, "allowedPrincipals">,
+  caller: CallerSubject,
 ): boolean {
   if (caller === null) return false;
   if (caller.kind === "public") return false;
-  if (caller.kind === "user") {
-    // Legacy: bare user-id strings in `allowedUsers`.
-    if (instance.allowedUsers.some((u) => String(u) === caller.id)) {
-      return true;
-    }
-  }
   return instance.allowedPrincipals.some(
     (p) => p.kind === caller.kind && p.id === caller.id,
   );
@@ -139,7 +111,7 @@ function principalInAllowList(
 
 // ── Instance model types ───────────────────────────────────────────────────
 
-export type InstanceType = "agent" | "team";
+export type InstanceType = "principal";
 export type InstanceStatus = "online" | "offline" | "busy" | "error";
 export type InstanceExposure = "unexposed" | "private" | "public";
 
@@ -157,14 +129,13 @@ export interface InstanceRecord {
   type: InstanceType;
   name: string;
   ownerId: number;
-  ownerPrincipal: Principal | null;
+  ownerSubject: Subject | null;
   runtimeId: string;
   runtimeDisplayName: string | null;
   bundleRef: string | null;
   status: InstanceStatus;
   exposure: InstanceExposure;
-  allowedUsers: string[];
-  allowedPrincipals: Principal[];
+  allowedPrincipals: Subject[];
   lastSeenAt: Date | null;
   createdAt: Date;
   capabilities: string[];
@@ -192,12 +163,12 @@ export interface InstanceRecord {
     stripeProductId: string | null;
   };
 
-  // Issue #14: per-agent DID, set by the runtime on `instance_announce`
-  // (peko-runtime#34). The by-did resolver
-  // (`GET /v1/agents/by-did/:did`) hits the unique index on this
-  // column. Nullable for pre-#34 peers; the by-did endpoint 404s
+  // ADR-041: per-Principal DID, set by the runtime on
+  // `instance_announce`. The by-did resolver
+  // (`GET /v1/principals/by-did/:did`) hits the unique index on this
+  // column. Nullable for pre-#82 peers; the by-did endpoint 404s
   // when null.
-  agentDid: string | null;
+  principalDid: string | null;
 }
 
 export interface CreateInstanceInput {
@@ -205,14 +176,13 @@ export interface CreateInstanceInput {
   type: InstanceType;
   name: string;
   ownerId: number;
-  ownerPrincipal?: Principal | null;
+  ownerSubject?: Subject | null;
   runtimeId: string;
   runtimeDisplayName?: string;
   bundleRef?: string;
   status?: InstanceStatus;
   exposure?: InstanceExposure;
-  allowedUsers?: string[];
-  allowedPrincipals?: Principal[];
+  allowedPrincipals?: Subject[];
   capabilities?: string[];
   metadata?: Record<string, unknown>;
 
@@ -226,9 +196,9 @@ export interface CreateInstanceInput {
   dailyQuota?: number;
   weeklyQuota?: number;
 
-  // Issue #14: per-agent DID, set on `instance_announce`
-  // (peko-runtime#34). Unique when present.
-  agentDid?: string | null;
+  // ADR-041: per-Principal DID, set on `instance_announce`. Unique
+  // when present.
+  principalDid?: string | null;
 }
 
 export interface UpdateInstanceInput {
@@ -236,8 +206,7 @@ export interface UpdateInstanceInput {
   runtimeDisplayName?: string;
   status?: InstanceStatus;
   exposure?: InstanceExposure;
-  allowedUsers?: string[];
-  allowedPrincipals?: Principal[];
+  allowedPrincipals?: Subject[];
   capabilities?: string[];
   metadata?: Record<string, unknown>;
 
@@ -253,16 +222,17 @@ export interface UpdateInstanceInput {
   publishedAt?: Date | null;
   featured?: boolean;
 
-  // Issue #14: per-agent DID. Set by the runtime on `instance_announce`
-  // (peko-runtime#34) and re-keyed by the cross-runtime `a2a_send`
+  // ADR-041: per-Principal DID. Set by the runtime on
+  // `instance_announce` and re-keyed by the cross-runtime
+  // `principal_send`
   // resolver ([peko-runtime#29]). Setting to `null` clears the column
   // (e.g. if a runtime downgrades to pre-#34).
-  agentDid?: string | null;
+  principalDid?: string | null;
 }
 
 export interface ListInstancesOptions {
   ownerId?: number;
-  ownerPrincipal?: Principal;
+  ownerSubject?: Subject;
   runtimeId?: string;
   status?: InstanceStatus;
   type?: InstanceType;
@@ -276,22 +246,21 @@ export interface ListInstancesResult {
   total: number;
 }
 
-// ── Agent directory resolution (issue #14) ─────────────────────────────────
+// ── Principal directory resolution (ADR-041, issue #14) ────────────────────
 
 /**
- * The payload returned by `GET /v1/agents/by-did/:did` and
- * `GET /v1/agents/by-handle/:owner/:agent_name` on a hit. This is the
- * minimum the runtime's cross-runtime `a2a_send`
- * ([peko-runtime#29](https://github.com/ConekoAI/peko-runtime/issues/29))
- * needs to dispatch: where to send, who the agent is, and what the
- * caller is allowed to assume about access (so the runtime can decide
- * whether to even attempt a tunnel open).
+ * The payload returned by `GET /v1/principals/by-did/:did` and
+ * `GET /v1/principals/by-handle/:owner/:principal_name` on a hit. This is the
+ * minimum the runtime's cross-runtime `principal_send` needs to
+ * dispatch: where to send, who the principal is, and what the
+ * caller is allowed to assume about access (so the runtime can
+ * decide whether to even attempt a tunnel open).
  */
-export interface AgentTargetResolution {
+export interface PrincipalTargetResolution {
   runtimeId: string;
   instanceId: string;
-  agentDid: string;
-  ownerPrincipal: Principal;
+  principalDid: string;
+  ownerSubject: Subject;
   exposure: InstanceExposure;
 }
 
@@ -303,16 +272,16 @@ export interface AgentTargetResolution {
  *   - `hit`    → found, caller is allowed. Route returns 200.
  *   - `miss`   → not found (no row, or DID not set, or wrong owner/name).
  *                Route returns 404.
- *   - `denied` → found, but the caller fails `principalCanAccess`.
+ *   - `denied` → found, but the caller fails `subjectCanAccess`.
  *                Route returns 403 — the existence-vs-permission
  *                distinction is preserved for legitimate callers per
  *                the issue's acceptance criteria.
  */
-export type AgentTargetResolutionStatus = "hit" | "miss" | "denied";
+export type PrincipalTargetResolutionStatus = "hit" | "miss" | "denied";
 
-export interface AgentTargetResolutionResult {
-  status: AgentTargetResolutionStatus;
-  resolution?: AgentTargetResolution;
+export interface PrincipalTargetResolutionResult {
+  status: PrincipalTargetResolutionStatus;
+  resolution?: PrincipalTargetResolution;
 }
 
 export interface ProxiedRequestPayload {
@@ -335,38 +304,38 @@ export interface StreamChunkPayload {
   done: boolean;
 }
 
-// ── Defensive parser: wire → Principal (issue #11) ─────────────────────────
+// ── Defensive parser: wire → Subject (issue #11) ──────────────────────────
 
 /**
- * Coerce a wire string (e.g. `"user:42"` or `"agent:helper"`) into a
- * `Principal`. Returns `null` if the string can't be parsed — callers
- * treat that as "ignore this entry" rather than throw, so a single
- * malformed entry doesn't poison the whole allow-list.
+ * Coerce a wire string (e.g. `"user:42"` or `"principal:helper"`)
+ * into a `Subject`. Returns `null` if the string can't be parsed —
+ * callers treat that as "ignore this entry" rather than throw, so a
+ * single malformed entry doesn't poison the whole allow-list.
  */
-function parseAllowEntry(s: string): Principal | null {
-  return parsePrincipal(s);
+function parseAllowEntry(s: string): Subject | null {
+  return parseSubject(s);
 }
 
 // ── JSONB defensive parsers (issue #11 review #12 P1) ──────────────────────
 
 /**
- * Validate a raw JSONB value from the `owner_principal` column through
- * the Zod schema. The column's TypeScript type is `Principal | null`
+ * Validate a raw JSONB value from the `owner_subject` column through
+ * the Zod schema. The column's TypeScript type is `Subject | null`
  * (Drizzle `$type` is a compile-time cast only — there is no runtime
  * check), so any garbage that lands in the column would otherwise flow
- * straight into `principalCanAccess`. A `null`/missing JSONB returns
+ * straight into `subjectCanAccess`. A `null`/missing JSONB returns
  * `null` (the "no owner asserted" case, which is then backfilled from
- * the legacy `ownerId` by `resolveOwnerPrincipal`). Anything that
+ * the legacy `ownerId` by `resolveOwnerSubject`). Anything that
  * doesn't match the discriminated union returns `null` as well — the
  * safe "ignore" default, not the raw garbage.
  *
  * Exported for unit tests.
  */
-export function parsePrincipalJsonb(
+export function parseSubjectJsonb(
   raw: unknown,
-): Principal | null {
+): Subject | null {
   if (raw === null || raw === undefined) return null;
-  const result = Principal.safeParse(raw);
+  const result = Subject.safeParse(raw);
   return result.success ? result.data : null;
 }
 
@@ -375,15 +344,15 @@ export function parsePrincipalJsonb(
  * column. Malformed entries are filtered out of the returned list
  * (rather than failing the whole row) so a single bad row in the
  * allow-list doesn't lock out a legitimate caller. The expected
- * column shape is `Principal[]`; a non-array value returns `[]`.
+ * column shape is `Subject[]`; a non-array value returns `[]`.
  *
  * Exported for unit tests.
  */
-export function parsePrincipalArrayJsonb(raw: unknown): Principal[] {
+export function parseSubjectArrayJsonb(raw: unknown): Subject[] {
   if (!Array.isArray(raw)) return [];
-  const out: Principal[] = [];
+  const out: Subject[] = [];
   for (const entry of raw) {
-    const parsed = Principal.safeParse(entry);
+    const parsed = Subject.safeParse(entry);
     if (parsed.success) out.push(parsed.data);
   }
   return out;
@@ -399,11 +368,11 @@ export class InstanceService {
   // ── CRUD ───────────────────────────────────────────────────────────────────
 
   async create(input: CreateInstanceInput): Promise<InstanceRecord> {
-    // Resolve ownerPrincipal: prefer the input, otherwise backfill from
+    // Resolve ownerSubject: prefer the input, otherwise backfill from
     // the legacy ownerId.
-    const ownerPrincipal =
-      input.ownerPrincipal !== undefined
-        ? input.ownerPrincipal
+    const ownerSubject =
+      input.ownerSubject !== undefined
+        ? input.ownerSubject
         : input.ownerId
           ? { kind: "user" as const, id: String(input.ownerId) }
           : null;
@@ -415,13 +384,12 @@ export class InstanceService {
         type: input.type,
         name: input.name,
         ownerId: input.ownerId,
-        ownerPrincipal,
+        ownerSubject,
         runtimeId: input.runtimeId,
         runtimeDisplayName: input.runtimeDisplayName ?? null,
         bundleRef: input.bundleRef ?? null,
         status: input.status ?? "offline",
         exposure: input.exposure ?? "unexposed",
-        allowedUsers: input.allowedUsers ?? [],
         allowedPrincipals: input.allowedPrincipals ?? [],
         capabilities: input.capabilities ?? [],
         metadata: input.metadata ?? {},
@@ -439,7 +407,7 @@ export class InstanceService {
         // create valid rows. Drizzle treats `undefined` as "don't
         // include in the INSERT", so the default `null` from the
         // schema applies.
-        agentDid: input.agentDid ?? undefined,
+        principalDid: input.principalDid ?? undefined,
       })
       .returning();
 
@@ -456,7 +424,7 @@ export class InstanceService {
   async list(options: ListInstancesOptions = {}): Promise<ListInstancesResult> {
     const {
       ownerId,
-      ownerPrincipal,
+      ownerSubject,
       runtimeId,
       status,
       type,
@@ -467,12 +435,12 @@ export class InstanceService {
 
     const conditions: SQL[] = [];
     if (ownerId !== undefined) conditions.push(eq(instances.ownerId, ownerId));
-    if (ownerPrincipal !== undefined) {
+    if (ownerSubject !== undefined) {
       // JSONB equality is exact-match. For "list my instances as user X"
       // we use the legacy `ownerId` column (numeric FK). The principal
       // filter is for the typed case (e.g. list all Agent-owned
       // instances for a given agent id).
-      conditions.push(sql`${instances.ownerPrincipal} = ${JSON.stringify(ownerPrincipal)}::jsonb`);
+      conditions.push(sql`${instances.ownerSubject} = ${JSON.stringify(ownerSubject)}::jsonb`);
     }
     if (runtimeId !== undefined)
       conditions.push(eq(instances.runtimeId, runtimeId));
@@ -527,8 +495,6 @@ export class InstanceService {
       }
     }
     if (input.exposure !== undefined) values.exposure = input.exposure;
-    if (input.allowedUsers !== undefined)
-      values.allowedUsers = input.allowedUsers;
     if (input.allowedPrincipals !== undefined)
       values.allowedPrincipals = input.allowedPrincipals;
     if (input.capabilities !== undefined)
@@ -544,7 +510,7 @@ export class InstanceService {
     if (input.weeklyQuota !== undefined) values.weeklyQuota = input.weeklyQuota;
     if (input.publishedAt !== undefined) values.publishedAt = input.publishedAt;
     if (input.featured !== undefined) values.featured = input.featured;
-    if (input.agentDid !== undefined) values.agentDid = input.agentDid;
+    if (input.principalDid !== undefined) values.principalDid = input.principalDid;
 
     if (Object.keys(values).length === 0) {
       return this.getById(id);
@@ -575,23 +541,23 @@ export class InstanceService {
    * `a2a_send` resolver uses it as its primary key
    * ([peko-runtime#29](https://github.com/ConekoAI/peko-runtime/issues/29)).
    *
-   * Hits the `idx_instances_agent_did` unique index — single
+   * Hits the `idx_instances_principal_did` unique index — single
    * row, regardless of how many instances exist. Returns `null`
    * when the row exists but the DID is null (shouldn't happen with
    * the unique index, but the type system is permissive), and
    * `null` when no row matches. Caller distinguishes via the helper
-   * {@link resolveAgentTarget} when it also needs the access check.
+   * {@link resolvePrincipalTarget} when it also needs the access check.
    */
   async getByDid(did: string): Promise<InstanceRecord | null> {
     const row = await db.query.instances.findFirst({
-      where: eq(instances.agentDid, did),
+      where: eq(instances.principalDid, did),
     });
     return row ? this.toRecord(row) : null;
   }
 
   /**
-   * Look up an instance by `{owner_namespace, agent_name}`. Used by
-   * `GET /v1/agents/by-handle/:owner/:agent_name` and the
+   * Look up an instance by `{owner_namespace, principal_name}`. Used by
+   * `GET /v1/principals/by-handle/:owner/:principal_name` and the
    * runtime-side client when the caller has only the human-readable
    * handle.
    *
@@ -602,11 +568,11 @@ export class InstanceService {
    * Returns `null` when either the owner namespace doesn't exist or
    * the owner has no instance with that name. The route layer
    * collapses those to 404; the access check then runs in
-   * {@link resolveAgentTarget}.
+   * {@link resolvePrincipalTarget}.
    */
   async getByHandle(
     owner: string,
-    agentName: string,
+    principalName: string,
   ): Promise<InstanceRecord | null> {
     const ownerRow = await db.query.users.findFirst({
       where: eq(users.namespace, owner),
@@ -616,7 +582,7 @@ export class InstanceService {
     const row = await db.query.instances.findFirst({
       where: and(
         eq(instances.ownerId, ownerRow.id),
-        eq(instances.name, agentName),
+        eq(instances.name, principalName),
       ),
     });
     return row ? this.toRecord(row) : null;
@@ -634,28 +600,28 @@ export class InstanceService {
    *
    * `Public` exposure short-circuits the check (mirrors `canAccess`).
    * For non-public exposure, the resolved owner is gated by
-   * `principalCanAccess` — a `User` owner is a direct match; a
+   * `subjectCanAccess` — a `User` owner is a direct match; a
    * `Team` owner is gated on team membership (gated on pekohub#8;
    * until then, the team-members lookup returns `[]` and Team
    * owners deny).
    */
-  async resolveAgentTarget(
+  async resolvePrincipalTarget(
     spec: import("@pekohub/shared").TargetSpec,
-    caller: CallerPrincipal,
+    caller: CallerSubject,
   ): Promise<AgentTargetResolutionResult> {
     const instance =
       spec.kind === "by-did"
         ? await this.getByDid(spec.did)
-        : await this.getByHandle(spec.owner, spec.agentName);
+        : await this.getByHandle(spec.owner, spec.principalName);
 
     if (!instance) {
       return { status: "miss" };
     }
-    if (!instance.agentDid) {
+    if (!instance.principalDid) {
       // The unique index treats nulls as distinct, so a row with a
-      // null agent_did shouldn't be reachable through the by-did
+      // null principal_did shouldn't be reachable through the by-did
       // resolver — but the by-handle path can land here (e.g. a
-      // pre-#34 runtime that announces without an agent_did). Treat
+      // pre-#34 runtime that announces without an principal_did). Treat
       // as miss for the by-did path; the by-handle caller still gets
       // a meaningful hit (the by-handle wire format doesn't promise
       // a DID). We only return miss on by-did.
@@ -673,18 +639,18 @@ export class InstanceService {
       return { status: "miss" };
     }
 
-    if (instance.exposure === "public" || (await principalCanAccess(owner, caller))) {
+    if (instance.exposure === "public" || (await subjectCanAccess(owner, caller))) {
       return {
         status: "hit",
         resolution: {
           runtimeId: instance.runtimeId,
           instanceId: instance.id,
-          // The payload always includes the agent_did so the runtime
+          // The payload always includes the principal_did so the runtime
           // can echo it back to its own audit log. If the by-handle
           // path found a pre-#34 row with no DID, we report an empty
           // string (the runtime can use the handle as fallback).
-          agentDid: instance.agentDid ?? "",
-          ownerPrincipal: owner,
+          principalDid: instance.principalDid ?? "",
+          ownerSubject: owner,
           exposure: instance.exposure,
         },
       };
@@ -703,17 +669,16 @@ export class InstanceService {
         runtimeDisplayName: input.runtimeDisplayName,
         status: input.status,
         exposure: input.exposure,
-        allowedUsers: input.allowedUsers,
         allowedPrincipals: input.allowedPrincipals,
         capabilities: input.capabilities,
         metadata: input.metadata,
       };
       if (input.bundleRef !== undefined) values.bundleRef = input.bundleRef;
-      // Issue #14: persist the per-agent DID on re-announce. Treat
-      // `undefined` (pre-#34 runtime that doesn't send the field)
+      // ADR-041: persist the per-Principal DID on re-announce. Treat
+      // `undefined` (pre-#82 runtime that doesn't send the field)
       // as "leave the existing value alone" — otherwise a downgrade
       // would silently clear the column.
-      if (input.agentDid !== undefined) values.agentDid = input.agentDid;
+      if (input.principalDid !== undefined) values.principalDid = input.principalDid;
       const updated = await this.update(input.id!, values);
       return updated!;
     }
@@ -752,12 +717,12 @@ export class InstanceService {
    * 2. Null caller → denied (public is the only anonymous-friendly path).
    * 3. Resolved owner === caller → allowed (owner can always see).
    * 4. Caller on the allow-list (`allowedPrincipals` or legacy
-   *    `allowedUsers`) → allowed.
+   *    `allowedPrincipals`) → allowed.
    * 5. Otherwise → denied.
    */
   async canAccess(
     instance: InstanceRecord,
-    caller: CallerPrincipal | number | null,
+    caller: CallerSubject | number | null,
   ): Promise<boolean> {
     if (instance.exposure === "public") return true;
 
@@ -765,7 +730,7 @@ export class InstanceService {
     if (c === null) return false;
 
     const owner = resolveOwnerPrincipal(instance);
-    if (owner && (await principalCanAccess(owner, c))) return true;
+    if (owner && (await subjectCanAccess(owner, c))) return true;
 
     return principalInAllowList(instance, c);
   }
@@ -780,7 +745,7 @@ export class InstanceService {
    */
   async canChat(
     instance: InstanceRecord,
-    caller: CallerPrincipal | number | null,
+    caller: CallerSubject | number | null,
   ): Promise<boolean> {
     if (instance.status === "offline" || instance.exposure === "unexposed") {
       return false;
@@ -791,7 +756,7 @@ export class InstanceService {
     if (c === null) return false;
 
     const owner = resolveOwnerPrincipal(instance);
-    if (owner && (await principalCanAccess(owner, c))) return true;
+    if (owner && (await subjectCanAccess(owner, c))) return true;
 
     return principalInAllowList(instance, c);
   }
@@ -805,13 +770,13 @@ export class InstanceService {
    */
   async isOwner(
     instance: InstanceRecord,
-    caller: CallerPrincipal | number | null,
+    caller: CallerSubject | number | null,
   ): Promise<boolean> {
     const owner = resolveOwnerPrincipal(instance);
     if (owner === null) return false;
     const c = normalizeCaller(caller);
     if (c === null) return false;
-    return principalCanAccess(owner, c);
+    return subjectCanAccess(owner, c);
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -835,19 +800,18 @@ export class InstanceService {
       // Zod so a malformed row (e.g. `{"kind": "user", "id": null}`
       // from a future migration bug, a manual psql edit, or a backfill
       // that goes wrong) cannot flow through unchecked into
-      // `principalCanAccess` — where `null === null` would silently
+      // `subjectCanAccess` — where `null === null` would silently
       // grant access. A malformed owner drops to `null` (which makes
       // the row ownerless and triggers the legacy `ownerId`
       // backfill in `resolveOwnerPrincipal`). A malformed allow-list
       // entry is filtered out of `allowedPrincipals`.
-      ownerPrincipal: parsePrincipalJsonb(row.ownerPrincipal),
+      ownerSubject: parseSubjectJsonb(row.ownerSubject),
       runtimeId: row.runtimeId,
       runtimeDisplayName: row.runtimeDisplayName,
       bundleRef: row.bundleRef,
       status: row.status as InstanceStatus,
       exposure: row.exposure as InstanceExposure,
-      allowedUsers: (row.allowedUsers as string[]) ?? [],
-      allowedPrincipals: parsePrincipalArrayJsonb(row.allowedPrincipals),
+      allowedPrincipals: parseSubjectArrayJsonb(row.allowedPrincipals),
       lastSeenAt: row.lastSeenAt,
       createdAt: row.createdAt,
       capabilities: (row.capabilities as string[]) ?? [],
@@ -874,8 +838,8 @@ export class InstanceService {
         stripeProductId:
           (monetization.stripeProductId as string | null) ?? null,
       },
-      // Issue #14: per-agent DID from `instance_announce` (peko-runtime#34).
-      agentDid: row.agentDid ?? null,
+      // ADR-041: per-Principal DID from `instance_announce`.
+      principalDid: row.principalDid ?? null,
     };
   }
 }
@@ -884,7 +848,7 @@ export class InstanceService {
 
 /**
  * Coerce the various caller shapes callers pass in to a unified
- * `CallerPrincipal`. Accepts:
+ * `CallerSubject`. Accepts:
  *
  * - `null` → null (unauthenticated)
  * - `number` → `Principal::User(String(n))` (the legacy `userId: number`
@@ -892,8 +856,8 @@ export class InstanceService {
  * - `Principal` → as-is
  */
 function normalizeCaller(
-  caller: CallerPrincipal | number | null,
-): CallerPrincipal {
+  caller: CallerSubject | number | null,
+): CallerSubject {
   if (caller === null || caller === undefined) return null;
   if (typeof caller === "number") {
     return { kind: "user", id: String(caller) };
@@ -902,8 +866,8 @@ function normalizeCaller(
 }
 
 // Re-export the wire-format helper for use by route handlers that
-// parse legacy `allowedUsers` strings (the runtime may still send
-// bare user ids in the `allowed_users` field of an announce).
+// parse legacy `allowedPrincipals` strings (the runtime may still send
+// bare user ids in the `allowed_principals` field of an announce).
 export { parseAllowEntry as _parseAllowEntry };
 
 export const instanceService = new InstanceService();

@@ -10,8 +10,8 @@ import type { TestDb } from "../fixtures/db.js";
 //
 // Pinned to the acceptance criteria from the issue:
 //
-//   - hit  → 200 with `{ runtime_id, instance_id, agent_did,
-//                          owner_principal, exposure }`
+//   - hit  → 200 with `{ runtime_id, instance_id, principal_did,
+//                          owner_subject, exposure }`
 //   - miss → 404
 //   - denied → 403 (NOT 404, so the existence-vs-permission
 //     distinction is preserved for legitimate callers)
@@ -38,7 +38,7 @@ describe("Agent directory API", () => {
 
   const REAL_DID = "did:peko:agent:abc123def456";
 
-  describe("GET /v1/agents/by-did/:did", () => {
+  describe("GET /v1/principals/by-did/:did", () => {
     it("returns 200 with the resolution on a hit (owner is the caller)", async () => {
       const app = await buildTestApp({ testDb });
       const owner = await createUser(testDb.client, { namespace: "alice" });
@@ -46,15 +46,15 @@ describe("Agent directory API", () => {
 
       const instance = await createInstance(testDb.client, {
         ownerId: owner.id,
-        ownerPrincipal: { kind: "user", id: String(owner.id) },
+        ownerSubject: { kind: "user", id: String(owner.id) },
         name: "helper",
         exposure: "private",
-        agentDid: REAL_DID,
+        principalDid: REAL_DID,
       });
 
       const response = await app.inject({
         method: "GET",
-        url: `/v1/agents/by-did/${encodeURIComponent(REAL_DID)}`,
+        url: `/v1/principals/by-did/${encodeURIComponent(REAL_DID)}`,
         headers,
       });
 
@@ -63,8 +63,8 @@ describe("Agent directory API", () => {
       expect(body).toEqual({
         runtimeId: instance.runtimeId,
         instanceId: instance.id,
-        agentDid: REAL_DID,
-        ownerPrincipal: { kind: "user", id: String(owner.id) },
+        principalDid: REAL_DID,
+        ownerSubject: { kind: "user", id: String(owner.id) },
         exposure: "private",
       });
     });
@@ -76,7 +76,7 @@ describe("Agent directory API", () => {
 
       const response = await app.inject({
         method: "GET",
-        url: `/v1/agents/by-did/${encodeURIComponent(REAL_DID)}`,
+        url: `/v1/principals/by-did/${encodeURIComponent(REAL_DID)}`,
         headers,
       });
 
@@ -92,15 +92,15 @@ describe("Agent directory API", () => {
       // A private agent owned by alice — bob must not see it.
       await createInstance(testDb.client, {
         ownerId: owner.id,
-        ownerPrincipal: { kind: "user", id: String(owner.id) },
+        ownerSubject: { kind: "user", id: String(owner.id) },
         name: "secret",
         exposure: "private",
-        agentDid: REAL_DID,
+        principalDid: REAL_DID,
       });
 
       const response = await app.inject({
         method: "GET",
-        url: `/v1/agents/by-did/${encodeURIComponent(REAL_DID)}`,
+        url: `/v1/principals/by-did/${encodeURIComponent(REAL_DID)}`,
         headers: otherHeaders,
       });
 
@@ -114,22 +114,22 @@ describe("Agent directory API", () => {
 
       await createInstance(testDb.client, {
         ownerId: owner.id,
-        ownerPrincipal: { kind: "user", id: String(owner.id) },
+        ownerSubject: { kind: "user", id: String(owner.id) },
         name: "public-agent",
         exposure: "public",
-        agentDid: REAL_DID,
+        principalDid: REAL_DID,
       });
 
       const response = await app.inject({
         method: "GET",
-        url: `/v1/agents/by-did/${encodeURIComponent(REAL_DID)}`,
+        url: `/v1/principals/by-did/${encodeURIComponent(REAL_DID)}`,
         headers,
       });
 
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
       expect(body.exposure).toBe("public");
-      expect(body.agentDid).toBe(REAL_DID);
+      expect(body.principalDid).toBe(REAL_DID);
     });
 
     it("returns 200 on a public agent for an anonymous caller", async () => {
@@ -138,15 +138,15 @@ describe("Agent directory API", () => {
 
       await createInstance(testDb.client, {
         ownerId: owner.id,
-        ownerPrincipal: { kind: "user", id: String(owner.id) },
+        ownerSubject: { kind: "user", id: String(owner.id) },
         name: "public-agent",
         exposure: "public",
-        agentDid: REAL_DID,
+        principalDid: REAL_DID,
       });
 
       const response = await app.inject({
         method: "GET",
-        url: `/v1/agents/by-did/${encodeURIComponent(REAL_DID)}`,
+        url: `/v1/principals/by-did/${encodeURIComponent(REAL_DID)}`,
       });
 
       expect(response.statusCode).toBe(200);
@@ -159,7 +159,7 @@ describe("Agent directory API", () => {
 
       const response = await app.inject({
         method: "GET",
-        url: "/v1/agents/by-did/not-a-did",
+        url: "/v1/principals/by-did/not-a-did",
         headers,
       });
 
@@ -167,7 +167,7 @@ describe("Agent directory API", () => {
     });
   });
 
-  describe("GET /v1/agents/by-handle/:owner/:agent_name", () => {
+  describe("GET /v1/principals/by-handle/:owner/:principal_name", () => {
     it("returns 200 with the resolution on a hit", async () => {
       const app = await buildTestApp({ testDb });
       const owner = await createUser(testDb.client, { namespace: "alice" });
@@ -175,15 +175,15 @@ describe("Agent directory API", () => {
 
       const instance = await createInstance(testDb.client, {
         ownerId: owner.id,
-        ownerPrincipal: { kind: "user", id: String(owner.id) },
+        ownerSubject: { kind: "user", id: String(owner.id) },
         name: "helper",
         exposure: "private",
-        agentDid: REAL_DID,
+        principalDid: REAL_DID,
       });
 
       const response = await app.inject({
         method: "GET",
-        url: "/v1/agents/by-handle/alice/helper",
+        url: "/v1/principals/by-handle/alice/helper",
         headers,
       });
 
@@ -192,8 +192,8 @@ describe("Agent directory API", () => {
       expect(body).toEqual({
         runtimeId: instance.runtimeId,
         instanceId: instance.id,
-        agentDid: REAL_DID,
-        ownerPrincipal: { kind: "user", id: String(owner.id) },
+        principalDid: REAL_DID,
+        ownerSubject: { kind: "user", id: String(owner.id) },
         exposure: "private",
       });
     });
@@ -205,7 +205,7 @@ describe("Agent directory API", () => {
 
       const response = await app.inject({
         method: "GET",
-        url: "/v1/agents/by-handle/alice/helper",
+        url: "/v1/principals/by-handle/alice/helper",
         headers,
       });
 
@@ -220,13 +220,13 @@ describe("Agent directory API", () => {
       // Owner exists, but no instance with that name.
       await createInstance(testDb.client, {
         ownerId: owner.id,
-        ownerPrincipal: { kind: "user", id: String(owner.id) },
+        ownerSubject: { kind: "user", id: String(owner.id) },
         name: "different-name",
       });
 
       const response = await app.inject({
         method: "GET",
-        url: "/v1/agents/by-handle/alice/helper",
+        url: "/v1/principals/by-handle/alice/helper",
         headers,
       });
 
@@ -241,14 +241,14 @@ describe("Agent directory API", () => {
 
       await createInstance(testDb.client, {
         ownerId: owner.id,
-        ownerPrincipal: { kind: "user", id: String(owner.id) },
+        ownerSubject: { kind: "user", id: String(owner.id) },
         name: "secret",
         exposure: "private",
       });
 
       const response = await app.inject({
         method: "GET",
-        url: "/v1/agents/by-handle/alice/secret",
+        url: "/v1/principals/by-handle/alice/secret",
         headers: otherHeaders,
       });
 

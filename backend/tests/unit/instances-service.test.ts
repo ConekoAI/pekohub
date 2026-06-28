@@ -8,13 +8,13 @@ describe("instanceService.canChat", () => {
     type: "agent" as const,
     name: "Test Instance",
     ownerId: 1,
-    ownerPrincipal: { kind: "user" as const, id: "1" } as Principal,
+    ownerSubject: { kind: "user" as const, id: "1" } as Principal,
     runtimeId: "runtime-1",
     runtimeDisplayName: null,
     bundleRef: null,
     status: "online" as const,
     exposure: "private" as const,
-    allowedUsers: [] as string[],
+    allowedPrincipals: [] as string[],
     allowedPrincipals: [] as Principal[],
     lastSeenAt: null,
     createdAt: new Date(),
@@ -67,19 +67,19 @@ describe("instanceService.canChat", () => {
       status: "online" as const,
       exposure: "private" as const,
       ownerId: 42,
-      ownerPrincipal: { kind: "user" as const, id: "42" } as Principal,
+      ownerSubject: { kind: "user" as const, id: "42" } as Principal,
     };
     expect(await instanceService.canChat(instance, 42)).toBe(true);
   });
 
-  it("returns true when private instance and user is in allowedUsers", async () => {
+  it("returns true when private instance and user is in allowedPrincipals", async () => {
     const instance = {
       ...baseInstance,
       status: "online" as const,
       exposure: "private" as const,
       ownerId: 1,
-      ownerPrincipal: { kind: "user" as const, id: "1" } as Principal,
-      allowedUsers: ["7", "99"],
+      ownerSubject: { kind: "user" as const, id: "1" } as Principal,
+      allowedPrincipals: ["7", "99"],
     };
     expect(await instanceService.canChat(instance, 7)).toBe(true);
     expect(await instanceService.canChat(instance, 99)).toBe(true);
@@ -91,10 +91,10 @@ describe("instanceService.canChat", () => {
       status: "online" as const,
       exposure: "private" as const,
       ownerId: 1,
-      ownerPrincipal: { kind: "user" as const, id: "1" } as Principal,
+      ownerSubject: { kind: "user" as const, id: "1" } as Principal,
       allowedPrincipals: [
         { kind: "user" as const, id: "7" } as Principal,
-        { kind: "agent" as const, id: "helper" } as Principal,
+        { kind: "principal" as const, id: "helper" } as Principal,
       ],
     };
     expect(await instanceService.canChat(instance, 7)).toBe(true);
@@ -106,8 +106,8 @@ describe("instanceService.canChat", () => {
       status: "online" as const,
       exposure: "private" as const,
       ownerId: 1,
-      ownerPrincipal: { kind: "user" as const, id: "1" } as Principal,
-      allowedUsers: ["7"],
+      ownerSubject: { kind: "user" as const, id: "1" } as Principal,
+      allowedPrincipals: ["7"],
     };
     expect(await instanceService.canChat(instance, 2)).toBe(false);
   });
@@ -128,11 +128,11 @@ describe("instanceService.canChat", () => {
       status: "online" as const,
       exposure: "private" as const,
       ownerId: 99, // legacy column populated but the typed owner wins
-      ownerPrincipal: { kind: "agent" as const, id: "helper" } as Principal,
+      ownerSubject: { kind: "principal" as const, id: "helper" } as Principal,
     };
     expect(
       await instanceService.canChat(instance, {
-        kind: "agent",
+        kind: "principal",
         id: "helper",
       }),
     ).toBe(true);
@@ -141,13 +141,13 @@ describe("instanceService.canChat", () => {
   // Issue #11 backfill: the runtime migration writes
   // `Principal::User("")` as the empty-sentinel. The hub must fall
   // back to the legacy `ownerId` rather than reject the row.
-  it("backfilled empty-sentinel owner_principal falls back to legacy ownerId", async () => {
+  it("backfilled empty-sentinel owner_subject falls back to legacy ownerId", async () => {
     const instance = {
       ...baseInstance,
       status: "online" as const,
       exposure: "private" as const,
       ownerId: 7,
-      ownerPrincipal: { kind: "user" as const, id: "" } as Principal,
+      ownerSubject: { kind: "user" as const, id: "" } as Principal,
     };
     expect(await instanceService.canChat(instance, 7)).toBe(true);
   });

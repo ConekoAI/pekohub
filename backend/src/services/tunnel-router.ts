@@ -5,7 +5,7 @@
 import type { FastifyReply } from "fastify";
 import type { TunnelManager } from "./tunnel-manager.js";
 import type { HttpProxiedRequest, TunnelMessage } from "./tunnel-protocol.js";
-import { principalToString, type Principal } from "@pekohub/shared";
+import { subjectToString, type Principal } from "@pekohub/shared";
 
 /**
  * Build the bridge headers for a proxied request. Issue #11: the hub
@@ -27,7 +27,7 @@ function bridgeHeadersFor(
   if (caller.kind === "user") {
     return { ...base, "x-pekohub-user-id": caller.id };
   }
-  return { ...base, "x-pekohub-caller-principal": principalToString(caller) };
+  return { ...base, "x-pekohub-caller-principal": subjectToString(caller) };
 }
 
 export class TunnelRouter {
@@ -36,7 +36,7 @@ export class TunnelRouter {
   async proxyChat(
     runtimeId: string,
     instanceId: string,
-    agentName: string,
+    principalName: string,
     body: unknown,
     headers: Record<string, string>,
     reply: FastifyReply,
@@ -52,7 +52,7 @@ export class TunnelRouter {
     const request: HttpProxiedRequest = {
       requestId: crypto.randomUUID(),
       instanceId,
-      agentName,
+      principalName,
       method: "chat",
       body,
       headers: mergedHeaders,
@@ -91,7 +91,7 @@ export class TunnelRouter {
   async proxyStream(
     runtimeId: string,
     instanceId: string,
-    agentName: string,
+    principalName: string,
     body: unknown,
     headers: Record<string, string>,
     reply: FastifyReply,
@@ -107,7 +107,7 @@ export class TunnelRouter {
     const request: HttpProxiedRequest = {
       requestId: crypto.randomUUID(),
       instanceId,
-      agentName,
+      principalName,
       method: "stream",
       body,
       headers: mergedHeaders,

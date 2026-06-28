@@ -16,7 +16,7 @@ import { relations } from "drizzle-orm";
 import {
   BundleTypes,
   ExtensionTypes,
-  type Principal,
+  type Subject,
 } from "@pekohub/shared";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -223,21 +223,21 @@ export const instances = pgTable(
   "instances",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    type: varchar("type", { length: 10 }).notNull(), // 'agent' | 'team'
+    type: varchar("type", { length: 16 }).notNull(), // 'principal' (post-ADR-041)
     name: varchar("name", { length: 255 }).notNull(),
     // Legacy owner reference — kept for one release so peers on the
     // pre-ADR-039 hub continue to work. New code should treat
-    // `ownerPrincipal` (or the resolved owner) as the source of truth
+    // `ownerSubject` (or the resolved owner) as the source of truth
     // and use this column only as a backfill target.
     ownerId: integer("owner_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    // Typed owner per ADR-039 / peko-runtime's `Principal` enum. Nullable
-    // because pre-upgrade rows have no value; `resolveOwnerPrincipal`
-    // falls back to `Principal::User(ownerId)` in that case. The
-    // empty-sentinel `Principal::User("")` is treated the same way
-    // (see `EMPTY_OWNER_PRINCIPAL` in @pekohub/shared).
-    ownerPrincipal: jsonb("owner_principal").$type<Principal | null>(),
+    // Typed owner per ADR-041 / peko-runtime's `Subject` enum. Nullable
+    // because pre-upgrade rows have no value; `resolveOwnerSubject`
+    // falls back to `Subject::User(ownerId)` in that case. The
+    // empty-sentinel `Subject::User("")` is treated the same way
+    // (see `EMPTY_OWNER_SUBJECT` in @pekohub/shared).
+    ownerSubject: jsonb("owner_subject").$type<Subject | null>(),
     runtimeId: varchar("runtime_id", { length: 255 }).notNull(),
     runtimeDisplayName: varchar("runtime_display_name", { length: 255 }),
     bundleRef: varchar("bundle_ref", { length: 255 }),
@@ -245,13 +245,9 @@ export const instances = pgTable(
     exposure: varchar("exposure", { length: 20 })
       .notNull()
       .default("unexposed"),
-    // Legacy: array of bare user-id strings (User-kind principals only).
-    // Kept for one release for back-compat with pre-#11 runtimes.
-    allowedUsers: jsonb("allowed_users").$type<string[]>().default([]),
-    // Typed allow-list per ADR-039. Each entry is a `Principal`. Replaces
-    // `allowedUsers` once peers are all on #11+.
+    // Typed allow-list per ADR-041. Each entry is a `Subject`.
     allowedPrincipals: jsonb("allowed_principals")
-      .$type<Principal[]>()
+      .$type<Subject[]>()
       .default([]),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -277,13 +273,14 @@ export const instances = pgTable(
     // Monetization hooks (future)
     monetization: jsonb("monetization").default('{"enabled":false}'),
 
-    // Issue #14: per-agent DID, the key the cross-runtime `a2a_send`
-    // resolver ([peko-runtime#29](https://github.com/ConekoAI/peko-runtime/issues/29))
-    // uses to look up a host via `/v1/agents/by-did/:did`. Set by the
-    // runtime on `instance_announce` (peko-runtime#34) and unique when
-    // present. Nullable so pre-#34 runtimes and migrations keep
-    // working; the by-did endpoint simply 404s when the column is null.
-    agentDid: varchar("agent_did", { length: 512 }),
+    // ADR-041: per-Principal DID, the key the cross-runtime
+    // `principal_send` resolver uses to look up a host via
+    // `/v1/principals/by-did/:did`. Set by the runtime on
+    // `instance_announce` and unique when present. Nullable so
+    // pre-#82 runtimes and migrations keep working; the by-did
+    // endpoint simply 404s when the column is null. The runtime
+    // emits `did:peko:principal:<keyhash>` post-#82.
+    principalDid: varchar("principal_did", { length: 512 }),
   },
   (table) => ({
     ownerIdIdx: index("idx_instances_owner_id").on(table.ownerId),
@@ -296,12 +293,12 @@ export const instances = pgTable(
     publishedAtIdx: index("idx_instances_published_at").on(table.publishedAt),
     featuredIdx: index("idx_instances_featured").on(table.featured),
     categoryIdx: index("idx_instances_category").on(table.category),
-    // Issue #14: B-tree unique on `agent_did` so the by-did resolver is
-    // a single indexed lookup. Postgres treats NULLs as distinct in
-    // unique indexes, so pre-#14 rows (where `agent_did IS NULL`) don't
-    // conflict with each other.
-    agentDidUniqueIdx: uniqueIndex("idx_instances_agent_did").on(
-      table.agentDid,
+    // ADR-041: B-tree unique on `principal_did` so the by-did
+    // resolver is a single indexed lookup. Postgres treats NULLs as
+    // distinct in unique indexes, so pre-#82 rows (where
+    // `principal_did IS NULL`) don't conflict with each other.
+    principalDidUniqueIdx: uniqueIndex("idx_instances_principal_did").on(
+      table.principalDid,
     ),
   }),
 );

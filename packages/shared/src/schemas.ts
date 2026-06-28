@@ -36,6 +36,22 @@ export const HookPoint = z.enum([
   'mcp.toolDiscover',
   'cron.schedule',
   'cron.tick',
+  // Principal-layer hooks (ADR-041 §3.4). Fire on the Principal
+  // boundary, not on a single agent run. The 22 hooks above remain
+  // the agent-layer surface; these 13 extend the principal layer.
+  'principal.init',
+  'principal.shutdown',
+  'principal.iteration',
+  'principal.send',
+  'principal.receive',
+  'principal.permissionGrant',
+  'principal.permissionRevoke',
+  'principal.memory.store',
+  'principal.memory.retrieve',
+  'principal.router.decide',
+  'principal.router.fallback',
+  'principal.session.fork',
+  'principal.session.gc',
 ]);
 export type HookPoint = z.infer<typeof HookPoint>;
 
