@@ -15,15 +15,14 @@ export interface TestBundle {
   id: number;
   namespace: string;
   name: string;
-  bundleType: "agent" | "team" | "extension";
+  bundleType: "principal" | "extension";
   extensionType?:
     | "mcp"
     | "skill"
     | "tool"
     | "gateway"
     | "universal"
-    | "general"
-    | "team";
+    | "general";
   description: string;
   author: string;
   tags: string[];
@@ -48,7 +47,7 @@ export interface TestBundleVersion {
 
 export interface TestInstance {
   id: string;
-  type: "agent" | "team";
+  type: "principal";
   name: string;
   ownerId: number;
   runtimeId: string;
@@ -56,7 +55,7 @@ export interface TestInstance {
   bundleRef: string | null;
   status: "online" | "offline" | "busy" | "error";
   exposure: "private" | "public" | "unexposed";
-  allowedUsers: string[];
+  allowedPrincipals: unknown[];
   lastSeenAt: Date | null;
   createdAt: Date;
   capabilities: string[];
@@ -71,8 +70,8 @@ export interface TestInstance {
   weeklyQuota: number | null;
   publishedAt: Date | null;
   featured: boolean;
-  // Issue #14: per-agent DID, optional; not all test instances need one.
-  agentDid: string | null;
+  // ADR-041: per-Principal DID, optional; not all test instances need one.
+  principalDid: string | null;
 }
 
 /**
@@ -122,7 +121,7 @@ export async function createBundle(
       .toLowerCase()
       .replace(/[^a-z0-9_-]/g, "");
   const name = overrides.name ?? faker.word.noun().toLowerCase();
-  const bundleType = overrides.bundleType ?? "agent";
+  const bundleType = overrides.bundleType ?? "principal";
 
   const result = await client.query(
     `INSERT INTO bundles (namespace, name, bundle_type, extension_type, description, author, tags, hooks, compatibility, star_count, pull_count)
@@ -210,42 +209,41 @@ export async function createInstance(
   client: PGlite,
   overrides: Partial<TestInstance> & {
     ownerId: number;
-    ownerPrincipal?: unknown;
+    ownerSubject?: unknown;
     allowedPrincipals?: unknown[];
   },
 ): Promise<TestInstance> {
   const id = overrides.id ?? crypto.randomUUID();
-  const type = overrides.type ?? "agent";
+  const type = overrides.type ?? "principal";
   const name = overrides.name ?? faker.word.noun().toLowerCase();
   const runtimeId =
     overrides.runtimeId ?? `runtime-${faker.string.alphanumeric(8)}`;
 
   const result = await client.query(
     `INSERT INTO instances (
-      id, type, name, owner_id, owner_principal, runtime_id, runtime_display_name, bundle_ref,
-      status, exposure, allowed_users, allowed_principals, capabilities, metadata,
+      id, type, name, owner_id, owner_subject, runtime_id, runtime_display_name, bundle_ref,
+      status, exposure, allowed_principals, capabilities, metadata,
       public_name, description, tags, category, tos_required, tos_text,
-      daily_quota, weekly_quota, published_at, featured, agent_did
+      daily_quota, weekly_quota, published_at, featured, principal_did
     )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
-     RETURNING id, type, name, owner_id, owner_principal, runtime_id, runtime_display_name, bundle_ref,
-       status, exposure, allowed_users, allowed_principals, last_seen_at, created_at, capabilities, metadata,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+     RETURNING id, type, name, owner_id, owner_subject, runtime_id, runtime_display_name, bundle_ref,
+       status, exposure, allowed_principals, last_seen_at, created_at, capabilities, metadata,
        public_name, description, tags, category, tos_required, tos_text,
-       daily_quota, weekly_quota, published_at, featured, agent_did`,
+       daily_quota, weekly_quota, published_at, featured, principal_did`,
     [
       id,
       type,
       name,
       overrides.ownerId,
-      overrides.ownerPrincipal !== undefined
-        ? JSON.stringify(overrides.ownerPrincipal)
+      overrides.ownerSubject !== undefined
+        ? JSON.stringify(overrides.ownerSubject)
         : null,
       runtimeId,
       overrides.runtimeDisplayName ?? null,
       overrides.bundleRef ?? null,
       overrides.status ?? "offline",
       overrides.exposure ?? "unexposed",
-      JSON.stringify(overrides.allowedUsers ?? []),
       JSON.stringify(overrides.allowedPrincipals ?? []),
       JSON.stringify(overrides.capabilities ?? []),
       JSON.stringify(overrides.metadata ?? {}),
@@ -259,8 +257,8 @@ export async function createInstance(
       overrides.weeklyQuota ?? null,
       overrides.publishedAt ?? null,
       overrides.featured ?? false,
-      // Issue #14: per-agent DID. Optional — most tests don't care.
-      overrides.agentDid ?? null,
+      // ADR-041: per-Principal DID. Optional — most tests don't care.
+      overrides.principalDid ?? null,
     ],
   );
 
@@ -275,7 +273,7 @@ export async function createInstance(
     bundleRef: row.bundle_ref,
     status: row.status,
     exposure: row.exposure,
-    allowedUsers: row.allowed_users ?? [],
+    allowedPrincipals: row.allowed_principals ?? [],
     lastSeenAt: row.last_seen_at,
     createdAt: row.created_at,
     capabilities: row.capabilities ?? [],
@@ -290,6 +288,6 @@ export async function createInstance(
     weeklyQuota: row.weekly_quota ?? null,
     publishedAt: row.published_at ?? null,
     featured: row.featured ?? false,
-    agentDid: row.agent_did ?? null,
+    principalDid: row.principal_did ?? null,
   } as TestInstance;
 }

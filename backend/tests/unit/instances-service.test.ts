@@ -1,21 +1,20 @@
 import { describe, it, expect } from "vitest";
 import { instanceService } from "../../src/services/instances.js";
-import type { Principal } from "@pekohub/shared";
+import type { Subject } from "@pekohub/shared";
 
 describe("instanceService.canChat", () => {
   const baseInstance = {
     id: "test-id",
-    type: "agent" as const,
+    type: "principal" as const,
     name: "Test Instance",
     ownerId: 1,
-    ownerPrincipal: { kind: "user" as const, id: "1" } as Principal,
+    ownerSubject: { kind: "user" as const, id: "1" } as Subject,
     runtimeId: "runtime-1",
     runtimeDisplayName: null,
     bundleRef: null,
     status: "online" as const,
     exposure: "private" as const,
-    allowedUsers: [] as string[],
-    allowedPrincipals: [] as Principal[],
+    allowedPrincipals: [] as Subject[],
     lastSeenAt: null,
     createdAt: new Date(),
     capabilities: [],
@@ -67,22 +66,9 @@ describe("instanceService.canChat", () => {
       status: "online" as const,
       exposure: "private" as const,
       ownerId: 42,
-      ownerPrincipal: { kind: "user" as const, id: "42" } as Principal,
+      ownerSubject: { kind: "user" as const, id: "42" } as Subject,
     };
     expect(await instanceService.canChat(instance, 42)).toBe(true);
-  });
-
-  it("returns true when private instance and user is in allowedUsers", async () => {
-    const instance = {
-      ...baseInstance,
-      status: "online" as const,
-      exposure: "private" as const,
-      ownerId: 1,
-      ownerPrincipal: { kind: "user" as const, id: "1" } as Principal,
-      allowedUsers: ["7", "99"],
-    };
-    expect(await instanceService.canChat(instance, 7)).toBe(true);
-    expect(await instanceService.canChat(instance, 99)).toBe(true);
   });
 
   it("returns true when private instance and user is in typed allowedPrincipals", async () => {
@@ -91,10 +77,10 @@ describe("instanceService.canChat", () => {
       status: "online" as const,
       exposure: "private" as const,
       ownerId: 1,
-      ownerPrincipal: { kind: "user" as const, id: "1" } as Principal,
+      ownerSubject: { kind: "user" as const, id: "1" } as Subject,
       allowedPrincipals: [
-        { kind: "user" as const, id: "7" } as Principal,
-        { kind: "agent" as const, id: "helper" } as Principal,
+        { kind: "user" as const, id: "7" } as Subject,
+        { kind: "principal" as const, id: "helper" } as Subject,
       ],
     };
     expect(await instanceService.canChat(instance, 7)).toBe(true);
@@ -106,8 +92,10 @@ describe("instanceService.canChat", () => {
       status: "online" as const,
       exposure: "private" as const,
       ownerId: 1,
-      ownerPrincipal: { kind: "user" as const, id: "1" } as Principal,
-      allowedUsers: ["7"],
+      ownerSubject: { kind: "user" as const, id: "1" } as Subject,
+      allowedPrincipals: [
+        { kind: "user" as const, id: "7" } as Subject,
+      ],
     };
     expect(await instanceService.canChat(instance, 2)).toBe(false);
   });
@@ -128,26 +116,26 @@ describe("instanceService.canChat", () => {
       status: "online" as const,
       exposure: "private" as const,
       ownerId: 99, // legacy column populated but the typed owner wins
-      ownerPrincipal: { kind: "agent" as const, id: "helper" } as Principal,
+      ownerSubject: { kind: "principal" as const, id: "helper" } as Subject,
     };
     expect(
       await instanceService.canChat(instance, {
-        kind: "agent",
+        kind: "principal",
         id: "helper",
       }),
     ).toBe(true);
   });
 
   // Issue #11 backfill: the runtime migration writes
-  // `Principal::User("")` as the empty-sentinel. The hub must fall
+  // `Subject::User("")` as the empty-sentinel. The hub must fall
   // back to the legacy `ownerId` rather than reject the row.
-  it("backfilled empty-sentinel owner_principal falls back to legacy ownerId", async () => {
+  it("backfilled empty-sentinel owner_subject falls back to legacy ownerId", async () => {
     const instance = {
       ...baseInstance,
       status: "online" as const,
       exposure: "private" as const,
       ownerId: 7,
-      ownerPrincipal: { kind: "user" as const, id: "" } as Principal,
+      ownerSubject: { kind: "user" as const, id: "" } as Subject,
     };
     expect(await instanceService.canChat(instance, 7)).toBe(true);
   });

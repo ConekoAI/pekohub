@@ -43,10 +43,10 @@ describe("TargetSpec schema", () => {
     const parsed = RemoteByHandle.parse({
       kind: "by-handle",
       owner: "alice",
-      agentName: "helper",
+      principalName: "helper",
     });
     expect(parsed.owner).toBe("alice");
-    expect(parsed.agentName).toBe("helper");
+    expect(parsed.principalName).toBe("helper");
   });
 
   it("rejects an invalid namespace", () => {
@@ -55,14 +55,14 @@ describe("TargetSpec schema", () => {
       RemoteByHandle.parse({
         kind: "by-handle",
         owner: "Alice", // uppercase
-        agentName: "helper",
+        principalName: "helper",
       }),
     ).toThrow();
     expect(() =>
       RemoteByHandle.parse({
         kind: "by-handle",
         owner: "-alice", // leading dash
-        agentName: "helper",
+        principalName: "helper",
       }),
     ).toThrow();
   });
@@ -72,7 +72,7 @@ describe("TargetSpec schema", () => {
       RemoteByHandle.parse({
         kind: "by-handle",
         owner: "alice",
-        agentName: "",
+        principalName: "",
       }),
     ).toThrow();
   });
@@ -85,7 +85,7 @@ describe("TargetSpec schema", () => {
     const byHandle = TargetSpec.parse({
       kind: "by-handle",
       owner: "bob",
-      agentName: "agent",
+      principalName: "agent",
     });
     expect(byDid.kind).toBe("by-did");
     expect(byHandle.kind).toBe("by-handle");
@@ -101,11 +101,11 @@ describe("formatTargetSpecPath", () => {
     expect(s).toBe("did:peko:agent:abc123");
   });
 
-  it("encodes a by-handle spec as `owner/agent_name`", () => {
+  it("encodes a by-handle spec as `owner/principal_name`", () => {
     const s = formatTargetSpecPath({
       kind: "by-handle",
       owner: "alice",
-      agentName: "helper",
+      principalName: "helper",
     });
     expect(s).toBe("alice/helper");
   });
@@ -125,21 +125,21 @@ describe("parseTargetSpecPath", () => {
     expect(spec).toEqual({
       kind: "by-handle",
       owner: "alice",
-      agentName: "helper",
+      principalName: "helper",
     });
   });
 
   it("round-trips by-did and by-handle", () => {
     const byDid = {
       kind: "by-did" as const,
-      did: "did:peko:agent:deadbeef",
+      did: "did:peko:principal:deadbeef",
     };
     expect(parseTargetSpecPath(formatTargetSpecPath(byDid))).toEqual(byDid);
 
     const byHandle = {
       kind: "by-handle" as const,
-      owner: "team-eng",
-      agentName: "code-reviewer",
+      owner: "alice",
+      principalName: "code-reviewer",
     };
     expect(parseTargetSpecPath(formatTargetSpecPath(byHandle))).toEqual(
       byHandle,

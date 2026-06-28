@@ -320,14 +320,14 @@ describe("Tunnel Proxy Integration", () => {
       const headers = await authHeaders(user);
       const { did, privateKey } = makeRuntimeIdentity();
 
-      // Create a private instance with the user in allowedUsers
+      // Create a private instance with the user in allowedPrincipals
       const instance = await createInstance(testDb.client, {
         ownerId: user.id,
         name: "private-agent",
         runtimeId: did,
         status: "online",
         exposure: "private",
-        allowedUsers: [String(user.id)],
+        allowedPrincipals: [String(user.id)],
       });
 
       // Allowlist for the handshake (issue #1)
@@ -455,7 +455,7 @@ describe("Tunnel Proxy Integration", () => {
         type: "instance_announce",
         payload: {
           id: instanceId,
-          type: "agent",
+          type: "principal",
           name: "announced-agent",
           status: "online",
           exposure: "public",

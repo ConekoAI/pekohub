@@ -5,7 +5,7 @@
  * Messages are serialized as JSON and sent over the WebSocket as binary frames.
  */
 
-import type { Principal } from "@pekohub/shared";
+import type { Subject } from "@pekohub/shared";
 
 export interface RuntimeHelloPayload {
   runtimeId: string; // did:key format
@@ -36,7 +36,7 @@ export interface TunnelProxiedRequest {
 export interface HttpProxiedRequest {
   requestId: string;
   instanceId: string;
-  agentName: string;
+  principalName: string;
   method: "chat" | "stream";
   body: unknown;
   headers: Record<string, string>;
@@ -57,11 +57,11 @@ export interface StreamEndPayload {
   requestId: string;
 }
 
-// --- Instance lifecycle extensions (ADR-004) ---
+// --- Instance lifecycle extensions (ADR-004, ADR-041) ---
 
 export type InstanceStatus = "online" | "offline" | "busy" | "error";
 export type InstanceExposure = "private" | "public" | "unexposed";
-export type InstanceType = "agent" | "team";
+export type InstanceType = "principal";
 
 export interface InstanceAnnouncePayload {
   id: string;
@@ -71,28 +71,22 @@ export interface InstanceAnnouncePayload {
   runtimeDisplayName?: string;
   status: InstanceStatus;
   exposure: InstanceExposure;
-  // Issue #11: typed owner per ADR-039. When present, the hub stores
-  // it as `owner_principal` and the access checks use it. When absent,
-  // the hub falls back to the legacy numeric `ownerId` (the user that
-  // owns the runtime, via the `runtimes` table). Pre-#11 runtimes
-  // never send this.
-  owner?: Principal;
-  // Legacy: bare user-id strings. Pre-#11 runtimes only send this.
-  // Hub backfills `allowedPrincipals` from this for User-kind entries.
-  allowedUsers?: string[];
-  // Issue #11: typed allow-list per ADR-039. Each entry is a Principal.
-  // When present, takes precedence over `allowedUsers`.
-  allowedPrincipals?: Principal[];
+  // ADR-041: typed owner per ADR-041 (Subject enum, was Principal in
+  // ADR-039). When present, the hub stores it as `owner_subject` and
+  // the access checks use it. When absent, the hub falls back to the
+  // legacy numeric `ownerId` (the user that owns the runtime, via
+  // the `runtimes` table).
+  owner?: Subject;
+  // ADR-041: typed allow-list. Each entry is a `Subject`.
+  allowedPrincipals?: Subject[];
   capabilities?: string[];
   metadata?: Record<string, unknown>;
-  // Issue #14: per-agent DID, written to `instances.agent_did` and
-  // indexed by the by-did resolver
-  // (`GET /v1/agents/by-did/:did`,
-  // [peko-runtime#29](https://github.com/ConekoAI/peko-runtime/issues/29)).
-  // Optional so pre-#34 runtimes still announce cleanly. Omit to
-  // clear on a re-announce? No — `undefined` means "leave the
-  // existing value alone" in the service layer.
-  agentDid?: string;
+  // ADR-041: per-Principal DID, written to `instances.principal_did`
+  // and indexed by the by-did resolver
+  // (`GET /v1/principals/by-did/:did`). Optional so pre-#82
+  // runtimes still announce cleanly. Omit to leave the existing
+  // value alone in the service layer.
+  principalDid?: string;
 }
 
 export interface InstanceHeartbeatPayload {
@@ -108,10 +102,8 @@ export interface InstanceDeregisterPayload {
 export interface ExposureUpdatePayload {
   instanceId: string;
   exposure: InstanceExposure;
-  /** Legacy: bare user-id strings (User-kind principals). */
-  allowedUserIds?: string[];
-  /** Issue #11: typed allow-list. Takes precedence over `allowedUserIds`. */
-  allowedPrincipals?: Principal[];
+  /** ADR-041: typed allow-list (Subject[]). */
+  allowedPrincipals?: Subject[];
 }
 
 export interface StatusUpdatePayload {
@@ -119,33 +111,32 @@ export interface StatusUpdatePayload {
   status: InstanceStatus;
 }
 
-// ── Cross-runtime a2a (issue #16) ───────────────────────────────────────────
+// ── Cross-runtime a2a (issue #16, ADR-041 P2P) ───────────────────────────────
 //
 // The hub forwards these envelopes *opaquely* between runtime tunnels.
-// It reads only the routing fields (`callerRuntimeId`, `targetAgentDid`,
+// It reads only the routing fields (`callerRuntimeId`, `targetPrincipalDid`,
 // `requestId`); the `signature` and `message` are relayed verbatim so the
 // target runtime can verify end-to-end. Synthesized error responses use
-// the same `agent_to_agent_response` envelope with a JSON-encoded payload
-// shaped `{ kind: "error", code, message }`.
+// the same `principal_to_principal_response` envelope with a JSON-encoded
+// payload shaped `{ kind: "error", code, message }`.
 
-export interface AgentToAgentRequestPayload {
+export interface PrincipalToPrincipalRequestPayload {
   requestId: string;
   callerRuntimeId: string;
-  callerAgentDid: string;
-  targetAgentDid: string;
+  callerPrincipalDid: string;
+  targetPrincipalDid: string;
   sessionId?: string;
   message: string;
-  team?: string;
   signature: string;
 }
 
-export interface AgentToAgentResponsePayload {
+export interface PrincipalToPrincipalResponsePayload {
   requestId: string;
   /**
-   * Opaque to the hub — relayed verbatim. Successful responses carry the
-   * runtime's normal `a2a_send` result string; failures (synthesized by
-   * the hub on missing target, ACL deny, etc.) carry a JSON-encoded
-   * `{ kind: "error", code, message }` object.
+   * Opaque to the hub — relayed verbatim. Successful responses carry
+   * the runtime's `principal_send` result string; failures
+   * (synthesized by the hub on missing target, ACL deny, etc.)
+   * carry a JSON-encoded `{ kind: "error", code, message }` object.
    */
   payload: string;
 }
@@ -187,26 +178,25 @@ export type TunnelMessage =
   | { type: "instance_deregister"; payload: InstanceDeregisterPayload }
   | { type: "exposure_update"; payload: ExposureUpdatePayload }
   | { type: "status_update"; payload: StatusUpdatePayload }
-  // Cross-runtime a2a forwarding — see backend issue #16.
+  // Cross-runtime P2P forwarding — see backend issue #16 + ADR-041.
   | {
-      type: "agent_to_agent_request";
+      type: "principal_to_principal_request";
       requestId: string;
       callerRuntimeId: string;
-      callerAgentDid: string;
-      targetAgentDid: string;
+      callerPrincipalDid: string;
+      targetPrincipalDid: string;
       sessionId?: string;
       message: string;
-      team?: string;
       signature: string;
     }
   | {
-      type: "agent_to_agent_response";
+      type: "principal_to_principal_response";
       requestId: string;
       payload: string;
     };
 
 export function encodeTunnelMessage(msg: TunnelMessage): Buffer {
-  return Buffer.from(JSON.stringify(msg), "utf8");
+  return Buffer.from(JSON.stringify(msg), "utf-8");
 }
 
 export function decodeTunnelMessage(
@@ -220,5 +210,5 @@ export function decodeTunnelMessage(
   } else {
     buffer = Buffer.from(data);
   }
-  return JSON.parse(buffer.toString("utf8")) as TunnelMessage;
+  return JSON.parse(buffer.toString("utf-8")) as TunnelMessage;
 }

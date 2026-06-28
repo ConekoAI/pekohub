@@ -57,6 +57,34 @@
       "when": 1781877424674,
       "tag": "0007_add_agent_did",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1779000000001,
+      "tag": "0008a_add_principal_did",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1779000000002,
+      "tag": "0008b_replace_team_with_principal",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1779000000003,
+      "tag": "0008c_rename_allowed_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1779000000004,
+      "tag": "0008d_drop_agent_did",
+      "breakpoints": true
     }
   ]
 }

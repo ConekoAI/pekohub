@@ -111,11 +111,11 @@ describe("GET /metrics (issue #16)", () => {
     const DID_B_AGENT = "did:peko:agent:target-b";
     await createInstance(testDb.client, {
       ownerId: ownerB.id,
-      ownerPrincipal: { kind: "user", id: String(ownerB.id) },
+      ownerSubject: { kind: "user", id: String(ownerB.id) },
       name: "target-b",
       runtimeId: idB.did,
       exposure: "public",
-      agentDid: DID_B_AGENT,
+      principalDid: DID_B_AGENT,
     });
 
     const socketA = new MockWebSocket();
@@ -126,11 +126,11 @@ describe("GET /metrics (issue #16)", () => {
     await completeHandshake(socketB, idB.did, idB.privateKey);
 
     socketA.triggerMessage({
-      type: "agent_to_agent_request",
+      type: "principal_to_principal_request",
       requestId: "metrics-req-1",
       callerRuntimeId: idA.did,
-      callerAgentDid: "caller-a",
-      targetAgentDid: DID_B_AGENT,
+      callerPrincipalDid: "caller-a",
+      targetPrincipalDid: DID_B_AGENT,
       message: "hi",
       signature: "x",
     });
@@ -164,24 +164,24 @@ describe("GET /metrics (issue #16)", () => {
     const DID_B_AGENT = "did:peko:agent:target-b";
     await createInstance(testDb.client, {
       ownerId: ownerB.id,
-      ownerPrincipal: { kind: "user", id: String(ownerB.id) },
+      ownerSubject: { kind: "user", id: String(ownerB.id) },
       name: "target-b",
       runtimeId: idB.did,
       exposure: "private",
-      agentDid: DID_B_AGENT,
+      principalDid: DID_B_AGENT,
     });
 
     const socketA = new MockWebSocket();
     tunnelManager.handleSocket(socketA.asWebSocket());
     await completeHandshake(socketA, idA.did, idA.privateKey);
 
-    // First: target-missing — targetAgentDid doesn't exist.
+    // First: target-missing — targetPrincipalDid doesn't exist.
     socketA.triggerMessage({
-      type: "agent_to_agent_request",
+      type: "principal_to_principal_request",
       requestId: "metrics-req-missing",
       callerRuntimeId: idA.did,
-      callerAgentDid: "caller-a",
-      targetAgentDid: "did:peko:agent:not-on-file",
+      callerPrincipalDid: "caller-a",
+      targetPrincipalDid: "did:peko:agent:not-on-file",
       message: "hi",
       signature: "x",
     });
@@ -190,11 +190,11 @@ describe("GET /metrics (issue #16)", () => {
     // Second: forbidden — target exists (private, no allow-list),
     // Agent caller doesn't match User owner.
     socketA.triggerMessage({
-      type: "agent_to_agent_request",
+      type: "principal_to_principal_request",
       requestId: "metrics-req-forbidden",
       callerRuntimeId: idA.did,
-      callerAgentDid: "caller-a",
-      targetAgentDid: DID_B_AGENT,
+      callerPrincipalDid: "caller-a",
+      targetPrincipalDid: DID_B_AGENT,
       message: "hi",
       signature: "x",
     });

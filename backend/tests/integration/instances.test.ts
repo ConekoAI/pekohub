@@ -29,12 +29,12 @@ describe("Instance API", () => {
       await createInstance(testDb.client, {
         ownerId: user.id,
         name: "agent-1",
-        type: "agent",
+        type: "principal",
       });
       await createInstance(testDb.client, {
         ownerId: user.id,
         name: "agent-2",
-        type: "agent",
+        type: "principal",
       });
 
       const response = await app.inject({
@@ -129,7 +129,7 @@ describe("Instance API", () => {
         ownerId: user.id,
         name: "public-agent",
         exposure: "public",
-        allowedUsers: ["999"],
+        allowedPrincipals: [{ kind: "user", id: "999" }],
         runtimeId: "runtime-secret",
       });
 
@@ -141,11 +141,11 @@ describe("Instance API", () => {
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
       expect(body.name).toBe("public-agent");
-      expect(body.allowedUsers).toBeUndefined();
+      expect(body.allowedPrincipals).toBeUndefined();
       expect(body.runtimeId).toBeUndefined();
     });
 
-    it("should return full record including allowedUsers and runtimeId for owner", async () => {
+    it("should return full record including allowedPrincipals and runtimeId for owner", async () => {
       const app = await buildTestApp({ testDb });
       const user = await createUser(testDb.client, { namespace: "alice" });
       const headers = await authHeaders(user);
@@ -153,7 +153,7 @@ describe("Instance API", () => {
         ownerId: user.id,
         name: "public-agent",
         exposure: "public",
-        allowedUsers: [String(user.id)],
+        allowedPrincipals: [{ kind: "user", id: String(user.id) }],
         runtimeId: "runtime-secret",
       });
 
@@ -166,11 +166,11 @@ describe("Instance API", () => {
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
       expect(body.name).toBe("public-agent");
-      expect(body.allowedUsers).toEqual([String(user.id)]);
+      expect(body.allowedPrincipals).toEqual([{ kind: "user", id: String(user.id) }]);
       expect(body.runtimeId).toBe("runtime-secret");
     });
 
-    it("should redact allowedUsers and runtimeId for authenticated non-owner", async () => {
+    it("should redact allowedPrincipals and runtimeId for authenticated non-owner", async () => {
       const app = await buildTestApp({ testDb });
       const owner = await createUser(testDb.client, { namespace: "alice" });
       const viewer = await createUser(testDb.client, { namespace: "bob" });
@@ -179,7 +179,7 @@ describe("Instance API", () => {
         ownerId: owner.id,
         name: "public-agent",
         exposure: "public",
-        allowedUsers: [String(viewer.id)],
+        allowedPrincipals: [{ kind: "user", id: String(viewer.id) }],
         runtimeId: "runtime-secret",
       });
 
@@ -191,15 +191,15 @@ describe("Instance API", () => {
 
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
-      expect(body.allowedUsers).toBeUndefined();
+      expect(body.allowedPrincipals).toBeUndefined();
       expect(body.runtimeId).toBeUndefined();
     });
 
-    // Issue #11: the new typed columns (`owner_principal`,
+    // Issue #11: the new typed columns (`owner_subject`,
     // `allowed_principals`) are also sensitive — they leak the owner's
     // identity and the allow-list. They join the redaction list for
     // non-owners.
-    it("should redact ownerPrincipal and allowedPrincipals for non-owner", async () => {
+    it("should redact ownerSubject and allowedPrincipals for non-owner", async () => {
       const app = await buildTestApp({ testDb });
       const owner = await createUser(testDb.client, { namespace: "alice" });
       const viewer = await createUser(testDb.client, { namespace: "bob" });
@@ -208,8 +208,8 @@ describe("Instance API", () => {
         ownerId: owner.id,
         name: "typed-agent",
         exposure: "public",
-        ownerPrincipal: { kind: "agent", id: "helper" },
-        allowedPrincipals: [{ kind: "agent", id: "helper" }],
+        ownerSubject: { kind: "principal", id: "helper" },
+        allowedPrincipals: [{ kind: "principal", id: "helper" }],
       });
 
       const response = await app.inject({
@@ -220,11 +220,11 @@ describe("Instance API", () => {
 
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
-      expect(body.ownerPrincipal).toBeUndefined();
+      expect(body.ownerSubject).toBeUndefined();
       expect(body.allowedPrincipals).toBeUndefined();
     });
 
-    it("should return ownerPrincipal and allowedPrincipals for the owner", async () => {
+    it("should return ownerSubject and allowedPrincipals for the owner", async () => {
       const app = await buildTestApp({ testDb });
       const owner = await createUser(testDb.client, { namespace: "alice" });
       const headers = await authHeaders(owner);
@@ -232,7 +232,7 @@ describe("Instance API", () => {
         ownerId: owner.id,
         // Typed owner matches the legacy `ownerId` — the user that
         // registered the row is the resolved owner.
-        ownerPrincipal: { kind: "user", id: String(owner.id) },
+        ownerSubject: { kind: "user", id: String(owner.id) },
         name: "owner-view",
         exposure: "private",
         allowedPrincipals: [{ kind: "user", id: String(owner.id) }],
@@ -246,7 +246,7 @@ describe("Instance API", () => {
 
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
-      expect(body.ownerPrincipal).toEqual({
+      expect(body.ownerSubject).toEqual({
         kind: "user",
         id: String(owner.id),
       });
@@ -284,7 +284,7 @@ describe("Instance API", () => {
         url: "/v1/instances",
         headers,
         payload: {
-          type: "agent",
+          type: "principal",
           name: "new-agent",
           runtime_id: "runtime-abc",
           exposure: "public",
@@ -294,7 +294,7 @@ describe("Instance API", () => {
       expect(response.statusCode).toBe(201);
       const body = JSON.parse(response.payload);
       expect(body.name).toBe("new-agent");
-      expect(body.type).toBe("agent");
+      expect(body.type).toBe("principal");
       expect(body.runtimeId).toBe("runtime-abc");
       expect(body.exposure).toBe("public");
     });
@@ -305,7 +305,7 @@ describe("Instance API", () => {
         method: "POST",
         url: "/v1/instances",
         payload: {
-          type: "agent",
+          type: "principal",
           name: "new-agent",
           runtime_id: "runtime-abc",
         },
@@ -640,7 +640,7 @@ describe("Instance API", () => {
         ownerId: owner.id,
         name: "shared-agent",
         exposure: "private",
-        allowedUsers: [String(viewer.id)],
+        allowedPrincipals: [{ kind: "user", id: String(viewer.id) }],
         status: "online",
       });
 
@@ -653,7 +653,7 @@ describe("Instance API", () => {
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
       expect(body.instances).toHaveLength(1);
-      expect(body.instances[0].agentName).toBe("shared-agent");
+      expect(body.instances[0].principalName).toBe("shared-agent");
       expect(body.instances[0].status).toBe("online");
     });
 
@@ -667,7 +667,7 @@ describe("Instance API", () => {
     });
   });
 
-  describe("GET /v1/public/agents/:owner/:agentName", () => {
+  describe("GET /v1/public/agents/:owner/:principalName", () => {
     it("should return public instance page data", async () => {
       const app = await buildTestApp({ testDb });
       const user = await createUser(testDb.client, {
@@ -716,7 +716,7 @@ describe("Instance API", () => {
     });
   });
 
-  describe("POST /v1/public/agents/:owner/:agentName/chat", () => {
+  describe("POST /v1/public/agents/:owner/:principalName/chat", () => {
     it("should proxy chat for public agent", async () => {
       const app = await buildTestApp({ testDb });
       const user = await createUser(testDb.client, { namespace: "alice" });
