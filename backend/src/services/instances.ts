@@ -608,7 +608,7 @@ export class InstanceService {
   async resolvePrincipalTarget(
     spec: import("@pekohub/shared").TargetSpec,
     caller: CallerSubject,
-  ): Promise<AgentTargetResolutionResult> {
+  ): Promise<PrincipalTargetResolutionResult> {
     const instance =
       spec.kind === "by-did"
         ? await this.getByDid(spec.did)
@@ -630,7 +630,7 @@ export class InstanceService {
       }
     }
 
-    const owner = resolveOwnerPrincipal(instance);
+    const owner = resolveOwnerSubject(instance);
     // An ownerless row is the same as a miss for access purposes —
     // there's no principal to grant access, and a public exposure
     // would have been handled in `canAccess` at the call site if
@@ -729,7 +729,7 @@ export class InstanceService {
     const c = normalizeCaller(caller);
     if (c === null) return false;
 
-    const owner = resolveOwnerPrincipal(instance);
+    const owner = resolveOwnerSubject(instance);
     if (owner && (await subjectCanAccess(owner, c))) return true;
 
     return principalInAllowList(instance, c);
@@ -755,7 +755,7 @@ export class InstanceService {
     const c = normalizeCaller(caller);
     if (c === null) return false;
 
-    const owner = resolveOwnerPrincipal(instance);
+    const owner = resolveOwnerSubject(instance);
     if (owner && (await subjectCanAccess(owner, c))) return true;
 
     return principalInAllowList(instance, c);
@@ -772,7 +772,7 @@ export class InstanceService {
     instance: InstanceRecord,
     caller: CallerSubject | number | null,
   ): Promise<boolean> {
-    const owner = resolveOwnerPrincipal(instance);
+    const owner = resolveOwnerSubject(instance);
     if (owner === null) return false;
     const c = normalizeCaller(caller);
     if (c === null) return false;
@@ -803,7 +803,7 @@ export class InstanceService {
       // `subjectCanAccess` — where `null === null` would silently
       // grant access. A malformed owner drops to `null` (which makes
       // the row ownerless and triggers the legacy `ownerId`
-      // backfill in `resolveOwnerPrincipal`). A malformed allow-list
+      // backfill in `resolveOwnerSubject`). A malformed allow-list
       // entry is filtered out of `allowedPrincipals`.
       ownerSubject: parseSubjectJsonb(row.ownerSubject),
       runtimeId: row.runtimeId,

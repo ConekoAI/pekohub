@@ -5,7 +5,7 @@
 import type { FastifyReply } from "fastify";
 import type { TunnelManager } from "./tunnel-manager.js";
 import type { HttpProxiedRequest, TunnelMessage } from "./tunnel-protocol.js";
-import { subjectToString, type Principal } from "@pekohub/shared";
+import { subjectToString, type Subject } from "@pekohub/shared";
 
 /**
  * Build the bridge headers for a proxied request. Issue #11: the hub
@@ -13,7 +13,7 @@ import { subjectToString, type Principal } from "@pekohub/shared";
  *
  * - User callers get the legacy `x-pekohub-user-id` header (preserves
  *   the pre-#11 runtime's caller-resolution path).
- * - Agent / Team / Public callers get `x-pekohub-caller-principal`
+ * - Subject-kind callers (Principal only post-#82) get `x-pekohub-caller-principal`
  *   (the runtime-side reader is gated on peko-runtime#16). The
  *   legacy user-id header is omitted for non-User callers so the
  *   runtime's `resolve_bridge_caller` doesn't attribute an Agent
@@ -21,7 +21,7 @@ import { subjectToString, type Principal } from "@pekohub/shared";
  */
 function bridgeHeadersFor(
   base: Record<string, string>,
-  caller: Principal | null,
+  caller: Subject | null,
 ): Record<string, string> {
   if (caller === null) return base;
   if (caller.kind === "user") {
@@ -40,7 +40,7 @@ export class TunnelRouter {
     body: unknown,
     headers: Record<string, string>,
     reply: FastifyReply,
-    caller: Principal | null = null,
+    caller: Subject | null = null,
   ): Promise<void> {
     // Fail fast if runtime is not connected
     if (!this.tunnelManager.isRuntimeConnected(runtimeId)) {
@@ -95,7 +95,7 @@ export class TunnelRouter {
     body: unknown,
     headers: Record<string, string>,
     reply: FastifyReply,
-    caller: Principal | null = null,
+    caller: Subject | null = null,
   ): Promise<void> {
     // Fail fast if runtime is not connected
     if (!this.tunnelManager.isRuntimeConnected(runtimeId)) {

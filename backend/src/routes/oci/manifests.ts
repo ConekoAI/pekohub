@@ -251,15 +251,23 @@ export default async function manifestRoutes(fastify: FastifyInstance) {
     }
 
     if (!bundle) {
+      // ADR-041: only `principal` and `extension` are valid bundle
+      // types post-#82. The runtime emits `principal` for the
+      // .principal package format; older `agent`/`team` annotations
+      // return 410 (handled below).
+      const bundleType =
+        (annotations["dev.pekohub.bundleType"] as string) ?? "principal";
+      if (bundleType !== "principal" && bundleType !== "extension") {
+        return reply
+          .status(410)
+          .send({ error: `Bundle type '${bundleType}' is no longer supported. Use 'principal' or 'extension'.` });
+      }
       const [inserted] = await db
         .insert(bundles)
         .values({
           namespace,
           name,
-          bundleType: (annotations["dev.pekohub.bundleType"] ?? "agent") as
-            | "agent"
-            | "team"
-            | "extension",
+          bundleType: bundleType as "principal" | "extension",
           extensionType: annotations["dev.pekohub.extensionType"] as any,
           description:
             annotations["org.opencontainers.image.description"] ?? null,

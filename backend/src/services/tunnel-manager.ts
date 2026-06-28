@@ -22,11 +22,11 @@ import { verifyDidKeySignature, TunnelAuthError } from "./tunnel-crypto.js";
 import {
   instanceService,
   subjectCanAccess,
-  resolveOwnerPrincipal,
+  resolveOwnerSubject,
   type InstanceStatus,
 } from "./instances.js";
 import { metrics, CounterName } from "./metrics.js";
-import type { Principal } from "@pekohub/shared";
+import type { Subject } from "@pekohub/shared";
 import { db } from "../db/index.js";
 import { runtimes, instances } from "../db/schema.js";
 import { eq, inArray, and } from "drizzle-orm";
@@ -488,12 +488,12 @@ export class TunnelManager {
         break;
       }
 
-      case "agent_to_agent_request": {
+      case "principal_to_principal_request": {
         await this.handleAgentToAgentRequest(conn, msg);
         break;
       }
 
-      case "agent_to_agent_response": {
+      case "principal_to_principal_response": {
         this.handleAgentToAgentResponse(conn, msg);
         break;
       }
@@ -670,7 +670,6 @@ export class TunnelManager {
         status: payload.status,
         exposure: payload.exposure,
         allowedPrincipals: payload.allowedPrincipals,
-        allowedPrincipals: payload.allowedPrincipals,
         capabilities: payload.capabilities,
         metadata: payload.metadata,
         // Issue #14: per-agent DID. Pre-#34 runtimes omit the field;
@@ -752,7 +751,7 @@ export class TunnelManager {
   }
 
   /**
-   * Synthesize and send an `agent_to_agent_response` carrying a JSON
+   * Synthesize and send an `principal_to_principal_response` carrying a JSON
    * `{ kind: "error", code, message }` payload. The runtime decodes it
    * and surfaces the error to the `a2a_send` caller.
    */
@@ -765,7 +764,7 @@ export class TunnelManager {
     if (socket.readyState !== socket.OPEN) return;
     const payload = JSON.stringify({ kind: "error", code, message });
     this.sendMessage(socket, {
-      type: "agent_to_agent_response",
+      type: "principal_to_principal_response",
       requestId,
       payload,
     });
@@ -773,7 +772,7 @@ export class TunnelManager {
 
   private async handleAgentToAgentRequest(
     conn: RuntimeConnection,
-    req: Extract<TunnelMessage, { type: "agent_to_agent_request" }>,
+    req: Extract<TunnelMessage, { type: "principal_to_principal_request" }>,
   ): Promise<void> {
     // 1. Source allowlist — the receiving tunnel's authenticated
     //    `runtimeId` must match the envelope's claim. Otherwise a
@@ -799,13 +798,13 @@ export class TunnelManager {
     // 2. Target lookup — resolve the target agent DID to a host
     //    runtime via the directory API (#14). 404-ish: synthesize a
     //    structured error response so the runtime doesn't hang.
-    const target = await instanceService.getByDid(req.targetAgentDid);
+    const target = await instanceService.getByDid(req.targetPrincipalDid);
     if (!target) {
       metrics.inc(CounterName.HubA2ATargetMissing);
       this.fastify.log.warn(
         {
           callerRuntime: conn.runtimeId,
-          targetAgentDid: req.targetAgentDid,
+          targetPrincipalDid: req.targetPrincipalDid,
           requestId: req.requestId,
         },
         "a2a target not found",
@@ -814,7 +813,7 @@ export class TunnelManager {
         conn.socket,
         req.requestId,
         "target_not_found",
-        `No instance with principal_did ${req.targetAgentDid}`,
+        `No instance with principal_did ${req.targetPrincipalDid}`,
       );
       return;
     }
@@ -825,7 +824,7 @@ export class TunnelManager {
     //    exposure short-circuits the ACL — matches `resolvePrincipalTarget`
     //    in `instances.ts`. The caller is presented as an Agent-kind
     //    principal carrying its DID.
-    const owner = resolveOwnerPrincipal(target);
+    const owner = resolveOwnerSubject(target);
     if (owner === null) {
       // Ownerless row — treat as missing for ACL purposes.
       metrics.inc(CounterName.HubA2ATargetMissing);
@@ -837,7 +836,7 @@ export class TunnelManager {
       );
       return;
     }
-    const callerAgent: Principal = { kind: "principal", id: req.callerAgentDid };
+    const callerAgent: Subject = { kind: "principal", id: req.callerPrincipalDid };
     if (
       target.exposure !== "public" &&
       !(await subjectCanAccess(owner, callerAgent))
@@ -846,7 +845,7 @@ export class TunnelManager {
       this.fastify.log.warn(
         {
           callerRuntime: conn.runtimeId,
-          callerAgentDid: req.callerAgentDid,
+          callerPrincipalDid: req.callerPrincipalDid,
           targetOwner: owner,
           requestId: req.requestId,
         },
@@ -856,7 +855,7 @@ export class TunnelManager {
         conn.socket,
         req.requestId,
         "forbidden",
-        `Caller ${req.callerAgentDid} not allowed to reach target`,
+        `Caller ${req.callerPrincipalDid} not allowed to reach target`,
       );
       return;
     }
@@ -923,7 +922,7 @@ export class TunnelManager {
 
   private handleAgentToAgentResponse(
     _conn: RuntimeConnection,
-    resp: Extract<TunnelMessage, { type: "agent_to_agent_response" }>,
+    resp: Extract<TunnelMessage, { type: "principal_to_principal_response" }>,
   ): void {
     const entry = this.a2aInFlight.get(resp.requestId);
     if (!entry) {

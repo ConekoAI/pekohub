@@ -59,7 +59,7 @@ async function extractCallerSubject(
 
 const ListQuerySchema = z.object({
   status: z.enum(["online", "offline", "busy", "error"]).optional(),
-  type: z.enum(["agent", "team"]).optional(),
+  type: z.enum(["principal"]).optional(),
   runtime_id: z.string().optional(),
   page: z.coerce.number().min(1).default(1),
   per_page: z.coerce.number().min(1).max(100).default(20),
@@ -67,14 +67,22 @@ const ListQuerySchema = z.object({
 
 const CreateBodySchema = z.object({
   id: z.string().uuid().optional(),
-  type: z.enum(["agent", "team"]),
+  type: z.enum(["principal"]),
   name: z.string().min(1).max(255),
   runtime_id: z.string().min(1).max(255),
   runtime_display_name: z.string().max(255).optional(),
   bundle_ref: z.string().max(255).optional(),
   status: z.enum(["online", "offline", "busy", "error"]).optional(),
   exposure: z.enum(["private", "public", "unexposed"]).optional(),
-  allowed_principals: z.array(z.string()).optional(),
+  allowedPrincipals: z
+    .array(
+      z.discriminatedUnion("kind", [
+        z.object({ kind: z.literal("user"), id: z.string() }),
+        z.object({ kind: z.literal("principal"), id: z.string() }),
+        z.object({ kind: z.literal("public") }),
+      ]),
+    )
+    .optional(),
   capabilities: z.array(z.string()).optional(),
   metadata: z.record(z.unknown()).optional(),
 
@@ -104,7 +112,15 @@ const UpdateBodySchema = z.object({
   runtime_display_name: z.string().max(255).optional(),
   status: z.enum(["online", "offline", "busy", "error"]).optional(),
   exposure: z.enum(["private", "public", "unexposed"]).optional(),
-  allowed_principals: z.array(z.string()).optional(),
+  allowedPrincipals: z
+    .array(
+      z.discriminatedUnion("kind", [
+        z.object({ kind: z.literal("user"), id: z.string() }),
+        z.object({ kind: z.literal("principal"), id: z.string() }),
+        z.object({ kind: z.literal("public") }),
+      ]),
+    )
+    .optional(),
   metadata: z.record(z.unknown()).optional(),
 
   // Public profile
@@ -130,7 +146,15 @@ const UpdateBodySchema = z.object({
 
 const UpdateExposureBodySchema = z.object({
   exposure: z.enum(["private", "public", "unexposed"]),
-  allowed_principals: z.array(z.string()).optional(),
+  allowedPrincipals: z
+    .array(
+      z.discriminatedUnion("kind", [
+        z.object({ kind: z.literal("user"), id: z.string() }),
+        z.object({ kind: z.literal("principal"), id: z.string() }),
+        z.object({ kind: z.literal("public") }),
+      ]),
+    )
+    .optional(),
   public_profile: z
     .object({
       public_name: z.string().min(1).max(255),
@@ -226,11 +250,10 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       caller !== null && (await instanceService.isOwner(instance, caller));
     if (!isOwner) {
       // Redact owner-only fields from the public-facing record.
-      // ownerSubject is the typed principal (sensitive — leaks the
-      // owner's identity) so it joins the redaction list. allowedPrincipals
-      // and allowedPrincipals expose the allow-list (also sensitive).
+      // ownerSubject is the typed subject (sensitive — leaks the
+      // owner's identity) so it joins the redaction list.
+      // allowedPrincipals exposes the allow-list (also sensitive).
       const {
-        allowedPrincipals,
         allowedPrincipals,
         ownerSubject,
         runtimeId,
@@ -268,7 +291,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         bundleRef: body.data.bundle_ref,
         status: body.data.status,
         exposure: body.data.exposure,
-        allowedPrincipals: body.data.allowed_principals,
+        allowedPrincipals: body.data.allowedPrincipals,
         capabilities: body.data.capabilities,
         metadata: body.data.metadata,
         publicName: body.data.public_name,
@@ -343,7 +366,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         runtimeDisplayName: body.data.runtime_display_name,
         status: body.data.status,
         exposure: body.data.exposure,
-        allowedPrincipals: body.data.allowed_principals,
+        allowedPrincipals: body.data.allowedPrincipals,
         metadata: body.data.metadata,
         publicName: body.data.public_name,
         description: body.data.description,
@@ -420,7 +443,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           });
       }
 
-      const { exposure, allowed_principals, public_profile } = body.data;
+      const { exposure, allowedPrincipals, public_profile } = body.data;
       const from = instance.exposure;
 
       // Validate transition
@@ -440,8 +463,8 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       const updateInput: Parameters<typeof instanceService.update>[1] = {
         exposure,
       };
-      if (exposure === "private" && allowed_principals !== undefined) {
-        updateInput.allowedPrincipals = allowed_principals;
+      if (exposure === "private" && allowedPrincipals !== undefined) {
+        updateInput.allowedPrincipals = allowedPrincipals;
       }
       if (exposure === "public" && public_profile) {
         updateInput.publicName = public_profile.public_name;
@@ -504,7 +527,6 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           payload: {
             instanceId: id,
             exposure,
-            allowedUserIds: allowed_principals,
             allowedPrincipals: updated!.allowedPrincipals,
           },
         });
