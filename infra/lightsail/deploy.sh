@@ -187,12 +187,15 @@ maybe_recreate_db_volume() {
 
 # ─── 5. Bring up the full stack ───────────────────────────────
 # No `--no-deps` — compose gates startup ordering via healthchecks.
-# The stop/rm-backend workaround from the old inline script is no
-# longer needed because backend + meilisearch now have healthchecks
-# and nginx depends on backend being healthy.
+# `--force-recreate` recreates the containers even if their
+# configuration hasn't changed. This works around a known
+# docker-compose v1 bug where `up` against an existing stack
+# whose compose file has changed (e.g. healthcheck added) errors
+# with "ContainerConfig". Volumes are preserved — only the
+# containers are recreated, so DB / Meilisearch data is intact.
 compose_up() {
-  log "Bringing up services (healthcheck-gated)..."
-  (cd "$APP_DIR" && docker-compose -f "$COMPOSE_FILE" up -d)
+  log "Bringing up services (healthcheck-gated, force-recreate for compose v1)..."
+  (cd "$APP_DIR" && docker-compose -f "$COMPOSE_FILE" up -d --force-recreate)
 }
 
 # ─── 6. Run database migrations ───────────────────────────────
