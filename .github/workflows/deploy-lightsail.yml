@@ -3,21 +3,23 @@ name: Deploy Backend to Lightsail
 # Deploys backend to AWS Lightsail via SSH + docker-compose.
 # Triggered only on pushes to master that touch backend code.
 #
-# ── Opt-in: [lightsail] keyword ───────────────────────────────
-# This workflow is skipped on everyday pushes. To trigger a deploy,
-# include the literal string `[lightsail]` (square brackets included)
-# anywhere in the *headline* commit message:
+# ── Opt-in: [lightsail] keyword OR workflow_dispatch ─────────
+# Two ways to trigger a deploy:
 #
-#   git commit -m "feat(api): add bundle stats endpoint [lightsail]"
-#   git commit -m "fix(db): widen api_keys.prefix [lightsail]"
-#   # Or for an empty / trigger commit:
-#   git commit --allow-empty -m "chore: redeploy [lightsail]"
+#   1. Push with `[lightsail]` in the commit subject — for normal
+#      deploys that ride along with a code change:
+#        git commit -m "feat(api): add endpoint [lightsail]"
+#
+#   2. workflow_dispatch (Actions UI "Run workflow" button, or
+#      `gh workflow run deploy-lightsail.yml --ref master`) —
+#      for one-off redeploys, recovery, or the "I just want to
+#      redeploy the current master" case. No commit required, no
+#      keyword required. The dispatch IS the explicit opt-in.
 #
 # For PR merges, add `[lightsail]` to the merge / squash commit
-# message in the GitHub UI before clicking "Merge". The keyword is
-# checked against the commit at HEAD on the runner after the
-# `actions/checkout` step. If the keyword is absent, the deploy
-# step is skipped (not failed) with a clear notice.
+# message in the GitHub UI before clicking "Merge". If the keyword
+# is absent from a push, the deploy step is skipped (not failed)
+# with a clear notice.
 #
 # ── Architecture ──────────────────────────────────────────────
 # The deploy logic lives in `infra/lightsail/deploy.sh` so it is
@@ -56,6 +58,12 @@ on:
       - 'infra/lightsail/**'
       - '.github/workflows/deploy-lightsail.yml'
       - 'pnpm-lock.yaml'
+  # Manual trigger: Actions UI "Run workflow" button, or
+  #   gh workflow run deploy-lightsail.yml --ref master
+  # Bypasses the [lightsail] keyword check — the dispatch itself
+  # is the explicit opt-in. Useful for one-off redeploys and
+  # recovery without a code change.
+  workflow_dispatch:
 
 jobs:
   test:
@@ -110,11 +118,21 @@ jobs:
       - name: Check for [lightsail] keyword in commit message
         id: check-keyword
         run: |
-          # Check the *subject* (first line) only, not the full body.
-          # Merge commits put the PR description in the body, which
-          # may legitimately contain the literal text "[lightsail]"
-          # (e.g. quoting the deploy convention in a docs PR). The
-          # opt-in lives in the subject by convention:
+          # On a workflow_dispatch event there is no commit to check
+          # — the dispatch itself is the explicit opt-in. Always
+          # deploy in that case.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "::notice::Triggered via workflow_dispatch — proceeding with deploy."
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Push event: check the *subject* (first line) only, not
+          # the full body. Merge commits put the PR description in
+          # the body, which may legitimately contain the literal
+          # text "[lightsail]" (e.g. quoting the deploy convention
+          # in a docs PR). The opt-in lives in the subject by
+          # convention:
           #   git commit -m "fix(db): widen prefix [lightsail]"
           subject=$(git log -1 --pretty=%s HEAD)
           echo "Commit subject: $subject"
@@ -123,7 +141,7 @@ jobs:
             echo "should_deploy=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::No [lightsail] in commit subject — skipping deploy."
-            echo "To trigger a deploy, include [lightsail] in the commit subject."
+            echo "To trigger a deploy, include [lightsail] in the commit subject, or use 'Run workflow' from the Actions UI."
             echo "should_deploy=false" >> "$GITHUB_OUTPUT"
           fi
 
