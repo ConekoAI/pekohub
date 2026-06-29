@@ -111,9 +111,18 @@ write_env_file() {
   # Required vars — fail loudly if any are missing. Listing them
   # here (rather than reading them silently) means a missing secret
   # surfaces as a deploy error, not a runtime 500.
+  #
+  # The .env file uses the `GITHUB_*` prefix to match
+  # docker-compose.lightsail.yml and the backend's process.env
+  # references; the GitHub Actions secret is named `GH_*` (without
+  # the GITHUB_ prefix) because Actions reserves the GITHUB_ namespace.
+  # The deploy workflow's heredoc does the translation:
+  #   GITHUB_CLIENT_ID=${{ secrets.GH_CLIENT_ID }}
+  # so when this script sources .env, the shell var is
+  # GITHUB_CLIENT_ID — which is what we check for here.
   local required=(
     POSTGRES_PASSWORD MEILISEARCH_API_KEY JWT_SECRET
-    GH_CLIENT_ID GH_CLIENT_SECRET
+    GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET
     REGISTRY_BASE_URL
     R2_ENDPOINT R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET
   )
