@@ -186,16 +186,21 @@ maybe_recreate_db_volume() {
 }
 
 # ─── 5. Bring up the full stack ───────────────────────────────
-# No `--no-deps` — compose gates startup ordering via healthchecks.
-# `--force-recreate` recreates the containers even if their
-# configuration hasn't changed. This works around a known
-# docker-compose v1 bug where `up` against an existing stack
-# whose compose file has changed (e.g. healthcheck added) errors
-# with "ContainerConfig". Volumes are preserved — only the
-# containers are recreated, so DB / Meilisearch data is intact.
+# The canonical compose-v1 workaround for the "ContainerConfig"
+# error is `docker-compose down` followed by `up -d`. `down`
+# stops running containers, removes containers and the default
+# network, but does NOT remove volumes — DB and Meilisearch data
+# survive. Then `up -d` brings everything up fresh from the
+# current compose file. Compose gates startup ordering via
+# healthchecks (no `--no-deps`).
+#
+# The `|| true` on `down` makes this safe on a fresh instance
+# where there are no containers to remove.
 compose_up() {
-  log "Bringing up services (healthcheck-gated, force-recreate for compose v1)..."
-  (cd "$APP_DIR" && docker-compose -f "$COMPOSE_FILE" up -d --force-recreate)
+  log "Bringing down existing containers (compose-v1 ContainerConfig workaround)..."
+  (cd "$APP_DIR" && docker-compose -f "$COMPOSE_FILE" down) || true
+  log "Bringing up services (healthcheck-gated)..."
+  (cd "$APP_DIR" && docker-compose -f "$COMPOSE_FILE" up -d)
 }
 
 # ─── 6. Run database migrations ───────────────────────────────
