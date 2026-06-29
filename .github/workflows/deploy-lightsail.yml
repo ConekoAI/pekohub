@@ -1,7 +1,31 @@
 name: Deploy Backend to Lightsail
 
-# Deploys backend to AWS Lightsail via SSH + docker-compose
-# Triggered only on pushes to master that touch backend code
+# Deploys backend to AWS Lightsail via SSH + docker-compose.
+# Triggered only on pushes to master that touch backend code.
+#
+# ── Opt-in: [lightsail] keyword ───────────────────────────────
+# This workflow is skipped on everyday pushes. To trigger a deploy,
+# include the literal string `[lightsail]` (square brackets included)
+# anywhere in the *headline* commit message:
+#
+#   git commit -m "feat(api): add bundle stats endpoint [lightsail]"
+#   git commit -m "fix(db): widen api_keys.prefix [lightsail]"
+#   # Or for an empty / trigger commit:
+#   git commit --allow-empty -m "chore: redeploy [lightsail]"
+#
+# For PR merges, add `[lightsail]` to the merge / squash commit
+# message in the GitHub UI before clicking "Merge". The keyword is
+# checked against the commit at HEAD on the runner after the
+# `actions/checkout` step. If the keyword is absent, the deploy
+# step is skipped (not failed) with a clear notice.
+#
+# ── Architecture ──────────────────────────────────────────────
+# The deploy logic lives in `infra/lightsail/deploy.sh` so it is
+# versioned with the code, not duplicated as an inlined bash heredoc.
+# This workflow is a thin wrapper: it syncs the repo to HEAD on the
+# remote, then runs the script. The script is fully idempotent —
+# it handles fresh instances, patch updates, and re-runs after a
+# failed deploy (see file header in deploy.sh for the contract).
 #
 # Required GitHub Secrets:
 #   LIGHTSAIL_HOST          - Static IP of your Lightsail instance
@@ -32,9 +56,6 @@ on:
       - 'infra/lightsail/**'
       - '.github/workflows/deploy-lightsail.yml'
       - 'pnpm-lock.yaml'
-
-env:
-  COMPOSE_FILE: docker-compose.lightsail.yml
 
 jobs:
   test:
@@ -80,99 +101,66 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Need at least one commit's message to scan for the
+          # [lightsail] keyword. fetch-depth: 1 keeps the checkout
+          # fast — we only look at HEAD.
+          fetch-depth: 1
+
+      - name: Check for [lightsail] keyword in commit message
+        id: check-keyword
+        run: |
+          msg=$(git log -1 --pretty=%B HEAD)
+          echo "Headline commit message:"
+          echo "----------------------------------------"
+          echo "$msg"
+          echo "----------------------------------------"
+          if echo "$msg" | grep -qF '[lightsail]'; then
+            echo "::notice::Found [lightsail] keyword — proceeding with deploy."
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::No [lightsail] keyword in commit message — skipping deploy."
+            echo "To trigger a deploy, include [lightsail] in the commit message."
+            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Deploy via SSH
+        if: steps.check-keyword.outputs.should_deploy == 'true'
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.LIGHTSAIL_HOST }}
           username: ${{ secrets.LIGHTSAIL_USER }}
           key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
           script_stop: true
+          # Secrets are passed as env vars to the remote shell. The
+          # deploy script reads them and writes them to .env on the
+          # host. No shell interpolation from YAML → no injection risk
+          # from a malformed secret.
+          envs: >-
+            POSTGRES_PASSWORD,MEILISEARCH_API_KEY,JWT_SECRET,
+            GH_CLIENT_ID,GH_CLIENT_SECRET,
+            GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET,
+            REGISTRY_BASE_URL,
+            R2_ENDPOINT,R2_ACCESS_KEY_ID,R2_SECRET_ACCESS_KEY,R2_BUCKET
           script: |
             set -euo pipefail
+            APP_DIR="${APP_DIR:-$HOME/pekohub}"
 
-            APP_DIR="$HOME/pekohub"
-            COMPOSE_FILE="docker-compose.lightsail.yml"
-
-            echo "=== PekoHub Deploy Started ==="
-            echo "Time: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-
-            # Ensure repo is cloned
             if [ ! -d "$APP_DIR/.git" ]; then
-              echo "Cloning repository..."
-              git clone https://github.com/ConekoAI/pekohub.git "$APP_DIR"
+              echo "Cloning repository (first deploy on this host)..."
+              git clone --branch master https://github.com/ConekoAI/pekohub.git "$APP_DIR"
             fi
 
             cd "$APP_DIR"
-
-            # Pull latest code
-            echo "Pulling latest code..."
+            echo "Syncing to origin/master..."
             git fetch origin
             git reset --hard origin/master
 
-            # Write environment file
-            echo "Writing environment config..."
-            cat > .env <<EOF
-            POSTGRES_USER=pekohub
-            POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
-            POSTGRES_DB=pekohub
-            MEILISEARCH_API_KEY=${{ secrets.MEILISEARCH_API_KEY }}
-            JWT_SECRET=${{ secrets.JWT_SECRET }}
-            GITHUB_CLIENT_ID=${{ secrets.GH_CLIENT_ID }}
-            GITHUB_CLIENT_SECRET=${{ secrets.GH_CLIENT_SECRET }}
-            GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
-            GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
-            REGISTRY_BASE_URL=${{ secrets.REGISTRY_BASE_URL }}
-            S3_ENDPOINT=${{ secrets.R2_ENDPOINT }}
-            S3_REGION=auto
-            S3_ACCESS_KEY=${{ secrets.R2_ACCESS_KEY_ID }}
-            S3_SECRET_KEY=${{ secrets.R2_SECRET_ACCESS_KEY }}
-            S3_BUCKET=${{ secrets.R2_BUCKET }}
-            S3_FORCE_PATH_STYLE=false
-            RATE_LIMIT_MAX=1000
-            RATE_LIMIT_WINDOW_MS=60000
-            GC_ENABLED=true
-            GC_INTERVAL_MS=86400000
-            GC_RETENTION_DAYS=7
-            GC_BATCH_SIZE=1000
-            EOF
-
-            # Build and restart services
-            echo "Building and restarting services..."
-            docker-compose -f "$COMPOSE_FILE" pull
-            # Stop backend before rebuild to avoid ContainerConfig bug in docker-compose v1
-            docker-compose -f "$COMPOSE_FILE" stop backend || true
-            docker-compose -f "$COMPOSE_FILE" rm -f backend || true
-            docker-compose -f "$COMPOSE_FILE" up -d --build --no-deps backend
-
-            # Restart nginx to pick up config changes (e.g. route prefix changes)
-            echo "Reloading nginx..."
-            docker-compose -f "$COMPOSE_FILE" restart nginx
-
-            # Run database migrations
-            echo "Running database migrations..."
-            docker-compose -f "$COMPOSE_FILE" exec -T backend npx drizzle-kit migrate --config=drizzle.config.ts
-
-            # Cleanup old images
-            echo "Cleaning up old Docker images..."
-            docker image prune -af --filter "until=168h" || true
-
-            # Health check
-            echo "Waiting for services to start..."
-            sleep 15
-
-            echo "Running health checks..."
-            curl -sf http://localhost:3000/health || {
-              echo "ERROR: Backend health check failed"
-              docker-compose -f "$COMPOSE_FILE" logs --tail=50 backend
-              exit 1
-            }
-
-            echo "=== PekoHub Deploy Complete ==="
-            echo "Backend: ${{ secrets.REGISTRY_BASE_URL }}"
-            echo "API Docs: ${{ secrets.REGISTRY_BASE_URL }}/docs"
+            echo "Running deploy.sh..."
+            bash infra/lightsail/deploy.sh
 
       - name: Verify public endpoint
+        if: steps.check-keyword.outputs.should_deploy == 'true'
         run: |
           echo "Checking public health endpoint..."
           curl -sf ${{ secrets.REGISTRY_BASE_URL }}/health || {
