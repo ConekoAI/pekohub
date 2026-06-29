@@ -110,17 +110,20 @@ jobs:
       - name: Check for [lightsail] keyword in commit message
         id: check-keyword
         run: |
-          msg=$(git log -1 --pretty=%B HEAD)
-          echo "Headline commit message:"
-          echo "----------------------------------------"
-          echo "$msg"
-          echo "----------------------------------------"
-          if echo "$msg" | grep -qF '[lightsail]'; then
-            echo "::notice::Found [lightsail] keyword — proceeding with deploy."
+          # Check the *subject* (first line) only, not the full body.
+          # Merge commits put the PR description in the body, which
+          # may legitimately contain the literal text "[lightsail]"
+          # (e.g. quoting the deploy convention in a docs PR). The
+          # opt-in lives in the subject by convention:
+          #   git commit -m "fix(db): widen prefix [lightsail]"
+          subject=$(git log -1 --pretty=%s HEAD)
+          echo "Commit subject: $subject"
+          if echo "$subject" | grep -qF '[lightsail]'; then
+            echo "::notice::Found [lightsail] in commit subject — proceeding with deploy."
             echo "should_deploy=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::notice::No [lightsail] keyword in commit message — skipping deploy."
-            echo "To trigger a deploy, include [lightsail] in the commit message."
+            echo "::notice::No [lightsail] in commit subject — skipping deploy."
+            echo "To trigger a deploy, include [lightsail] in the commit subject."
             echo "should_deploy=false" >> "$GITHUB_OUTPUT"
           fi
 
@@ -132,16 +135,6 @@ jobs:
           username: ${{ secrets.LIGHTSAIL_USER }}
           key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
           script_stop: true
-          # Secrets are passed as env vars to the remote shell. The
-          # deploy script reads them and writes them to .env on the
-          # host. No shell interpolation from YAML → no injection risk
-          # from a malformed secret.
-          envs: >-
-            POSTGRES_PASSWORD,MEILISEARCH_API_KEY,JWT_SECRET,
-            GH_CLIENT_ID,GH_CLIENT_SECRET,
-            GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET,
-            REGISTRY_BASE_URL,
-            R2_ENDPOINT,R2_ACCESS_KEY_ID,R2_SECRET_ACCESS_KEY,R2_BUCKET
           script: |
             set -euo pipefail
             APP_DIR="${APP_DIR:-$HOME/pekohub}"
@@ -155,6 +148,46 @@ jobs:
             echo "Syncing to origin/master..."
             git fetch origin
             git reset --hard origin/master
+
+            # Write .env from GitHub Secrets. We use a single-quoted
+            # heredoc so the remote shell does NOT expand $ or
+            # backticks inside secret values — only the YAML-level
+            # ${{ secrets.X }} interpolations are honored (those
+            # happen on the runner before SSH). The default Lightsail
+            # sshd does not AcceptEnv our custom var names, so we
+            # can't use appleboy/ssh-action's `envs:` field here.
+            cat > "$APP_DIR/.env" <<'ENVEOF'
+            POSTGRES_USER=pekohub
+            POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+            POSTGRES_DB=pekohub
+            MEILISEARCH_API_KEY=${{ secrets.MEILISEARCH_API_KEY }}
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            GITHUB_CLIENT_ID=${{ secrets.GH_CLIENT_ID }}
+            GITHUB_CLIENT_SECRET=${{ secrets.GH_CLIENT_SECRET }}
+            GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+            GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+            REGISTRY_BASE_URL=${{ secrets.REGISTRY_BASE_URL }}
+            S3_ENDPOINT=${{ secrets.R2_ENDPOINT }}
+            S3_REGION=auto
+            S3_ACCESS_KEY=${{ secrets.R2_ACCESS_KEY_ID }}
+            S3_SECRET_KEY=${{ secrets.R2_SECRET_ACCESS_KEY }}
+            S3_BUCKET=${{ secrets.R2_BUCKET }}
+            S3_FORCE_PATH_STYLE=false
+            RATE_LIMIT_MAX=1000
+            RATE_LIMIT_WINDOW_MS=60000
+            GC_ENABLED=true
+            GC_INTERVAL_MS=86400000
+            GC_RETENTION_DAYS=7
+            GC_BATCH_SIZE=1000
+            ENVEOF
+            chmod 600 "$APP_DIR/.env"
+
+            # Source .env so deploy.sh can read the values as
+            # $POSTGRES_PASSWORD etc.
+            set -a
+            # shellcheck disable=SC1091
+            . "$APP_DIR/.env"
+            set +a
 
             echo "Running deploy.sh..."
             bash infra/lightsail/deploy.sh

@@ -83,12 +83,28 @@ ensure_repo() {
 }
 
 # ─── 3. Write .env from caller-provided env vars ──────────────
-# The workflow is the source of truth for secrets. The file on disk
-# is derived state — always overwritten before `compose up` so a
-# stale .env from a previous deploy with different secrets can never
-# be picked up.
+# The GitHub Actions workflow is the source of truth for secrets —
+# it writes $APP_DIR/.env from ${{ secrets.* }} and sources it
+# into the shell before calling us. So in the workflow path,
+# POSTGRES_PASSWORD (and friends) are already set in the shell
+# and this function rewrites .env idempotently.
+#
+# In the standalone path (someone SSH'd in and ran deploy.sh
+# directly), the user has either already sourced .env or set
+# the env vars. If they haven't, we trust the existing .env
+# and skip the rewrite — re-running a deploy should not require
+# the user to paste secrets into their shell.
 write_env_file() {
   local env_path="$APP_DIR/.env"
+
+  if [ -z "${POSTGRES_PASSWORD:-}" ]; then
+    if [ -f "$env_path" ]; then
+      log "Required env vars not set in shell — trusting existing $env_path (skipping rewrite)."
+      return
+    fi
+    die "Required env vars are not set and $env_path does not exist. Source an existing .env or set POSTGRES_PASSWORD etc. before running deploy.sh."
+  fi
+
   log "Writing $env_path (chmod 600)..."
 
   # Required vars — fail loudly if any are missing. Listing them
