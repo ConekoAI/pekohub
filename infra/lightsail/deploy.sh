@@ -112,19 +112,28 @@ write_env_file() {
   # here (rather than reading them silently) means a missing secret
   # surfaces as a deploy error, not a runtime 500.
   #
-  # The .env file uses the `GITHUB_*` prefix to match
-  # docker-compose.lightsail.yml and the backend's process.env
-  # references; the GitHub Actions secret is named `GH_*` (without
-  # the GITHUB_ prefix) because Actions reserves the GITHUB_ namespace.
-  # The deploy workflow's heredoc does the translation:
-  #   GITHUB_CLIENT_ID=${{ secrets.GH_CLIENT_ID }}
-  # so when this script sources .env, the shell var is
-  # GITHUB_CLIENT_ID — which is what we check for here.
+  # The names below match what the deploy workflow's heredoc writes
+  # to .env (and therefore what ends up in the shell after the
+  # workflow's `set -a; . $APP_DIR/.env; set +a`):
+  #
+  #   - GITHUB_* prefix: matches docker-compose.lightsail.yml and
+  #     the backend's process.env references. The GitHub Actions
+  #     secret is `GH_*` (without GITHUB_) because Actions reserves
+  #     the GITHUB_ namespace. The workflow's heredoc translates:
+  #       GITHUB_CLIENT_ID=${{ secrets.GH_CLIENT_ID }}
+  #
+  #   - S3_* prefix: matches the backend's S3 client config. The
+  #     GitHub Actions secret is `R2_*` (Cloudflare R2, which is
+  #     S3-compatible). The workflow's heredoc translates:
+  #       S3_ENDPOINT=${{ secrets.R2_ENDPOINT }}
+  #       S3_ACCESS_KEY=${{ secrets.R2_ACCESS_KEY_ID }}
+  #       S3_SECRET_KEY=${{ secrets.R2_SECRET_ACCESS_KEY }}
+  #       S3_BUCKET=${{ secrets.R2_BUCKET }}
   local required=(
     POSTGRES_PASSWORD MEILISEARCH_API_KEY JWT_SECRET
     GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET
     REGISTRY_BASE_URL
-    R2_ENDPOINT R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET
+    S3_ENDPOINT S3_ACCESS_KEY S3_SECRET_KEY S3_BUCKET
   )
   for v in "${required[@]}"; do
     if [ -z "${!v:-}" ]; then
@@ -139,16 +148,16 @@ POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 POSTGRES_DB=pekohub
 MEILISEARCH_API_KEY=${MEILISEARCH_API_KEY}
 JWT_SECRET=${JWT_SECRET}
-GITHUB_CLIENT_ID=${GH_CLIENT_ID}
-GITHUB_CLIENT_SECRET=${GH_CLIENT_SECRET}
+GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
+GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
 GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
 GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
 REGISTRY_BASE_URL=${REGISTRY_BASE_URL}
-S3_ENDPOINT=${R2_ENDPOINT}
+S3_ENDPOINT=${S3_ENDPOINT}
 S3_REGION=auto
-S3_ACCESS_KEY=${R2_ACCESS_KEY_ID}
-S3_SECRET_KEY=${R2_SECRET_ACCESS_KEY}
-S3_BUCKET=${R2_BUCKET}
+S3_ACCESS_KEY=${S3_ACCESS_KEY}
+S3_SECRET_KEY=${S3_SECRET_KEY}
+S3_BUCKET=${S3_BUCKET}
 S3_FORCE_PATH_STYLE=false
 RATE_LIMIT_MAX=1000
 RATE_LIMIT_WINDOW_MS=60000
