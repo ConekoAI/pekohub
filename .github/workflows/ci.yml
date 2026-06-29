@@ -78,3 +78,56 @@ jobs:
       - name: Build
         working-directory: frontend
         run: pnpm build
+
+  # Fails if backend/src/db/schema.ts has drifted from the committed
+  # migrations in backend/drizzle/. The check is "would `drizzle-kit
+  # generate` produce a new file right now?" — the practical equivalent
+  # of `drizzle-kit check` (which doesn't exist as a subcommand).
+  # Run after the backend job so the shared package is built and
+  # drizzle-kit can read the schema correctly.
+  schema-drift:
+    name: Schema Drift Check
+    runs-on: ubuntu-latest
+    needs: backend
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Need the un-committed state of backend/drizzle to compare
+          # against what generate would produce.
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        run: pnpm --filter @pekohub/shared build
+
+      - name: Check for schema drift
+        run: |
+          # Run generate with a custom prefix so the output dir is
+          # clearly a CI artifact. If it produces any new file, schema
+          # has drifted from the committed migrations.
+          pnpm db:generate --name=__ci_drift_check
+          if [ -n "$(git status --porcelain backend/drizzle | grep '^??')" ]; then
+            echo "::error::drizzle-kit generate produced new migration files. Run 'pnpm db:generate' locally and commit the result."
+            echo "::group::New / untracked files in backend/drizzle/"
+            git status --porcelain backend/drizzle
+            echo "::endgroup::"
+            exit 1
+          fi
+          echo "No schema drift detected."
