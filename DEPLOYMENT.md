@@ -138,6 +138,16 @@ AWS Lightsail ($5-10/mo)
 
 ### 3.2 Run Setup Script
 
+> **Optional since the deploy workflow is now self-bootstrapping.**
+> The deploy workflow (`infra/lightsail/deploy.sh`, called from
+> `.github/workflows/deploy-lightsail.yml`) will install Docker,
+> Node.js, pnpm, swap, and the backup cron on the first run if
+> they're missing — every step is guarded so it's safe to re-run.
+>
+> You only need to run `setup-instance.sh` manually if you want to
+> prep the instance ahead of time, or if you're SSH-debugging a
+> failed deploy.
+
 SSH into your instance and run the one-time setup:
 
 ```bash
@@ -150,9 +160,14 @@ exit
 ssh -i ~/.ssh/lightsail-key.pem ubuntu@YOUR_STATIC_IP
 ```
 
-This installs Docker, Node.js, pnpm, adds swap (prevents OOM), and sets up automated database backups.
+This installs Docker, Node.js, pnpm, adds swap (prevents OOM), and sets up automated database backups. The script is idempotent — re-running it is safe.
 
 ### 3.3 Clone Repo
+
+> **Also optional.** The deploy workflow will clone the repo on
+> the first run if `$HOME/pekohub/.git` doesn't exist. The manual
+> `git clone` below is only needed if you want to inspect the
+> code on the host before triggering a deploy.
 
 ```bash
 cd ~ && git clone https://github.com/ConekoAI/pekohub.git
@@ -249,21 +264,68 @@ S3_FORCE_PATH_STYLE=false
 
 ### 6.2 Trigger Deploy
 
+> **Opt-in via `[lightsail]` keyword.** The deploy workflow is
+> **skipped on everyday pushes**. To trigger a deploy, include
+> the literal string `[lightsail]` (square brackets included)
+> anywhere in the **headline commit message** — the commit at
+> `HEAD` on the runner. Everyday commits that touch backend code
+> run `ci.yml` (typecheck + tests) but do **not** touch Lightsail.
+>
+> ```bash
+> # Real change that should deploy
+> git commit -m "feat(api): add bundle stats endpoint [lightsail]"
+>
+> # Trigger-only / empty commit
+> git commit --allow-empty -m "chore: redeploy [lightsail]"
+>
+> # PR merge — add [lightsail] to the merge / squash message
+> # in the GitHub UI before clicking Merge
+> ```
+>
+> Forgetting the keyword is **not** a failure — the deploy step
+> is skipped with a clear notice in the Actions log, and the run
+> is marked green. Add `[lightsail]` and push again (or re-run
+> the failed/skipped job from the Actions UI after editing the
+> message via `git commit --amend`).
+
 Push to `master`:
 
 ```bash
-git commit --allow-empty -m "trigger deploy"
+git commit --allow-empty -m "trigger deploy [lightsail]"
 git push origin master
 ```
 
 GitHub Actions will:
-1. Run tests (typecheck, lint, unit tests)
-2. SSH into Lightsail
-3. Pull latest code
-4. Write `.env` from secrets
-5. Build and restart Docker containers
-6. Run database migrations
-7. Health check
+1. Run tests (typecheck, unit tests) — see `ci.yml`
+2. **Check the headline commit message for `[lightsail]`.** If absent, the deploy job is skipped (not failed).
+3. SSH into Lightsail
+4. Pull latest code (`git fetch && git reset --hard origin/master`)
+5. Run `bash infra/lightsail/deploy.sh`, which:
+   - Bootstraps the host (installs Docker/Node/pnpm/swap/backup-cron if missing — no-op otherwise)
+   - Writes `.env` from secrets (`chmod 600`)
+   - Pulls base images and brings up the stack with healthcheck-gated ordering
+   - Runs `drizzle-kit migrate` (idempotent via `__drizzle_migrations`)
+   - Waits for `/health` to return 200 (90s deadline)
+   - Prunes old images
+6. Verify the public endpoint
+
+The deploy script is fully idempotent — re-running it on a fresh
+instance, a running instance, or after a partial failure will
+converge to the same healthy state. If the DB is in a bad state
+and you need to rebuild from scratch, set
+`FRESH_DB_VOLUME_RECREATE=1` in the `envs:` block of the workflow
+— the script will drop and recreate the db volume before bring-up.
+
+### 6.2.1 Manual deploy via Actions UI
+
+You can also trigger a deploy without making a commit — useful for
+one-off reruns or for re-deploying after a keyword mistake:
+
+1. Go to **Actions → Deploy Backend to Lightsail**.
+2. Click **Run workflow** → choose `master` → **Run workflow**.
+
+(The `on: push` trigger gates the `paths:` filter, so this UI
+entry point runs unconditionally, which is the whole point.)
 
 ### 6.3 Verify
 
