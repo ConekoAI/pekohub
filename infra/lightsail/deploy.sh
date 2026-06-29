@@ -11,8 +11,9 @@
 # update" branching — every step is guarded.
 #
 # ─────────────────────────────────────────────────────────────
-# Required env (passed by the GitHub Actions deploy workflow via
-# appleboy/ssh-action's `envs:` field):
+# Required env (passed by the GitHub Actions deploy workflow, which
+# writes $APP_DIR/.env from ${{ secrets.* }} via a single-quoted
+# heredoc and sources it before invoking this script):
 #
 #   POSTGRES_PASSWORD, MEILISEARCH_API_KEY, JWT_SECRET,
 #   GH_CLIENT_ID, GH_CLIENT_SECRET,
