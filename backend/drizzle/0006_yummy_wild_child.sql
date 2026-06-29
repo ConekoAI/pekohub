@@ -11,5 +11,5 @@
 --     legacy `allowedUsers` column is kept for one release for
 --     back-compat with pre-#11 runtimes.
 
-ALTER TABLE "instances" ADD COLUMN "owner_principal" jsonb;--> statement-breakpoint
-ALTER TABLE "instances" ADD COLUMN "allowed_principals" jsonb DEFAULT '[]'::jsonb NOT NULL;
+ALTER TABLE "instances" ADD COLUMN IF NOT EXISTS "owner_principal" jsonb;--> statement-breakpoint
+ALTER TABLE "instances" ADD COLUMN IF NOT EXISTS "allowed_principals" jsonb DEFAULT '[]'::jsonb NOT NULL;

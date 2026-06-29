@@ -9,6 +9,6 @@
 -- `principal_did` so a half-applied migration leaves the DB in a
 -- queryable state — the by-did resolver falls through to `agent_did`
 -- for older rows until `0008d` drops it.
-ALTER TABLE "instances" ADD COLUMN "principal_did" varchar(512);--> statement-breakpoint
+ALTER TABLE "instances" ADD COLUMN IF NOT EXISTS "principal_did" varchar(512);--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "idx_instances_principal_did" ON "instances" USING btree ("principal_did");--> statement-breakpoint
 UPDATE "instances" SET "principal_did" = "agent_did" WHERE "agent_did" IS NOT NULL;
