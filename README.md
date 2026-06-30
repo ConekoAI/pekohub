@@ -1,6 +1,6 @@
 # PekoHub
 
-Public registry for [Pekobot](https://github.com/coneko/pekobot) agents, teams, and extensions.
+Public registry for [Pekobot](https://github.com/coneko/pekobot) principals and extensions.
 
 ## Architecture
 

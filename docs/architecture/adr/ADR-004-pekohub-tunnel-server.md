@@ -9,6 +9,12 @@
 | **Depends On** | ADR-001-pekohub (Refresh Token Rotation), ADR-002-pekohub (Remote Instance Management API), ADR-035 (Tunnel Protocol) |
 | **Related** | ADR-003-pekohub (Exposure Modes), ADR-034 (Runtime Auth), ADR-002-desktop (Remote Runtime Support) |
 
+> **⚠️ Historical note (post-#21 / ADR-041 / ADR-042):** The `InstanceAnnouncePayload.type`
+> field shown below as `'agent' | 'team'` is **superseded** — instances now announce a
+> single `'principal'` type. The runtime dropped the `Team` subject variant; see
+> [ADR-042](./ADR-042-principal-as-container-v2.md). The protocol sketch below is retained
+> as the original decision record.
+
 ---
 
 ## Context

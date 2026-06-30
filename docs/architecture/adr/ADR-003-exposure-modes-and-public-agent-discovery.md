@@ -6,6 +6,14 @@
 - **Depends On:** ADR-002 (Remote Instance Management API), ADR-035 (Tunnel Protocol)
 - **Related:** ADR-033 (Ownership & Permission Model), ADR-036 (Remote Instance Management)
 
+> **⚠️ Historical note (post-#21 / ADR-041 / ADR-042):** Where this ADR describes
+> the registry as serving "agents, teams, and extensions" or references `agent/team`
+> instances, that terminology is **superseded**. Agents and teams are now unified as
+> **principals**; the `Team` subject variant and the `'team'` instance type were
+> removed (see [ADR-042](./ADR-042-principal-as-container-v2.md)). Mentions of "team"
+> in the people/access sense (e.g. "the PekoHub team") are unaffected. Retained as the
+> original decision record.
+
 ---
 
 ## Context

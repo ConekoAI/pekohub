@@ -7,6 +7,14 @@
 | **Depends On** | ADR-001-pekohub (Refresh Token Rotation), ADR-035 (Tunnel Protocol) |
 | **Related** | ADR-037 (Exposure Modes), ADR-033 (Ownership & Permission Model) |
 
+> **⚠️ Historical note (post-#21 / ADR-041 / ADR-042):** This ADR predates the
+> "principal-as-container" clean break. References to an instance `type` of
+> `'agent' | 'team'` are **superseded** — `instances.type` is now `'principal'`
+> only (`team` rows were rewritten by migration `0008b_replace_team_with_principal.sql`).
+> The runtime dropped the `Team` subject variant entirely; see
+> [ADR-042](./ADR-042-principal-as-container-v2.md) for the current data model.
+> The text below is retained as the original decision record.
+
 ---
 
 ## Context

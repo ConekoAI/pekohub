@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { SearchBar } from '~/components/SearchBar';
 import { BundleCard } from '~/components/BundleCard';
 import { useSearch } from '~/hooks/useSearch';
-import { Package, Sparkles, Users, Wrench } from 'lucide-react';
+import { Package, Sparkles, Wrench } from 'lucide-react';
 
 export const Route = createFileRoute('/')({
   component: HomePage,
@@ -32,7 +32,7 @@ function HomePage() {
             Discover & Share Agents
           </h1>
           <p className="mt-4 text-lg text-gray-600">
-            The public registry for Pekobot agents, teams, and extensions.
+            The public registry for Pekobot principals and extensions.
           </p>
           <div className="mt-8 flex justify-center">
             <SearchBar onSearch={handleSearch} />
@@ -43,16 +43,11 @@ function HomePage() {
       {/* Categories */}
       <section className="py-12">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <CategoryCard
               icon={<Package className="h-6 w-6" />}
-              title="Agents"
-              description="Single-purpose AI agents"
-            />
-            <CategoryCard
-              icon={<Users className="h-6 w-6" />}
-              title="Teams"
-              description="Multi-agent orchestrations"
+              title="Principals"
+              description="Agents and multi-agent orchestrations"
             />
             <CategoryCard
               icon={<Wrench className="h-6 w-6" />}

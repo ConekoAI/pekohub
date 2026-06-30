@@ -6,6 +6,14 @@
 
 See `Phase2_Success_Criteria.md` for the complete, detailed success criteria. This document is the **implementation roadmap** — it identifies the workstreams, their dependencies, and the suggested execution order.
 
+> **⚠️ Historical note (post-#21 / ADR-041 / ADR-042):** This roadmap predates the
+> "principal-as-container" clean break. References to `.team` bundles, the `team`
+> extension type, and "team orchestration" describe deferred/removed concepts: agents
+> and teams are now unified as **principals**, and the `Team` subject variant was
+> removed runtime-wide (see
+> [ADR-042](../architecture/adr/ADR-042-principal-as-container-v2.md)). Team
+> orchestration remains deferred. Retained as the original Phase 2 planning record.
+
 ---
 
 ## 1. Overview
