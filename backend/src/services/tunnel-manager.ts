@@ -59,6 +59,13 @@ export interface PendingRequest {
   receivedStreamInit: boolean;
   chunks: string[];
   timer?: NodeJS.Timeout;
+  /**
+   * Re-arms the idle timeout for a streaming request. Called on every
+   * inbound stream chunk so that a long but actively-streaming response
+   * is not killed by the timeout — only genuine inactivity (no chunk for
+   * `timeoutMs`) aborts the stream.
+   */
+  resetIdleTimer?: () => void;
 }
 
 export interface StreamSink {
@@ -580,6 +587,10 @@ export class TunnelManager {
     if (!pending) return;
 
     const chunk = Buffer.from(payload).toString("utf8");
+
+    // Activity on this stream — push back the idle timeout so an actively
+    // streaming response is never killed mid-flight.
+    pending.resetIdleTimer?.();
 
     if (pending.streamSink) {
       pending.receivedStreamInit = true;
@@ -1139,17 +1150,26 @@ export class TunnelManager {
         payload: Array.from(encodeHttpRequestBody(request)),
       });
 
-      const timer = setTimeout(() => {
-        if (this.pendingRequests.has(request.requestId)) {
-          this.pendingRequests.delete(request.requestId);
-          conn.pendingRequestIds.delete(request.requestId);
-          const err = new Error("Stream request timeout");
-          sink.onError(err);
-          reject(err);
-        }
-      }, timeoutMs);
-      timer.unref?.();
-      pending.timer = timer;
+      // Idle timeout: aborts the stream only if no chunk arrives for
+      // `timeoutMs`. `armTimer` clears any existing timer and starts a
+      // fresh one; `handleStreamChunk` calls it via `resetIdleTimer` on
+      // every chunk, so a long-but-active stream is never killed.
+      const armTimer = () => {
+        if (pending.timer) clearTimeout(pending.timer);
+        const timer = setTimeout(() => {
+          if (this.pendingRequests.has(request.requestId)) {
+            this.pendingRequests.delete(request.requestId);
+            conn.pendingRequestIds.delete(request.requestId);
+            const err = new Error("Stream request timeout");
+            sink.onError(err);
+            reject(err);
+          }
+        }, timeoutMs);
+        timer.unref?.();
+        pending.timer = timer;
+      };
+      pending.resetIdleTimer = armTimer;
+      armTimer();
     });
   }
 
