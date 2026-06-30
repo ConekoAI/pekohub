@@ -6,6 +6,14 @@
 > **Objective**: Enable agent discovery and sharing at scale through a public registry. Extension ecosystem and team orchestration are deferred to Phase 3.
 > **Companion Document**: See `Phase2_Roadmap.md` for the implementation roadmap, execution order, milestones, and architecture diagrams.
 
+> **⚠️ Historical note (post-#21 / ADR-041 / ADR-042):** This document predates the
+> "principal-as-container" clean break. References to `.team` bundles, the `team`
+> extension type, a `team` bundle/instance type, and "team orchestration" describe
+> deferred/removed concepts: agents and teams are now unified as **principals**, and
+> the `Team` subject variant was removed runtime-wide (see
+> [ADR-042](../architecture/adr/ADR-042-principal-as-container-v2.md)). Team
+> orchestration remains deferred. Retained as the original Phase 2 planning record.
+
 ---
 
 ## 1. Overview

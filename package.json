@@ -2,7 +2,7 @@
   "name": "pekohub",
   "private": true,
   "version": "0.1.0",
-  "description": "PekoHub — Public registry for Pekobot agents, teams, and extensions",
+  "description": "PekoHub — Public registry for Pekobot principals and extensions",
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
