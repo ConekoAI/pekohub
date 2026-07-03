@@ -122,7 +122,7 @@ const DDL_STATEMENTS = [
 
   `CREATE TABLE IF NOT EXISTS instances (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    type VARCHAR(10) NOT NULL,
+    type VARCHAR(16) NOT NULL,
     name VARCHAR(255) NOT NULL,
     owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     owner_subject JSONB,
@@ -147,6 +147,8 @@ const DDL_STATEMENTS = [
     published_at TIMESTAMPTZ,
     featured BOOLEAN DEFAULT FALSE,
     monetization JSONB DEFAULT '{"enabled":false}',
+    -- Transport preference for cross-runtime principal_send.
+    transport_preference VARCHAR(20) DEFAULT 'auto' NOT NULL,
     -- Issue #14: per-agent DID, populated by the runtime's
     -- instance_announce message (peko-runtime#34) and indexed by
     -- the by-did resolver.
@@ -172,6 +174,7 @@ const DDL_STATEMENTS = [
     runtime_did VARCHAR(255) NOT NULL UNIQUE,
     owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     display_name VARCHAR(255),
+    direct_endpoint VARCHAR(512),
     last_seen_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
   );`,
