@@ -15,6 +15,7 @@ import ociRoutes from "../../src/routes/oci/index.js";
 import tunnelPlugin from "../../src/plugins/tunnel.js";
 import instanceApiRoutes from "../../src/routes/api/instances.js";
 import runtimeApiRoutes from "../../src/routes/api/runtimes.js";
+import principalDirectoryRoutes from "../../src/routes/api/principals.js";
 
 import { createTestDb, resetTables } from "./db.js";
 
@@ -159,6 +160,7 @@ async function main() {
   await app.register(bundleApiRoutes, { prefix: "/v1" });
   await app.register(instanceApiRoutes, { prefix: "/v1" });
   await app.register(runtimeApiRoutes, { prefix: "/v1" });
+  await app.register(principalDirectoryRoutes, { prefix: "/v1" });
   await app.register(adminRoutes, { prefix: "/v1/admin" });
   await app.register(oauthRoutes, { prefix: "/v1/auth" });
   await app.register(apiKeyRoutes, { prefix: "/v1/auth" });
