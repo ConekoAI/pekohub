@@ -273,6 +273,13 @@ export const instances = pgTable(
     // Monetization hooks (future)
     monetization: jsonb("monetization").default('{"enabled":false}'),
 
+    // Transport preference for cross-runtime principal_send. The
+    // runtime sets this on `instance_announce`; the caller reads it
+    // from the directory response to decide tunnel vs direct.
+    transportPreference: varchar("transport_preference", { length: 20 })
+      .notNull()
+      .default("auto"),
+
     // ADR-041: per-Principal DID, the key the cross-runtime
     // `principal_send` resolver uses to look up a host via
     // `/v1/principals/by-did/:did`. Set by the runtime on
@@ -320,6 +327,10 @@ export const runtimes = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     displayName: varchar("display_name", { length: 255 }),
+    // Advertised direct endpoint for this runtime (set by the runtime
+    // on `instance_announce`). Null when the runtime has not advertised
+    // a direct address.
+    directEndpoint: varchar("direct_endpoint", { length: 512 }),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()

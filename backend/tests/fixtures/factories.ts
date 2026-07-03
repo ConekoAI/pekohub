@@ -70,6 +70,8 @@ export interface TestInstance {
   weeklyQuota: number | null;
   publishedAt: Date | null;
   featured: boolean;
+  // Transport preference for cross-runtime principal_send.
+  transportPreference: "auto" | "tunnel" | "direct";
   // ADR-041: per-Principal DID, optional; not all test instances need one.
   principalDid: string | null;
 }
@@ -224,13 +226,13 @@ export async function createInstance(
       id, type, name, owner_id, owner_subject, runtime_id, runtime_display_name, bundle_ref,
       status, exposure, allowed_principals, capabilities, metadata,
       public_name, description, tags, category, tos_required, tos_text,
-      daily_quota, weekly_quota, published_at, featured, principal_did
+      daily_quota, weekly_quota, published_at, featured, transport_preference, principal_did
     )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
      RETURNING id, type, name, owner_id, owner_subject, runtime_id, runtime_display_name, bundle_ref,
        status, exposure, allowed_principals, last_seen_at, created_at, capabilities, metadata,
        public_name, description, tags, category, tos_required, tos_text,
-       daily_quota, weekly_quota, published_at, featured, principal_did`,
+       daily_quota, weekly_quota, published_at, featured, transport_preference, principal_did`,
     [
       id,
       type,
@@ -257,6 +259,7 @@ export async function createInstance(
       overrides.weeklyQuota ?? null,
       overrides.publishedAt ?? null,
       overrides.featured ?? false,
+      overrides.transportPreference ?? "auto",
       // ADR-041: per-Principal DID. Optional — most tests don't care.
       overrides.principalDid ?? null,
     ],
@@ -288,6 +291,39 @@ export async function createInstance(
     weeklyQuota: row.weekly_quota ?? null,
     publishedAt: row.published_at ?? null,
     featured: row.featured ?? false,
+    transportPreference: row.transport_preference ?? "auto",
     principalDid: row.principal_did ?? null,
   } as TestInstance;
+}
+
+export interface TestRuntime {
+  id: number;
+  runtimeDid: string;
+  ownerId: number;
+  displayName: string | null;
+  directEndpoint: string | null;
+  lastSeenAt: Date | null;
+  createdAt: Date;
+}
+
+/**
+ * Create a test runtime row in the database.
+ */
+export async function createRuntime(
+  client: PGlite,
+  overrides: Partial<TestRuntime> & { ownerId: number; runtimeDid: string },
+): Promise<TestRuntime> {
+  const result = await client.query(
+    `INSERT INTO runtimes (runtime_did, owner_id, display_name, direct_endpoint, last_seen_at)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING id, runtime_did, owner_id, display_name, direct_endpoint, last_seen_at, created_at`,
+    [
+      overrides.runtimeDid,
+      overrides.ownerId,
+      overrides.displayName ?? null,
+      overrides.directEndpoint ?? null,
+      overrides.lastSeenAt ?? new Date(),
+    ],
+  );
+  return result.rows[0] as TestRuntime;
 }

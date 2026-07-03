@@ -687,7 +687,18 @@ export class TunnelManager {
         // the service layer leaves the existing column alone in that
         // case (see `upsertFromAnnounce`).
         principalDid: payload.principalDid,
+        // Callee transport preference; omit to leave existing value.
+        transportPreference: payload.transportPreference,
       });
+
+      // Update the runtime-level advertised direct endpoint when the
+      // runtime includes it in the announce payload.
+      if (payload.runtimeDirectEndpoint !== undefined) {
+        await db
+          .update(runtimes)
+          .set({ directEndpoint: payload.runtimeDirectEndpoint, lastSeenAt: new Date() })
+          .where(eq(runtimes.runtimeDid, runtimeId));
+      }
     } catch (err) {
       this.fastify.log.warn(
         { err, runtimeId, instanceId: payload.id },
