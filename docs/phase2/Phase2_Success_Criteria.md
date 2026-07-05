@@ -22,15 +22,15 @@ Phase 2 transitions the Agent Runtime from a **local developer tool** into a **d
 
 | Deliverable | Market Gap Addressed | Research Source |
 |-------------|---------------------|-----------------|
-| **Public Registry Beta** | "Agent Registry/Hub ecosystem almost blank" — no Docker Hub for Agents exists | Dim05, Insight 2 |
+| **Public Registry Beta** | "Agent Registry/Hub ecosystem almost blank" — no Docker Hub for Principals exists | Dim05, Insight 2 |
 
 **Phase 2 is considered successful only when all P0 registry criteria are met AND the platform demonstrates active community publishing and discovery.**
 
 > **Design Principle**: Phase 2 does NOT add team orchestration, memory management, coordination patterns, or extension runtime features to the core runtime. These are **deferred to Phase 3**. The core runtime remains unchanged.
 
-> **Note on Shared Services Fabric**: The Shared Services Fabric (shared browser pool, vector DB, memory tiers) was originally scoped for Phase 2 but has been **deferred to Phase 3 / Cloud Runtime**. Agents and teams continue to use MCP servers and built-in tools for browser, vector, and memory operations — exactly as they do in Phase 1.
+> **Note on Shared Services Fabric**: The Shared Services Fabric (shared browser pool, vector DB, memory tiers) was originally scoped for Phase 2 but has been **deferred to Phase 3 / Cloud Runtime**. Principals continue to use MCP servers and built-in tools for browser, vector, and memory operations — exactly as they do in Phase 1.
 
-> **Note on Extension Ecosystem**: Extension source references, remote installation, A2A built-in tools, team orchestrator extensions, and the `team` extension type are all **deferred to Phase 3**. The registry supports `.ext` artifacts as publishable/discoverable OCI packages, but the runtime does not yet install extensions from remote sources.
+> **Note on Extension Ecosystem**: Extension source references, remote installation, A2A built-in tools, and the `team` extension type are all **deferred to Phase 3**. The registry supports `.ext` artifacts as publishable/discoverable OCI packages, but the runtime does not yet install extensions from remote sources.
 
 ---
 
@@ -41,14 +41,14 @@ Phase 2 depends on the following Phase 1 outputs being production-stable:
 | Dependency | Minimum Version | Status Gate |
 |------------|----------------|-------------|
 | Runtime Engine | v0.1.0+ | All P0 criteria met, 1,024 unit tests passing |
-| CLI | v0.1.0+ | Core commands stable (`agent`, `team`, `ext`, `session`, `send`, `config`, `daemon`) |
-| Agent Bundle Spec | v1.0 | OCI-compatible, `.agent`/`.team`/`.ext` formats with SHA-256 checksums |
+| CLI | v0.1.0+ | Core commands stable (`principal`, `ext`, `send`, `config`, `daemon`) |
+| Principal Bundle Spec | v1.0 | OCI-compatible, `.principal`/`.ext` formats with SHA-256 checksums |
 | Registry Client | v0.1.0+ | Push/pull with bearer/basic auth, layer deduplication |
 | Extension Framework | v0.1.0+ | 22 hook points, 6 extension types, dynamic registration |
 | IPC Layer (ADR-021) | v0.1.0+ | UDP/Unix socket CLI↔daemon communication |
 | A2A Event Bus | v0.1.0+ | In-memory bus with Direct, Task, TaskResult, Broadcast, Subscribe message types |
 
-> **Note**: Base image inheritance was removed per ADR-027. The canonical workflow is `peko agent create` → `peko agent export`.
+> **Note**: Base image inheritance was removed per ADR-027. The canonical workflow is `peko principal create` → `peko principal export`.
 
 ---
 
@@ -99,7 +99,7 @@ Phase 2 depends on the following Phase 1 outputs being production-stable:
 
 ### 3.1 Purpose
 
-The Public Registry is the discovery and distribution layer for Agent Bundles. It addresses the "almost blank" state of the agent registry ecosystem — currently, only Microsoft Copilot Studio (70+ agents) and Salesforce AgentExchange offer curated collections, but neither is cross-platform or open. The Public Registry must become the "Docker Hub for Agents."
+The Public Registry is the discovery and distribution layer for Principal Bundles. It addresses the "almost blank" state of the agent registry ecosystem — currently, only Microsoft Copilot Studio (70+ agents) and Salesforce AgentExchange offer curated collections, but neither is cross-platform or open. The Public Registry must become the "Docker Hub for Principals."
 
 ### 3.2 P0 — Must Have
 
@@ -123,7 +123,7 @@ The Public Registry is the discovery and distribution layer for Agent Bundles. I
 #### 3.2.2 Bundle Discovery & Search
 - [x] **REG-009**: Registry MUST index the following searchable fields from bundle manifests: name, description, author, tags/keywords, required MCP servers, supported model providers, skill definitions, license, and extension type
 - [x] **REG-010**: Registry MUST provide full-text search with relevance ranking across all indexed fields, supporting phrase matching and boolean operators (`AND`, `OR`, `NOT`)
-- [~] **REG-011**: Registry MUST support faceted search — users can filter by: model provider (OpenAI/Anthropic/local), MCP server dependencies, category (research/support/development/content), license, bundle type (agent/team/extension), and extension type (skill/mcp/gateway/universal/general/team) — *filter fields configured in Meilisearch, API filter params implemented, tests passing*
+- [~] **REG-011**: Registry MUST support faceted search — users can filter by: model provider (OpenAI/Anthropic/local), MCP server dependencies, category (research/support/development/content), license, bundle type (principal/extension), and extension type (skill/mcp/gateway/universal/general) — *filter fields configured in Meilisearch, API filter params implemented, tests passing*
 - [~] **REG-012**: Registry MUST auto-generate a public HTML page for every published bundle containing: metadata, README, version history, dependency tree, installation command, and usage statistics (pull count, star count) — *Bundle detail page implemented at `/bundles/:namespace/:name`: metadata, GFM README (react-markdown), version history, daily/weekly/monthly/all-time pull stats, install command. Dependency tree (MCP servers, required tools) not yet rendered.*
 - [~] **REG-013**: Registry MUST expose a public Web UI (`https://pekohub.org`) with: homepage featuring trending bundles, category browsing, search with autocomplete, bundle detail pages, and user profile pages — ✅ Homepage, search, bundle detail, and profile pages scaffolded. Auth state wired. Deploy pipeline not started.
 - [~] **REG-014**: Web UI MUST be responsive and functional on mobile devices (viewport ≥ 375px) — ✅ Mobile pass completed on all pages: header (hamburger menu), hero, search, bundle detail, profile. Flexbox + grid breakpoints verified.
@@ -158,7 +158,6 @@ The Public Registry is the discovery and distribution layer for Agent Bundles. I
 
 ### 3.4 P2 — Nice to Have
 
-- [ ] **REG-035**: Registry COULD support "Agent Teams" as first-class publishable entities — a `team.toml` + multiple bundle references published as a single artifact
 - [ ] **REG-036**: Registry COULD provide analytics dashboards for publishers (geographic distribution of pulls, provider breakdown, dependency graphs)
 - [ ] **REG-037**: Registry COULD implement an "Agent of the Week" editorial program featuring community-contributed bundles
 
@@ -172,7 +171,7 @@ Phase 2's registry treats `.ext` packages as **first-class OCI artifacts** for p
 
 ### 4.2 P0 — Must Have
 
-- [ ] **EXT-REG-001**: Registry MUST accept `.ext` packages via standard OCI push/pull operations (same as `.agent` and `.team`)
+- [ ] **EXT-REG-001**: Registry MUST accept `.ext` packages via standard OCI push/pull operations (same as `.principal`)
 - [ ] **EXT-REG-002**: Registry MUST index extension metadata including: extension type, hook points declared, example configuration, and compatibility information
 - [ ] **EXT-REG-003**: Registry Web UI MUST display extension detail pages with metadata, README, version history, and manual download instructions
 - [ ] **EXT-REG-004**: Registry search MUST include extensions in results and support filtering by extension type
@@ -328,7 +327,7 @@ Phase 2 is **officially complete** when:
 1. ✅ All P0 success criteria (REG-001 through REG-027, EXT-REG-001 through EXT-REG-004, SEC-001 through SEC-004, PERF-001 through PERF-002, DX-001 through DX-003) are implemented, tested, and documented
 2. ✅ All quantitative KPIs meet or exceed their targets
 3. ✅ Public Registry is live at `https://pekohub.org` with ≥ 50 community bundles
-4. ✅ Registry supports `.agent`, `.team`, and `.ext` as publishable OCI artifact types
+4. ✅ Registry supports `.principal` and `.ext` as publishable OCI artifact types
 5. ✅ At least 3 external teams (outside the core dev team) have successfully published bundles on the platform
 6. ✅ Phase 2 retrospective document is published, capturing lessons learned and Phase 3 priorities
 

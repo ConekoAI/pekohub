@@ -28,7 +28,7 @@ export interface DisconnectPayload {
 /** Wire-format proxied request sent inside the tunnel (matches Rust). */
 export interface TunnelProxiedRequest {
   requestId: string;
-  agent: string;
+  principal: string;
   payload: number[]; // serialized IPC RequestPacket as bytes
 }
 
@@ -131,7 +131,6 @@ export interface PrincipalToPrincipalRequestPayload {
   callerRuntimeId: string;
   callerPrincipalDid: string;
   targetPrincipalDid: string;
-  sessionId?: string;
   message: string;
   signature: string;
 }
@@ -173,7 +172,7 @@ export type TunnelMessage =
   | {
       type: "proxied_request";
       requestId: string;
-      agent: string;
+      principal: string;
       payload: number[];
     }
   | { type: "proxied_response"; requestId: string; payload: number[] }
@@ -191,7 +190,6 @@ export type TunnelMessage =
       callerRuntimeId: string;
       callerPrincipalDid: string;
       targetPrincipalDid: string;
-      sessionId?: string;
       message: string;
       signature: string;
     }
