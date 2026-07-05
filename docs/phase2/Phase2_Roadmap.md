@@ -2,7 +2,7 @@
 
 > **Version**: 2.2
 > **Phase**: 2 Months (following Phase 1 completion 2026-05-14)
-> **Objective**: Enable agent discovery and sharing at scale through a public registry. Extension ecosystem and team orchestration are deferred to Phase 3.
+> **Objective**: Enable principal discovery and sharing at scale through a public registry. Extension ecosystem and team orchestration are deferred to Phase 3.
 
 See `Phase2_Success_Criteria.md` for the complete, detailed success criteria. This document is the **implementation roadmap** — it identifies the workstreams, their dependencies, and the suggested execution order.
 
@@ -22,15 +22,15 @@ Phase 2 has one workstream that builds on the Phase 1 runtime:
 
 | Workstream | What It Does | Depends On |
 |------------|-------------|------------|
-| **Public Registry Beta** | Hosted registry + web UI for publishing and discovering agents, teams, and extensions | Phase 1 packaging (`src/portable/`), registry client (`src/registry/`) |
+| **Public Registry Beta** | Hosted registry + web UI for publishing and discovering principals and extensions | Phase 1 packaging (`src/portable/`), registry client (`src/registry/`) |
 
 The success criteria are defined in the companion document. This roadmap focuses on **execution order** and **integration points**.
 
 > **Design Principle**: Phase 2 does NOT add team orchestration, memory management, coordination patterns, or extension runtime features. These are **deferred to Phase 3**. The core runtime remains unchanged. See §7 for the full rationale.
 
-> **Note on Shared Services Fabric**: The Shared Services Fabric (shared browser pool, vector DB, memory tiers) was originally scoped for Phase 2 but has been **deferred to Phase 3 / Cloud Runtime**. Agents and teams continue to use MCP servers and built-in tools for browser, vector, and memory operations — exactly as they do in Phase 1.
+> **Note on Shared Services Fabric**: The Shared Services Fabric (shared browser pool, vector DB, memory tiers) was originally scoped for Phase 2 but has been **deferred to Phase 3 / Cloud Runtime**. Principals continue to use MCP servers and built-in tools for browser, vector, and memory operations — exactly as they do in Phase 1.
 
-> **Note on Extension Ecosystem**: Extension source references, remote installation, A2A built-in tools, team orchestrator extensions, and the `team` extension type are all **deferred to Phase 3**. Phase 2's registry supports `.ext` artifacts as publishable/discoverable packages (same as `.agent` and `.team`), but the runtime does not yet install extensions from remote sources.
+> **Note on Extension Ecosystem**: Extension source references, remote installation, and A2A built-in tools are all **deferred to Phase 3**. Phase 2's registry supports `.ext` artifacts as publishable/discoverable packages (same as `.principal`), but the runtime does not yet install extensions from remote sources.
 
 ---
 
@@ -48,7 +48,7 @@ We recommend building Phase 2 in two milestones, each delivering user-visible va
 - SHA-256 verification on upload
 - Garbage collection of unreferenced blobs
 
-**User outcome:** `peko agent push` and `peko agent pull` work against the public registry.
+**User outcome:** `peko principal push` and `peko principal pull` work against the public registry.
 
 **Success criteria:** REG-001 through REG-006
 
@@ -62,7 +62,7 @@ We recommend building Phase 2 in two milestones, each delivering user-visible va
 - Public web UI at `https://pekohub.org`
 - Bundle detail pages (README, version history, install command)
 
-**User outcome:** A developer can find an agent or extension on the web, copy the install command, and run it.
+**User outcome:** A developer can find a principal or extension on the web, copy the install command, and run it.
 
 **Success criteria:** REG-007 through REG-027
 
@@ -86,7 +86,7 @@ We recommend building Phase 2 in two milestones, each delivering user-visible va
                            │ HTTPS / OCI
 ┌──────────────────────────┴──────────────────────────────────┐
 │                    CLI (peko)                                 │
-│  push │ pull │ search │ auth login │ agent install           │
+│  push │ pull │ search │ auth login │ principal install       │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -111,11 +111,11 @@ peko auth status                   # Show logged-in user
 
 # Discovery
 peko search "github assistant"     # Search registry
-peko agent info user/agent:1.0     # Show bundle metadata
+peko principal info user/agent:1.0     # Show bundle metadata
 
 # Publishing (aliases for push/pull)
-peko agent publish my-agent        # Push to public registry
-peko agent install user/agent:1.0  # Pull + import in one step
+peko principal publish my-agent        # Push to public registry
+peko principal install user/agent:1.0  # Pull + import in one step
 ```
 
 > **Note on Extensions**: `peko ext publish` and `peko ext install <registry-ref>` are deferred to Phase 3. The registry accepts `.ext` packages (they are OCI artifacts like any other), but the CLI does not yet resolve or install them from remote sources.
@@ -131,7 +131,7 @@ Phase 2's registry treats `.ext` packages as **first-class OCI artifacts** for p
 - `.ext` packages can be pushed to and pulled from the registry via standard OCI operations
 - Registry indexes extension metadata (extension type, hook points declared, compatibility)
 - Web UI displays extension detail pages with installation commands (for manual/local install)
-- Search and faceted filtering include extensions alongside agents and teams
+- Search and faceted filtering include extensions alongside principals
 
 ### 4.2 What Is Deferred to Phase 3
 
@@ -143,8 +143,6 @@ Phase 2's registry treats `.ext` packages as **first-class OCI artifacts** for p
 | `peko ext update <id>` | Extension Source References |
 | `peko ext list --outdated` | Extension Source References |
 | A2A built-in tools (`a2a_send`, `a2a_broadcast`, `a2a_receive`) | A2A Tooling |
-| Team orchestrator extensions | Team Orchestration as Extension |
-| `team` extension type adapter | Team Orchestration as Extension |
 
 ---
 
@@ -172,8 +170,8 @@ Phase 2's registry treats `.ext` packages as **first-class OCI artifacts** for p
 |-------------|--------|-------|
 | Public registry live | `pekohub.org` | Registry team |
 | Community bundles | ≥ 50 published | Community |
-| Tutorial series | 2+ tutorials: "Publishing to registry", "Discovering agents on PekoHub" | Docs |
-| CLI getting-started wizard | Interactive `peko init` for registry login + agent discovery | CLI |
+| Tutorial series | 2+ tutorials: "Publishing to registry", "Discovering principals on PekoHub" | Docs |
+| CLI getting-started wizard | Interactive `peko init` for registry login + principal discovery | CLI |
 
 ---
 
@@ -200,9 +198,7 @@ Phase 2 is successful when all P0 criteria are met AND:
 | **Extension source references** (`github:`, `https:`, `mcp+https:`) | Needs dedicated runtime work; registry is higher priority |
 | **Remote extension installation** (`peko ext install <remote>`) | Depends on source references; defer together |
 | **A2A built-in tools** (`a2a_send`, `a2a_broadcast`, `a2a_receive`) | Needs A2A event bus stabilization; not required for registry |
-| **Team orchestration as extensions** | Large workstream that deserves its own phase after registry matures |
-| **`team` extension type adapter** | Depends on team orchestration workstream |
-| **Shared Services Fabric** | Premature for local single-user tool. Agents already share MCP tools via single process. Relevant for cloud/multi-tenant runtime. |
+| **Shared Services Fabric** | Premature for local single-user tool. Principals already share MCP tools via single process. Relevant for cloud/multi-tenant runtime. |
 | **Enterprise Governance (RBAC, SSO, audit dashboards)** | Needs enterprise customers |
 | **Cloud Runtime SaaS** | Needs operational infrastructure + cost modeling |
 | **A2A Protocol v1.0** | Spec still stabilizing; our event bus + A2A tools are sufficient |
@@ -221,7 +217,7 @@ Phase 2 is complete when:
 1. All P0 success criteria (REG-001 through REG-027, SEC-001 through SEC-004, PERF-001 through PERF-002, DX-001 through DX-003) are implemented, tested, and documented
 2. All quantitative KPIs meet or exceed targets
 3. Public Registry is live at `https://pekohub.org` with ≥ 50 community bundles
-4. Registry supports `.agent`, `.team`, and `.ext` as publishable OCI artifact types
+4. Registry supports `.principal` and `.ext` as publishable OCI artifact types
 5. At least 3 external teams (outside the core dev team) have successfully published bundles on the platform
 6. Phase 2 retrospective is published
 

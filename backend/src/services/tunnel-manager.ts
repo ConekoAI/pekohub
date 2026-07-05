@@ -683,7 +683,7 @@ export class TunnelManager {
         allowedPrincipals: payload.allowedPrincipals,
         capabilities: payload.capabilities,
         metadata: payload.metadata,
-        // Issue #14: per-agent DID. Pre-#34 runtimes omit the field;
+        // Issue #14: per-principal DID. Pre-#34 runtimes omit the field;
         // the service layer leaves the existing column alone in that
         // case (see `upsertFromAnnounce`).
         principalDid: payload.principalDid,
@@ -1097,7 +1097,7 @@ export class TunnelManager {
       this.sendMessage(conn.socket, {
         type: "proxied_request",
         requestId: request.requestId,
-        agent: request.instanceId, // fallback agent identifier
+        principal: request.principalName,
         payload: Array.from(encodeHttpRequestBody(request)),
       });
 
@@ -1157,7 +1157,7 @@ export class TunnelManager {
       this.sendMessage(conn.socket, {
         type: "proxied_request",
         requestId: request.requestId,
-        agent: request.principalName,
+        principal: request.principalName,
         payload: Array.from(encodeHttpRequestBody(request)),
       });
 

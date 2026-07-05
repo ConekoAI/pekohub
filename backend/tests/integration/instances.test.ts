@@ -629,8 +629,8 @@ describe("Instance API", () => {
     });
   });
 
-  describe("GET /v1/me/shared-instances", () => {
-    it("should list private instances shared with the user", async () => {
+  describe("GET /v1/me/accessible-principals", () => {
+    it("should list private principals accessible to the user", async () => {
       const app = await buildTestApp({ testDb });
       const owner = await createUser(testDb.client, { namespace: "alice" });
       const viewer = await createUser(testDb.client, { namespace: "bob" });
@@ -638,7 +638,7 @@ describe("Instance API", () => {
 
       await createInstance(testDb.client, {
         ownerId: owner.id,
-        name: "shared-agent",
+        name: "shared-principal",
         exposure: "private",
         allowedPrincipals: [{ kind: "user", id: String(viewer.id) }],
         status: "online",
@@ -646,28 +646,28 @@ describe("Instance API", () => {
 
       const response = await app.inject({
         method: "GET",
-        url: "/v1/me/shared-instances",
+        url: "/v1/me/accessible-principals",
         headers,
       });
 
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
-      expect(body.instances).toHaveLength(1);
-      expect(body.instances[0].principalName).toBe("shared-agent");
-      expect(body.instances[0].status).toBe("online");
+      expect(body.principals).toHaveLength(1);
+      expect(body.principals[0].principalName).toBe("shared-principal");
+      expect(body.principals[0].status).toBe("online");
     });
 
     it("should return 401 when not authenticated", async () => {
       const app = await buildTestApp({ testDb });
       const response = await app.inject({
         method: "GET",
-        url: "/v1/me/shared-instances",
+        url: "/v1/me/accessible-principals",
       });
       expect(response.statusCode).toBe(401);
     });
   });
 
-  describe("GET /v1/public/agents/:owner/:principalName", () => {
+  describe("GET /v1/public/principals/:owner/:principalName", () => {
     it("should return public instance page data", async () => {
       const app = await buildTestApp({ testDb });
       const user = await createUser(testDb.client, {
@@ -676,23 +676,23 @@ describe("Instance API", () => {
       });
       await createInstance(testDb.client, {
         ownerId: user.id,
-        name: "public-agent",
+        name: "public-principal",
         exposure: "public",
-        publicName: "Alice Agent",
-        description: "An agent by Alice",
+        publicName: "Alice Principal",
+        description: "A principal by Alice",
         capabilities: ["chat", "search"],
         status: "online",
       });
 
       const response = await app.inject({
         method: "GET",
-        url: "/v1/public/agents/alice/public-agent",
+        url: "/v1/public/principals/alice/public-principal",
       });
 
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
-      expect(body.instance.publicName).toBe("Alice Agent");
-      expect(body.instance.description).toBe("An agent by Alice");
+      expect(body.instance.publicName).toBe("Alice Principal");
+      expect(body.instance.description).toBe("A principal by Alice");
       expect(body.instance.owner.name).toBe("Alice");
       expect(body.instance.capabilities).toEqual(["chat", "search"]);
       expect(body.instance.status).toBe("online");
@@ -703,33 +703,33 @@ describe("Instance API", () => {
       const user = await createUser(testDb.client, { namespace: "alice" });
       await createInstance(testDb.client, {
         ownerId: user.id,
-        name: "private-agent",
+        name: "private-principal",
         exposure: "private",
       });
 
       const response = await app.inject({
         method: "GET",
-        url: "/v1/public/agents/alice/private-agent",
+        url: "/v1/public/principals/alice/private-principal",
       });
 
       expect(response.statusCode).toBe(404);
     });
   });
 
-  describe("POST /v1/public/agents/:owner/:principalName/chat", () => {
-    it("should proxy chat for public agent", async () => {
+  describe("POST /v1/public/principals/:owner/:principalName/chat", () => {
+    it("should proxy chat for public principal", async () => {
       const app = await buildTestApp({ testDb });
       const user = await createUser(testDb.client, { namespace: "alice" });
       await createInstance(testDb.client, {
         ownerId: user.id,
-        name: "public-agent",
+        name: "public-principal",
         exposure: "public",
         status: "online",
       });
 
       const response = await app.inject({
         method: "POST",
-        url: "/v1/public/agents/alice/public-agent/chat",
+        url: "/v1/public/principals/alice/public-principal/chat",
         payload: { message: "hello" },
       });
 
@@ -742,7 +742,7 @@ describe("Instance API", () => {
       const user = await createUser(testDb.client, { namespace: "alice" });
       await createInstance(testDb.client, {
         ownerId: user.id,
-        name: "tos-agent",
+        name: "tos-principal",
         exposure: "public",
         status: "online",
         tosRequired: true,
@@ -751,7 +751,7 @@ describe("Instance API", () => {
 
       const response = await app.inject({
         method: "POST",
-        url: "/v1/public/agents/alice/tos-agent/chat",
+        url: "/v1/public/principals/alice/tos-principal/chat",
         payload: { message: "hello" },
       });
 
@@ -761,58 +761,14 @@ describe("Instance API", () => {
       expect(body.tosText).toBe("You must agree.");
     });
 
-    it("should return 404 for non-existent public agent", async () => {
+    it("should return 404 for non-existent public principal", async () => {
       const app = await buildTestApp({ testDb });
       const response = await app.inject({
         method: "POST",
-        url: "/v1/public/agents/alice/missing/chat",
+        url: "/v1/public/principals/alice/missing/chat",
         payload: { message: "hello" },
       });
       expect(response.statusCode).toBe(404);
-    });
-  });
-
-  describe("GET /v1/instances/:id/analytics", () => {
-    it("should return analytics for owner", async () => {
-      const app = await buildTestApp({ testDb });
-      const user = await createUser(testDb.client, { namespace: "alice" });
-      const headers = await authHeaders(user);
-      const instance = await createInstance(testDb.client, {
-        ownerId: user.id,
-        name: "my-agent",
-      });
-
-      const response = await app.inject({
-        method: "GET",
-        url: `/v1/instances/${instance.id}/analytics`,
-        headers,
-      });
-
-      expect(response.statusCode).toBe(200);
-      const body = JSON.parse(response.payload);
-      expect(body).toHaveProperty("totalSessions");
-      expect(body).toHaveProperty("uniqueVisitors");
-      expect(body).toHaveProperty("avgSessionLengthSeconds");
-      expect(body).toHaveProperty("period");
-    });
-
-    it("should return 403 for non-owner", async () => {
-      const app = await buildTestApp({ testDb });
-      const owner = await createUser(testDb.client, { namespace: "alice" });
-      const other = await createUser(testDb.client, { namespace: "bob" });
-      const headers = await authHeaders(other);
-      const instance = await createInstance(testDb.client, {
-        ownerId: owner.id,
-        name: "my-agent",
-      });
-
-      const response = await app.inject({
-        method: "GET",
-        url: `/v1/instances/${instance.id}/analytics`,
-        headers,
-      });
-
-      expect(response.statusCode).toBe(403);
     });
   });
 });

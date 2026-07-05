@@ -451,8 +451,8 @@ export class InstanceService {
     if (ownerSubject !== undefined) {
       // JSONB equality is exact-match. For "list my instances as user X"
       // we use the legacy `ownerId` column (numeric FK). The principal
-      // filter is for the typed case (e.g. list all Agent-owned
-      // instances for a given agent id).
+      // filter is for the typed case (e.g. list all Principal-owned
+      // instances for a given principal id).
       conditions.push(sql`${instances.ownerSubject} = ${JSON.stringify(ownerSubject)}::jsonb`);
     }
     if (runtimeId !== undefined)
@@ -551,7 +551,7 @@ export class InstanceService {
   // ── Agent directory lookups (issue #14) ────────────────────────────────────
 
   /**
-   * Look up an instance by its per-agent DID. The runtime sets this on
+   * Look up an instance by its per-principal DID. The runtime sets this on
    * `instance_announce` (peko-runtime#34) and the cross-runtime
    * `a2a_send` resolver uses it as its primary key
    * ([peko-runtime#29](https://github.com/ConekoAI/peko-runtime/issues/29)).
@@ -576,9 +576,8 @@ export class InstanceService {
    * runtime-side client when the caller has only the human-readable
    * handle.
    *
-   * v1 is user-namespace only — Team-kind owners (pekohub#8) will
-   * require a second join or a new column, so the team branch is
-   * intentionally not yet implemented.
+   * v1 is user-namespace only. ADR-041 removed the Team subject
+   * kind, so the team branch is intentionally not implemented.
    *
    * Returns `null` when either the owner namespace doesn't exist or
    * the owner has no instance with that name. The route layer
@@ -615,10 +614,9 @@ export class InstanceService {
    *
    * `Public` exposure short-circuits the check (mirrors `canAccess`).
    * For non-public exposure, the resolved owner is gated by
-   * `subjectCanAccess` — a `User` owner is a direct match; a
-   * `Team` owner is gated on team membership (gated on pekohub#8;
-   * until then, the team-members lookup returns `[]` and Team
-   * owners deny).
+   * `subjectCanAccess` — a `User` owner is a direct match. ADR-041
+   * removed the Team subject kind, so only User and Principal
+   * owners exist.
    */
   async resolvePrincipalTarget(
     spec: import("@pekohub/shared").TargetSpec,

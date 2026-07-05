@@ -6,12 +6,16 @@ import { eq, and, isNull, gt } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 
 /**
- * OAuth 2.0 login flow + session endpoints
+ * OAuth 2.0 login flow + refresh-token endpoints
  * GET /api/v1/auth/:provider/authorize
  * GET /api/v1/auth/:provider/callback
  * POST /api/v1/auth/refresh
  * GET /api/v1/auth/me
  * POST /api/v1/auth/logout
+ *
+ * Stateless refresh-token model: POST /auth/refresh exchanges a
+ * refresh-token cookie for a new access token. No server-side
+ * session store.
  */
 export default async function oauthRoutes(fastify: FastifyInstance) {
   const github = fastify.config.GITHUB_CLIENT_ID

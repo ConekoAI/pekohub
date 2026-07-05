@@ -11,7 +11,6 @@ import {
 import {
   eq,
   and,
-  or,
   sql,
   desc,
   count,
@@ -183,7 +182,6 @@ const UpdateStatusBodySchema = z.object({
 
 const ChatBodySchema = z.object({
   message: z.string().min(1),
-  session_id: z.string().optional(),
   tos_acknowledged: z.boolean().optional(),
 });
 
@@ -774,20 +772,15 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     };
   });
 
-  // ── List shared instances (private discovery) ──────────────────────────────
+  // ── List accessible principals (private discovery) ─────────────────────────
   fastify.get(
-    "/me/shared-instances",
+    "/me/accessible-principals",
     { preHandler: [authenticateOrDevBypass] },
     async (request, reply) => {
       const user = request.user;
 
-      // Issue #11: also match the typed `allowed_principals` JSONB
-      // column. Pre-#11 runtimes only populated the legacy
-      // `allowed_principals` column, so we OR the two checks during the
-      // one-release back-compat window.
       const userIdStr = String(user.id);
-      const legacyMatch = sql`${instances.allowedPrincipals} @> ${JSON.stringify([userIdStr])}::jsonb`;
-      const typedMatch = sql`${instances.allowedPrincipals} @> ${JSON.stringify([{ kind: "user", id: userIdStr }])}::jsonb`;
+      const allowedMatch = sql`${instances.allowedPrincipals} @> ${JSON.stringify([{ kind: "user", id: userIdStr }])}::jsonb`;
 
       const rows = await db
         .select({
@@ -803,13 +796,13 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         .where(
           and(
             eq(instances.exposure, "private"),
-            or(legacyMatch, typedMatch),
+            allowedMatch,
           ),
         )
         .orderBy(desc(instances.lastSeenAt));
 
       return {
-        instances: rows.map((r) => ({
+        principals: rows.map((r) => ({
           id: r.id,
           ownerId: r.ownerId,
           ownerName: r.ownerName,
@@ -964,7 +957,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
   });
 
   // ── Public instance page data ──────────────────────────────────────────────
-  fastify.get("/public/agents/:owner/:principalName", async (request, reply) => {
+  fastify.get("/public/principals/:owner/:principalName", async (request, reply) => {
     const { owner, principalName } = request.params as {
       owner: string;
       principalName: string;
@@ -986,7 +979,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     });
 
     if (!instance) {
-      return reply.status(404).send({ error: "Public agent not found" });
+      return reply.status(404).send({ error: "Principal not found" });
     }
 
     return {
@@ -1009,7 +1002,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
 
   // ── Public chat proxy ──────────────────────────────────────────────────────
   fastify.post(
-    "/public/agents/:owner/:principalName/chat",
+    "/public/principals/:owner/:principalName/chat",
     async (request, reply) => {
       const { owner, principalName } = request.params as {
         owner: string;
@@ -1051,7 +1044,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       });
 
       if (!instance) {
-        return reply.status(404).send({ error: "Public agent not found" });
+        return reply.status(404).send({ error: "Principal not found" });
       }
 
       // Status check
@@ -1089,37 +1082,6 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         reply,
         null, // public endpoint — no authenticated user
       );
-    },
-  );
-
-  // ── Analytics (owner only) ─────────────────────────────────────────────────
-  fastify.get(
-    "/instances/:id/analytics",
-    { preHandler: [authenticateOrDevBypass] },
-    async (request, reply) => {
-      const { id } = request.params as { id: string };
-      const user = request.user;
-
-      const instance = await instanceService.getById(id);
-      if (!instance) {
-        return reply.status(404).send({ error: "Instance not found" });
-      }
-
-      if (!(await instanceService.isOwner(instance, user.id))) {
-        return reply.status(403).send({ error: "Forbidden" });
-      }
-
-      // For now, return placeholder analytics until a dedicated analytics table is built.
-      // In production this would query aggregated session data.
-      return {
-        totalSessions: 0,
-        uniqueVisitors: 0,
-        avgSessionLengthSeconds: 0,
-        period: {
-          from: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-          to: new Date().toISOString(),
-        },
-      };
     },
   );
 }
