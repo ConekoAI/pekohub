@@ -28,7 +28,7 @@ import { z } from "zod";
 // A previous draft also honoured the inbound `x-pekohub-caller-principal`
 // header, but that header travels on the public v1 HTTP API, so
 // honouring it without an independent auth proof would have let any
-// client spoof `Principal::User("42")` (or any Agent/Team id) and
+// client spoof `Principal::User("42")` (or any other principal id) and
 // gain access. Per the review on PR #12, the safe pattern is:
 //
 //   - JWT/API-key auth is mandatory.

@@ -24,12 +24,12 @@ export const handlers = [
       hits: [
         {
           namespace: 'acme',
-          name: 'my-agent',
+          name: 'my-principal',
           version: 'v1.0.0',
-          description: 'A test agent bundle',
+          description: 'A test principal bundle',
           author: 'Test Author',
-          bundleType: 'agent',
-          tags: ['test', 'agent'],
+          bundleType: 'principal',
+          tags: ['test', 'principal'],
           pullCount: 42,
           starCount: 10,
           updatedAt: new Date().toISOString(),
@@ -63,7 +63,7 @@ export const handlers = [
         license: 'MIT',
         tags: ['test'],
         categories: [],
-        bundleType: 'agent',
+        bundleType: 'principal',
         extensionType: undefined,
         modelProviders: [],
         requiredMcpServers: [],
@@ -81,7 +81,7 @@ export const handlers = [
         monthly: 100,
         allTime: 500,
       },
-      installCommand: `peko agent install ${params.namespace}/${params.name}:v1.0.0`,
+      installCommand: `peko principal install ${params.namespace}/${params.name}:v1.0.0`,
     });
   }),
 

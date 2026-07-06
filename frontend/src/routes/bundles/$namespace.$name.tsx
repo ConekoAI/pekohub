@@ -177,7 +177,7 @@ function BundleDetailPage() {
         <div className="mt-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
           <code className="flex-1 rounded-lg bg-gray-900 px-4 py-3 text-sm text-gray-100 font-mono break-all">
             {data.metadata.bundleType === 'extension'
-              ? `peko agent pull ${namespace}/${name}:${data.metadata.version ?? 'latest'}`
+              ? `peko principal pull ${namespace}/${name}:${data.metadata.version ?? 'latest'}`
               : data.installCommand}
           </code>
           <button

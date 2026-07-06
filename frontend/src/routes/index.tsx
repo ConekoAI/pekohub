@@ -47,7 +47,7 @@ function HomePage() {
             <CategoryCard
               icon={<Package className="h-6 w-6" />}
               title="Principals"
-              description="Agents and multi-agent orchestrations"
+              description="Self-contained AI actors with their own prompts, permissions, and runtime"
             />
             <CategoryCard
               icon={<Wrench className="h-6 w-6" />}
