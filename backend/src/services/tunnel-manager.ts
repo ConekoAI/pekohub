@@ -817,7 +817,7 @@ export class TunnelManager {
       return;
     }
 
-    // 2. Target lookup — resolve the target agent DID to a host
+    // 2. Target lookup — resolve the target principal DID to a host
     //    runtime via the directory API (#14). 404-ish: synthesize a
     //    structured error response so the runtime doesn't hang.
     const target = await instanceService.getByDid(req.targetPrincipalDid);

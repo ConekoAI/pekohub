@@ -258,16 +258,19 @@ The following workstreams were originally scoped for Phase 2 but have been **def
 - **EXT-013** through **EXT-015**: `a2a_send`, `a2a_broadcast`, `a2a_receive` built-in tools integrating with `EventEmit`/`EventSubscribe` hooks
 
 #### P1/P2 Extensions
-- **EXT-016** through **EXT-022**: `a2a_subscribe`/`a2a_unsubscribe`, version constraints, `peko ext init`, extension dependencies, `team` extension type adapter, hot-reloading, marketplace API
+- **EXT-016** through **EXT-022**: `a2a_subscribe`/`a2a_unsubscribe`, version constraints, `peko ext init`, extension dependencies, hot-reloading, marketplace API
 
-### 9.2 Team Orchestration via Extensions
+### 9.2 Deferred (Retired Concepts)
 
-- **TEAM-001** through **TEAM-010**: Team orchestrator extensions (supervisor pattern), `agent.toml` configuration, declarative team composition, 3-agent demo
-- **TEAM-011** through **TEAM-015**: Pipeline and mesh extensions, OpenTelemetry tracing, dynamic scaling, human-in-the-loop
+> The `team` extension type, `team` bundle/instance type, and team
+> orchestration are **not on the Phase 3 roadmap** — they were retired
+> in the principal-as-container migration (ADR-041/042). Coordinated
+> multi-principal work is expected to be expressed via principal
+> extensions and the A2A protocol instead. See ADR-042 for rationale.
 
 ### 9.3 Deferred Performance & Security
 
-- **PERF-004** through **PERF-010**: Extension hook invocation, A2A message delivery, 3-agent team E2E, extension installation speed, extension crash handling, 20-agent concurrency
+- **PERF-004** through **PERF-010**: Extension hook invocation, A2A message delivery, 3-principal E2E, extension installation speed, extension crash handling, 20-principal concurrency
 - **SEC-005** through **SEC-008**: Extension SHA-256 verification, MCP env stripping, private namespaces, filesystem restrictions
 
 ---
@@ -279,9 +282,7 @@ The following workstreams were originally scoped for Phase 2 but have been **def
 | **Extension source references** | Needs dedicated runtime work; registry is higher priority | Phase 3 |
 | **Remote extension installation** | Depends on source references | Phase 3 |
 | **A2A built-in tools** | Needs A2A event bus stabilization | Phase 3 |
-| **Team orchestration as extensions** | Large workstream; deserves its own phase | Phase 3 |
-| **`team` extension type adapter** | Depends on team orchestration | Phase 3 |
-| **Shared Services Fabric** | Premature for local single-user tool. Agents already share MCP tools via single process. Relevant for cloud/multi-tenant runtime. | Phase 3 |
+| **Shared Services Fabric** | Premature for local single-user tool. Principals already share MCP tools via single process. Relevant for cloud/multi-tenant runtime. | Phase 3 |
 | **Enterprise Governance Layer** | RBAC, SSO, audit dashboards — requires enterprise customers and Phase 3 maturity | Phase 3 |
 | **Cloud Runtime Service (SaaS)** | Managed multi-tenant cloud offering — requires operational infrastructure and cost modeling | Phase 3 |
 | **A2A Protocol v1.0** | Agent-to-Agent protocol is still stabilizing (v1.0 expected early 2026) — our event bus + A2A tools are sufficient | Phase 3 |
@@ -290,7 +291,7 @@ The following workstreams were originally scoped for Phase 2 but have been **def
 | **Federated Registries** | Cross-registry search and mirroring — single registry must mature first | Phase 3+ |
 | **Agent Commerce / Payments** | Visa/Mastercard integration — market not mature, protocol not finalized | Phase 3+ |
 | **New hook points beyond the existing 22** | Existing hooks cover all known use cases for Phase 2; add only if proven necessary | Future |
-| **Team orchestration in core runtime** | Violates extension philosophy; all coordination patterns are extension concerns | N/A |
+| **Team orchestration in core runtime** | Retired in ADR-041/042 — coordinated multi-principal work is expressed via principal extensions and A2A | N/A |
 
 ---
 

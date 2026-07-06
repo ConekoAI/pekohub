@@ -229,7 +229,7 @@ Phase 2 is complete when:
 |----------|---------|
 | `Phase2_Success_Criteria.md` | Complete, detailed success criteria with numbered requirements |
 | `Phase2_Roadmap.md` (this document) | Implementation roadmap: execution order, milestones, architecture diagrams, design decisions |
-| ADR-027 (`docs/architecture/adr/ADR-027-unified-packaging.md`) | Packaging format for `.agent`/`.team`/`.ext` |
+| ADR-027 (`docs/architecture/adr/ADR-027-unified-packaging.md`) | Packaging format for `.principal`/`.ext` (legacy `.agent`/`.team` annotations return 410) |
 | ADR-001 (`docs/architecture/adr/ADR-001-refresh-token-rotation.md`) | Refresh token rotation for long-lived sessions (SEC-002) |
 
 ---

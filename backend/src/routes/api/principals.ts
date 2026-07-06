@@ -96,7 +96,7 @@ export default async function principalDirectoryRoutes(
       if (principalName === "") {
         return reply
           .status(400)
-          .send({ error: "Invalid target spec: agent name is required" });
+          .send({ error: "Invalid target spec: principal name is required" });
       }
 
       const caller = await extractCallerSubject(fastify, request);

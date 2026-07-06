@@ -92,7 +92,7 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
         monthly: Number(pullCounts.monthly),
         allTime: Number(pullCounts.allTime),
       },
-      installCommand: `peko agent pull ${namespace}/${name}:${latestVersion?.version ?? "latest"}`,
+      installCommand: `peko principal pull ${namespace}/${name}:${latestVersion?.version ?? "latest"}`,
     });
 
     return detail;
