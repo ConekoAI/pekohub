@@ -28,12 +28,12 @@ describe("Instance API", () => {
 
       await createInstance(testDb.client, {
         ownerId: user.id,
-        name: "agent-1",
+        name: "principal-1",
         type: "principal",
       });
       await createInstance(testDb.client, {
         ownerId: user.id,
-        name: "agent-2",
+        name: "principal-2",
         type: "principal",
       });
 
@@ -56,7 +56,7 @@ describe("Instance API", () => {
 
       await createInstance(testDb.client, {
         ownerId: user.id,
-        name: "online-agent",
+        name: "online-principal",
         status: "online",
       });
       await createInstance(testDb.client, {
@@ -74,7 +74,7 @@ describe("Instance API", () => {
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
       expect(body.data).toHaveLength(1);
-      expect(body.data[0].name).toBe("online-agent");
+      expect(body.data[0].name).toBe("online-principal");
     });
 
     it("should return 401 when not authenticated", async () => {
@@ -94,7 +94,7 @@ describe("Instance API", () => {
       const headers = await authHeaders(user);
       const instance = await createInstance(testDb.client, {
         ownerId: user.id,
-        name: "my-agent",
+        name: "my-principal",
       });
 
       const response = await app.inject({
@@ -105,7 +105,7 @@ describe("Instance API", () => {
 
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
-      expect(body.name).toBe("my-agent");
+      expect(body.name).toBe("my-principal");
     });
 
     it("should return 404 for non-existent instance", async () => {
@@ -127,7 +127,7 @@ describe("Instance API", () => {
       const user = await createUser(testDb.client, { namespace: "alice" });
       const instance = await createInstance(testDb.client, {
         ownerId: user.id,
-        name: "public-agent",
+        name: "public-principal",
         exposure: "public",
         allowedPrincipals: [{ kind: "user", id: "999" }],
         runtimeId: "runtime-secret",
@@ -140,7 +140,7 @@ describe("Instance API", () => {
 
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
-      expect(body.name).toBe("public-agent");
+      expect(body.name).toBe("public-principal");
       expect(body.allowedPrincipals).toBeUndefined();
       expect(body.runtimeId).toBeUndefined();
     });
@@ -151,7 +151,7 @@ describe("Instance API", () => {
       const headers = await authHeaders(user);
       const instance = await createInstance(testDb.client, {
         ownerId: user.id,
-        name: "public-agent",
+        name: "public-principal",
         exposure: "public",
         allowedPrincipals: [{ kind: "user", id: String(user.id) }],
         runtimeId: "runtime-secret",
@@ -165,7 +165,7 @@ describe("Instance API", () => {
 
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
-      expect(body.name).toBe("public-agent");
+      expect(body.name).toBe("public-principal");
       expect(body.allowedPrincipals).toEqual([{ kind: "user", id: String(user.id) }]);
       expect(body.runtimeId).toBe("runtime-secret");
     });
@@ -177,7 +177,7 @@ describe("Instance API", () => {
       const headers = await authHeaders(viewer);
       const instance = await createInstance(testDb.client, {
         ownerId: owner.id,
-        name: "public-agent",
+        name: "public-principal",
         exposure: "public",
         allowedPrincipals: [{ kind: "user", id: String(viewer.id) }],
         runtimeId: "runtime-secret",
@@ -206,7 +206,7 @@ describe("Instance API", () => {
       const headers = await authHeaders(viewer);
       const instance = await createInstance(testDb.client, {
         ownerId: owner.id,
-        name: "typed-agent",
+        name: "typed-principal",
         exposure: "public",
         ownerSubject: { kind: "principal", id: "helper" },
         allowedPrincipals: [{ kind: "principal", id: "helper" }],
@@ -260,7 +260,7 @@ describe("Instance API", () => {
       const user = await createUser(testDb.client, { namespace: "alice" });
       const instance = await createInstance(testDb.client, {
         ownerId: user.id,
-        name: "private-agent",
+        name: "private-principal",
         exposure: "private",
       });
 
@@ -344,7 +344,7 @@ describe("Instance API", () => {
       const headers = await authHeaders(other);
       const instance = await createInstance(testDb.client, {
         ownerId: owner.id,
-        name: "my-agent",
+        name: "my-principal",
       });
 
       const response = await app.inject({
@@ -391,7 +391,7 @@ describe("Instance API", () => {
       const headers = await authHeaders(other);
       const instance = await createInstance(testDb.client, {
         ownerId: owner.id,
-        name: "my-agent",
+        name: "my-principal",
       });
 
       const response = await app.inject({
@@ -450,7 +450,7 @@ describe("Instance API", () => {
       const user = await createUser(testDb.client, { namespace: "alice" });
       const instance = await createInstance(testDb.client, {
         ownerId: user.id,
-        name: "private-agent",
+        name: "private-principal",
         exposure: "private",
       });
 
@@ -471,7 +471,7 @@ describe("Instance API", () => {
       const owner = await createUser(testDb.client, { namespace: "alice" });
       const instance = await createInstance(testDb.client, {
         ownerId: owner.id,
-        name: "private-agent",
+        name: "private-principal",
         exposure: "private",
       });
 
@@ -496,7 +496,7 @@ describe("Instance API", () => {
       const user = await createUser(testDb.client, { namespace: "alice" });
       const instance = await createInstance(testDb.client, {
         ownerId: user.id,
-        name: "public-agent",
+        name: "public-principal",
         exposure: "public",
         status: "online",
       });
@@ -516,7 +516,7 @@ describe("Instance API", () => {
       const user = await createUser(testDb.client, { namespace: "alice" });
       const instance = await createInstance(testDb.client, {
         ownerId: user.id,
-        name: "tos-agent",
+        name: "tos-principal",
         exposure: "public",
         status: "online",
         tosRequired: true,
@@ -543,7 +543,7 @@ describe("Instance API", () => {
       const headers = await authHeaders(user);
       const instance = await createInstance(testDb.client, {
         ownerId: user.id,
-        name: "my-agent",
+        name: "my-principal",
       });
 
       const response = await app.inject({
@@ -584,7 +584,7 @@ describe("Instance API", () => {
       const headers = await authHeaders(user);
       const instance = await createInstance(testDb.client, {
         ownerId: user.id,
-        name: "my-agent",
+        name: "my-principal",
         exposure: "public",
       });
 
@@ -607,7 +607,7 @@ describe("Instance API", () => {
       const headers = await authHeaders(other);
       const instance = await createInstance(testDb.client, {
         ownerId: owner.id,
-        name: "my-agent",
+        name: "my-principal",
       });
 
       const response = await app.inject({

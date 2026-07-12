@@ -548,12 +548,12 @@ export class InstanceService {
     return result.length > 0;
   }
 
-  // ── Agent directory lookups (issue #14) ────────────────────────────────────
+  // ── Principal directory lookups (issue #14) ────────────────────────────────────
 
   /**
    * Look up an instance by its per-principal DID. The runtime sets this on
    * `instance_announce` (peko-runtime#34) and the cross-runtime
-   * `a2a_send` resolver uses it as its primary key
+   * `principal_send` resolver uses it as its primary key
    * ([peko-runtime#29](https://github.com/ConekoAI/peko-runtime/issues/29)).
    *
    * Hits the `idx_instances_principal_did` unique index — single
@@ -577,7 +577,7 @@ export class InstanceService {
    * handle.
    *
    * v1 is user-namespace only. ADR-041 removed the Team subject
-   * kind, so the team branch is intentionally not implemented.
+   * kind, so the team variant (removed in ADR-041) is intentionally not implemented.
    *
    * Returns `null` when either the owner namespace doesn't exist or
    * the owner has no instance with that name. The route layer
@@ -604,7 +604,7 @@ export class InstanceService {
 
   /**
    * Resolve a `TargetSpec` (by-did or by-handle) into a host. The
-   * cross-runtime `a2a_send` ([peko-runtime#29]) calls this on the
+   * cross-runtime `principal_send` ([peko-runtime#29]) calls this on the
    * hub to learn where to dispatch.
    *
    * The result carries an explicit status (`hit` / `miss` / `denied`)
@@ -634,7 +634,7 @@ export class InstanceService {
       // The unique index treats nulls as distinct, so a row with a
       // null principal_did shouldn't be reachable through the by-did
       // resolver — but the by-handle path can land here (e.g. a
-      // pre-#34 runtime that announces without an principal_did). Treat
+      // pre-#34 runtime that announces without a principal_did). Treat
       // as miss for the by-did path; the by-handle caller still gets
       // a meaningful hit (the by-handle wire format doesn't promise
       // a DID). We only return miss on by-did.

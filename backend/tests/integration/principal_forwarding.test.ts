@@ -144,8 +144,8 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
     await seedRuntime(testDb, idA.did, ownerA.id, "Runtime A");
     await seedRuntime(testDb, idB.did, ownerB.id, "Runtime B");
 
-    const DID_A_AGENT = "did:peko:agent:helper-a";
-    const DID_B_AGENT = "did:peko:agent:helper-b";
+    const DID_A_AGENT = "did:peko:principal:helper-a";
+    const DID_B_AGENT = "did:peko:principal:helper-b";
 
     await createInstance(testDb.client, {
       ownerId: ownerA.id,
@@ -156,10 +156,10 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
       principalDid: DID_A_AGENT,
     });
     // Target is public — the hub-side ACL (`subjectCanAccess`) returns
-    // false for Agent caller → User owner (cross-kind denial), which
+    // false for Principal-kind caller → User owner (cross-kind denial), which
     // mirrors what `resolvePrincipalTarget` does in `instances.ts`. Public
     // exposure short-circuits the check. For a private target reached
-    // via an Agent caller, the runtime would never get a hit on the
+    // via a Principal-kind caller, the runtime would never get a hit on the
     // directory API to begin with, so this case is the realistic path.
     await createInstance(testDb.client, {
       ownerId: ownerB.id,
@@ -241,7 +241,7 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
     await seedRuntime(testDb, idA.did, ownerA.id);
     await seedRuntime(testDb, idB.did, ownerB.id);
 
-    const DID_B_AGENT = "did:peko:agent:helper-b";
+    const DID_B_AGENT = "did:peko:principal:helper-b";
     await createInstance(testDb.client, {
       ownerId: ownerB.id,
       ownerSubject: { kind: "user", id: String(ownerB.id) },
@@ -306,7 +306,7 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
       requestId: "req-target-missing",
       callerRuntimeId: idA.did,
       callerPrincipalDid: "caller-a",
-      targetPrincipalDid: "did:peko:agent:not-on-file",
+      targetPrincipalDid: "did:peko:principal:not-on-file",
       message: "hi",
       signature: "x",
     });
@@ -322,7 +322,7 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
     if (resp?.type !== "principal_to_principal_response") throw new Error("unexpected");
     const err = parseSynthesizedError(resp.payload);
     expect(err.code).toBe("target_not_found");
-    expect(err.message).toMatch(/did:peko:agent:not-on-file/);
+    expect(err.message).toMatch(/did:peko:principal:not-on-file/);
 
     expect(metrics.snapshot()[CounterName.HubA2ATargetMissing]).toBe(1);
   });
@@ -338,7 +338,7 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
     await seedRuntime(testDb, idA.did, ownerA.id);
     await seedRuntime(testDb, idB.did, ownerB.id);
 
-    const DID_B_AGENT = "did:peko:agent:helper-b";
+    const DID_B_AGENT = "did:peko:principal:helper-b";
     await createInstance(testDb.client, {
       ownerId: ownerB.id,
       ownerSubject: { kind: "user", id: String(ownerB.id) },
@@ -390,7 +390,7 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
     await seedRuntime(testDb, idA.did, ownerA.id);
     await seedRuntime(testDb, idB.did, ownerB.id);
 
-    const DID_B_AGENT = "did:peko:agent:private-b";
+    const DID_B_AGENT = "did:peko:principal:private-b";
     await createInstance(testDb.client, {
       ownerId: ownerB.id,
       ownerSubject: { kind: "user", id: String(ownerB.id) },
@@ -453,7 +453,7 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
     await seedRuntime(testDb, idA.did, ownerA.id);
     await seedRuntime(testDb, idB.did, ownerB.id);
 
-    const DID_B_AGENT = "did:peko:agent:target-b";
+    const DID_B_AGENT = "did:peko:principal:target-b";
     await createInstance(testDb.client, {
       ownerId: ownerB.id,
       ownerSubject: { kind: "user", id: String(ownerB.id) },
@@ -514,7 +514,7 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
     await seedRuntime(testDb, idA.did, ownerA.id);
     await seedRuntime(testDb, idB.did, ownerB.id);
 
-    const DID_B_AGENT = "did:peko:agent:target-b";
+    const DID_B_AGENT = "did:peko:principal:target-b";
     await createInstance(testDb.client, {
       ownerId: ownerB.id,
       ownerSubject: { kind: "user", id: String(ownerB.id) },
@@ -576,7 +576,7 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
     await seedRuntime(testDb, idA.did, ownerA.id);
     await seedRuntime(testDb, idB.did, ownerB.id);
 
-    const DID_B_AGENT = "did:peko:agent:target-b";
+    const DID_B_AGENT = "did:peko:principal:target-b";
     await createInstance(testDb.client, {
       ownerId: ownerB.id,
       ownerSubject: { kind: "user", id: String(ownerB.id) },

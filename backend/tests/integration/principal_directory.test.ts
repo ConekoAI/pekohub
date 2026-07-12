@@ -37,7 +37,7 @@ describe("Agent directory API", () => {
     await testDb.client.close();
   });
 
-  const REAL_DID = "did:peko:agent:abc123def456";
+  const REAL_DID = "did:peko:principal:abc123def456";
 
   describe("GET /v1/principals/by-did/:did", () => {
     it("returns 200 with the resolution on a hit (owner is the caller)", async () => {
@@ -118,7 +118,7 @@ describe("Agent directory API", () => {
       await createInstance(testDb.client, {
         ownerId: owner.id,
         ownerSubject: { kind: "user", id: String(owner.id) },
-        name: "public-agent",
+        name: "public-principal",
         exposure: "public",
         principalDid: REAL_DID,
       });
@@ -142,7 +142,7 @@ describe("Agent directory API", () => {
       await createInstance(testDb.client, {
         ownerId: owner.id,
         ownerSubject: { kind: "user", id: String(owner.id) },
-        name: "public-agent",
+        name: "public-principal",
         exposure: "public",
         principalDid: REAL_DID,
       });

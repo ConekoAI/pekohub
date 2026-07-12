@@ -127,7 +127,7 @@ async function main() {
   await app.register(bundleApiRoutes, { prefix: "/v1" });
   await app.register(instanceRoutes, { prefix: "/v1" });
   // Issue #14: principal directory (by-did / by-handle) for the cross-runtime
-  // a2a_send resolver. Mounted under /v1 to match the rest of the
+  // principal_send resolver. Mounted under /v1 to match the rest of the
   // public API; both endpoints require auth (JWT or API key) so
   // `fastify.authenticate` is the gate.
   await app.register(principalDirectoryRoutes, { prefix: "/v1" });

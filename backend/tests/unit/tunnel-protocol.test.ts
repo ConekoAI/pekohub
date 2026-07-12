@@ -21,7 +21,7 @@ describe("tunnel-protocol", () => {
     const msg = {
       type: "proxied_request" as const,
       requestId: "req-123",
-      agent: "my-agent",
+      agent: "my-principal",
       payload: [1, 2, 3],
     };
     const encoded = encodeTunnelMessage(msg);
