@@ -29,7 +29,7 @@ function HomePage() {
       <section className="bg-gradient-to-b from-peko-50 to-white py-20">
         <div className="mx-auto max-w-4xl px-4 text-center">
           <h1 className="text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl">
-            Discover & Share Agents
+            Discover & Share Principals
           </h1>
           <p className="mt-4 text-lg text-gray-600">
             The public registry for Pekobot principals and extensions.
