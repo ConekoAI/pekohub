@@ -12,6 +12,8 @@
     }
   },
   "scripts": {
+    "clean": "rm -rf dist",
+    "prebuild": "rm -rf dist",
     "build": "tsc",
     "dev": "tsc --watch",
     "lint": "eslint src",
