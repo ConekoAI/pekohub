@@ -35,7 +35,7 @@ describe("parseSubjectJsonb (review #12 P1)", () => {
       expect(parseSubjectJsonb(raw)).toEqual({ kind: "user", id: "42" });
     });
 
-    it("accepts an Agent principal", () => {
+    it("accepts a Principal subject", () => {
       const raw: unknown = { kind: "principal", id: "helper" };
       expect(parseSubjectJsonb(raw)).toEqual({
         kind: "principal",

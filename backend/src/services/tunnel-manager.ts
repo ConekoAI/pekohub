@@ -101,7 +101,7 @@ interface A2AInFlightEntry {
 /**
  * Codes for synthesized error responses (issue #16). The runtime decodes
  * the `payload` JSON `{ kind: "error", code, message }` and surfaces the
- * error to the original `a2a_send` caller.
+ * error to the original `principal_send` caller.
  */
 export type A2AErrorCode =
   | "target_not_found"
@@ -775,7 +775,7 @@ export class TunnelManager {
   /**
    * Synthesize and send an `principal_to_principal_response` carrying a JSON
    * `{ kind: "error", code, message }` payload. The runtime decodes it
-   * and surfaces the error to the `a2a_send` caller.
+   * and surfaces the error to the `principal_send` caller.
    */
   private sendA2AErrorResponse(
     socket: WebSocket,
@@ -844,7 +844,7 @@ export class TunnelManager {
     //    passed the directory ACL at resolve time, but we re-check
     //    here against the row we're actually routing to. Public
     //    exposure short-circuits the ACL — matches `resolvePrincipalTarget`
-    //    in `instances.ts`. The caller is presented as an Agent-kind
+    //    in `instances.ts`. The caller is presented as a Principal-kind
     //    principal carrying its DID.
     const owner = resolveOwnerSubject(target);
     if (owner === null) {
@@ -883,7 +883,7 @@ export class TunnelManager {
     }
 
     // 4. Find target tunnel. If offline, send a structured response
-    //    so the caller's a2a_send fails cleanly instead of hanging.
+    //    so the caller's principal_send fails cleanly instead of hanging.
     const targetConn = this.getConnection(target.runtimeId);
     if (!targetConn) {
       metrics.inc(CounterName.HubA2ATargetOffline);

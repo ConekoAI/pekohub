@@ -42,7 +42,7 @@ describe("Tunnel Proxy Integration", () => {
 
       const instance = await createInstance(testDb.client, {
         ownerId: user.id,
-        name: "online-agent",
+        name: "online-principal",
         runtimeId: "did:key:zOffline",
         status: "online",
         exposure: "public",
@@ -237,7 +237,7 @@ describe("Tunnel Proxy Integration", () => {
       // Create a private instance with the user in allowedPrincipals
       const instance = await createInstance(testDb.client, {
         ownerId: user.id,
-        name: "private-agent",
+        name: "private-principal",
         runtimeId: did,
         status: "online",
         exposure: "private",

@@ -3,7 +3,7 @@ import { z } from 'zod';
 // ─────────────────────────────────────────────────────────────────────────────
 // TargetSpec — the cross-runtime address the runtime hands PekoHub to
 // resolve into a host. Mirrors peko-runtime's
-// `a2a_send::TargetSpec` ([peko-runtime#29]).
+// `principal_send::TargetSpec` ([peko-runtime#29]).
 //
 // Two flavours:
 //   * RemoteByDID — `did:peko:principal:<keyhash>`. The runtime's

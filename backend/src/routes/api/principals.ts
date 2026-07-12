@@ -2,16 +2,16 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { instanceService, type CallerSubject } from "../../services/instances.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Agent directory routes (issue #14).
+// Principal directory routes (issue #14).
 //
-// The runtime's cross-runtime `a2a_send`
+// The runtime's cross-runtime `principal_send`
 // ([peko-runtime#29](https://github.com/ConekoAI/peko-runtime/issues/29))
 // dispatches to a host by first resolving a `TargetSpec` to a concrete
 // `runtime_id` + `instance_id` + `principal_did`. This file is the public
 // surface for that resolution.
 //
 // Two endpoints, both auth-gated (a `CallerSubject` — User-kind
-// today, with runtime-attested Agent-kind callers as a follow-up
+// today, with runtime-attested Principal-kind callers as a follow-up
 // behind a runtime-issued JWT, gated on peko-runtime#16):
 //
 //   * `GET /v1/principals/by-did/:did`        — DID primary key
@@ -78,7 +78,7 @@ export default async function principalDirectoryRoutes(
         case "hit":
           return result.resolution;
         case "miss":
-          return reply.status(404).send({ error: "Agent not found" });
+          return reply.status(404).send({ error: "Principal not found" });
         case "denied":
           return reply.status(403).send({ error: "Forbidden" });
       }
@@ -109,7 +109,7 @@ export default async function principalDirectoryRoutes(
         case "hit":
           return result.resolution;
         case "miss":
-          return reply.status(404).send({ error: "Agent not found" });
+          return reply.status(404).send({ error: "Principal not found" });
         case "denied":
           return reply.status(403).send({ error: "Forbidden" });
       }

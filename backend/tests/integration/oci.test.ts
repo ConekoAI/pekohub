@@ -37,7 +37,7 @@ describe("OCI Distribution API", () => {
       const user = await createUser(testDb.client, { namespace: "acme" });
       const bundle = await createBundle(testDb.client, {
         namespace: "acme",
-        name: "my-agent",
+        name: "my-principal",
       });
       const digest = sha256("blob-content");
       const storageKey = `blobs/${digest}`;
@@ -66,7 +66,7 @@ describe("OCI Distribution API", () => {
       for (let i = 0; i < 10; i++) {
         const res = await app.inject({
           method: "GET",
-          url: `/v2/acme/my-agent/blobs/${digest}`,
+          url: `/v2/acme/my-principal/blobs/${digest}`,
         });
         expect(res.statusCode).toBe(200);
       }

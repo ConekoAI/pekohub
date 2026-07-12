@@ -32,7 +32,7 @@ describe("Bundle API", () => {
       const app = await buildTestApp({ testDb });
       const bundle = await createBundle(testDb.client, {
         namespace: "acme",
-        name: "my-agent",
+        name: "my-principal",
         description: "A test agent",
       });
 
@@ -45,7 +45,7 @@ describe("Bundle API", () => {
       const body = JSON.parse(response.payload);
       expect(body).toMatchObject({
         namespace: "acme",
-        name: "my-agent",
+        name: "my-principal",
         metadata: {
           description: "A test agent",
         },
@@ -111,7 +111,7 @@ describe("Bundle API", () => {
         testDb.client,
         3,
         {
-          bundle: { namespace: "acme", name: "my-agent" },
+          bundle: { namespace: "acme", name: "my-principal" },
         },
       );
 
@@ -137,7 +137,7 @@ describe("Bundle API", () => {
         testDb.client,
         1,
         {
-          bundle: { namespace: "acme", name: "my-agent" },
+          bundle: { namespace: "acme", name: "my-principal" },
         },
       );
       const headers = await authHeaders(user);
@@ -164,7 +164,7 @@ describe("Bundle API", () => {
         testDb.client,
         1,
         {
-          bundle: { namespace: "acme", name: "my-agent" },
+          bundle: { namespace: "acme", name: "my-principal" },
         },
       );
 
@@ -187,7 +187,7 @@ describe("Bundle API", () => {
       const user = await createUser(testDb.client, { namespace: "acme" });
       const bundle = await createBundle(testDb.client, {
         namespace: "acme",
-        name: "my-agent",
+        name: "my-principal",
       });
       const headers = await authHeaders(user);
 
@@ -204,7 +204,7 @@ describe("Bundle API", () => {
       const app = await buildTestApp({ testDb });
       const bundle = await createBundle(testDb.client, {
         namespace: "acme",
-        name: "my-agent",
+        name: "my-principal",
       });
 
       const response = await app.inject({
@@ -220,7 +220,7 @@ describe("Bundle API", () => {
       const user = await createUser(testDb.client, { namespace: "acme" });
       const bundle = await createBundle(testDb.client, {
         namespace: "acme",
-        name: "my-agent",
+        name: "my-principal",
       });
       const digest =
         "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";

@@ -109,8 +109,8 @@ describe("instanceService.canChat", () => {
     expect(await instanceService.canChat(instance, 123)).toBe(true);
   });
 
-  // Issue #11: Agent caller against an Agent-owned instance.
-  it("allows an Agent caller against an Agent-owned instance", async () => {
+  // Issue #11: Principal-kind caller against a Principal-owned instance.
+  it("allows a Principal-kind caller against a Principal-owned instance", async () => {
     const instance = {
       ...baseInstance,
       status: "online" as const,

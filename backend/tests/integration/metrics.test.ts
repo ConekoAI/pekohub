@@ -108,7 +108,7 @@ describe("GET /metrics (issue #16)", () => {
     await seedRuntime(testDb, idA.did, ownerA.id);
     await seedRuntime(testDb, idB.did, ownerB.id);
 
-    const DID_B_AGENT = "did:peko:agent:target-b";
+    const DID_B_AGENT = "did:peko:principal:target-b";
     await createInstance(testDb.client, {
       ownerId: ownerB.id,
       ownerSubject: { kind: "user", id: String(ownerB.id) },
@@ -161,7 +161,7 @@ describe("GET /metrics (issue #16)", () => {
     await seedRuntime(testDb, idA.did, ownerA.id);
     await seedRuntime(testDb, idB.did, ownerB.id);
 
-    const DID_B_AGENT = "did:peko:agent:target-b";
+    const DID_B_AGENT = "did:peko:principal:target-b";
     await createInstance(testDb.client, {
       ownerId: ownerB.id,
       ownerSubject: { kind: "user", id: String(ownerB.id) },
@@ -181,14 +181,14 @@ describe("GET /metrics (issue #16)", () => {
       requestId: "metrics-req-missing",
       callerRuntimeId: idA.did,
       callerPrincipalDid: "caller-a",
-      targetPrincipalDid: "did:peko:agent:not-on-file",
+      targetPrincipalDid: "did:peko:principal:not-on-file",
       message: "hi",
       signature: "x",
     });
     await flush();
 
     // Second: forbidden — target exists (private, no allow-list),
-    // Agent caller doesn't match User owner.
+    // Principal-kind caller doesn't match User owner.
     socketA.triggerMessage({
       type: "principal_to_principal_request",
       requestId: "metrics-req-forbidden",

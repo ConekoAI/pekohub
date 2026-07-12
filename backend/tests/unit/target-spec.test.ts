@@ -20,16 +20,16 @@ describe("TargetSpec schema", () => {
   it("accepts a by-did spec", () => {
     const parsed = RemoteByDID.parse({
       kind: "by-did",
-      did: "did:peko:agent:abc123",
+      did: "did:peko:principal:abc123",
     });
     expect(parsed.kind).toBe("by-did");
-    expect(parsed.did).toBe("did:peko:agent:abc123");
+    expect(parsed.did).toBe("did:peko:principal:abc123");
   });
 
   it("accepts a by-did spec with runtime-id hint", () => {
     const parsed = RemoteByDID.parse({
       kind: "by-did",
-      did: "did:peko:agent:abc123",
+      did: "did:peko:principal:abc123",
       runtimeIdHint: "runtime-42",
     });
     expect(parsed.runtimeIdHint).toBe("runtime-42");
@@ -80,7 +80,7 @@ describe("TargetSpec schema", () => {
   it("discriminates by kind in the union", () => {
     const byDid = TargetSpec.parse({
       kind: "by-did",
-      did: "did:peko:agent:xyz",
+      did: "did:peko:principal:xyz",
     });
     const byHandle = TargetSpec.parse({
       kind: "by-handle",
@@ -96,9 +96,9 @@ describe("formatTargetSpecPath", () => {
   it("encodes a by-did spec as the raw DID", () => {
     const s = formatTargetSpecPath({
       kind: "by-did",
-      did: "did:peko:agent:abc123",
+      did: "did:peko:principal:abc123",
     });
-    expect(s).toBe("did:peko:agent:abc123");
+    expect(s).toBe("did:peko:principal:abc123");
   });
 
   it("encodes a by-handle spec as `owner/principal_name`", () => {
@@ -113,10 +113,10 @@ describe("formatTargetSpecPath", () => {
 
 describe("parseTargetSpecPath", () => {
   it("parses a DID", () => {
-    const spec = parseTargetSpecPath("did:peko:agent:abc123");
+    const spec = parseTargetSpecPath("did:peko:principal:abc123");
     expect(spec).toEqual({
       kind: "by-did",
-      did: "did:peko:agent:abc123",
+      did: "did:peko:principal:abc123",
     });
   });
 
