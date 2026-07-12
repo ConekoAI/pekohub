@@ -29,7 +29,7 @@ export function Layout({ children }: LayoutProps) {
               Explore
             </Link>
             <a
-              href="https://github.com/coneko/pekobot"
+              href="https://github.com/ConekoAI/pekohub"
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm font-medium text-gray-600 hover:text-gray-900 flex items-center gap-1"
@@ -120,7 +120,7 @@ export function Layout({ children }: LayoutProps) {
                 Explore
               </Link>
               <a
-                href="https://github.com/coneko/pekobot"
+                href="https://github.com/ConekoAI/pekohub"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-sm font-medium text-gray-600 hover:text-gray-900 flex items-center gap-1"
