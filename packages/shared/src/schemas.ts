@@ -2,6 +2,8 @@ import { z } from 'zod';
 import {
   BundleTypes,
   ExtensionTypes,
+  CUSTOM_EXTENSION_PREFIX,
+  CUSTOM_EXTENSION_PATTERN,
   ModelProviders,
   Categories,
 } from './constants.js';
@@ -13,47 +15,36 @@ import {
 const nullishToUndefined = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess((val) => (val === null ? undefined : val), schema);
 
-export const HookPoint = z.enum([
-  'agent.init',
-  'agent.shutdown',
-  'agent.iteration',
-  'tool.register',
-  'tool.execute',
-  'tool.executeAsync',
-  'tool.resultTransform',
-  'event.subscribe',
-  'event.emit',
-  'prompt.systemSection',
-  'prompt.userSection',
-  'prompt.assistantSection',
-  'session.stateChange',
-  'session.contextBuild',
-  'session.branch',
-  'session.overlay',
-  'memory.store',
-  'memory.retrieve',
-  'mcp.serverRegister',
-  'mcp.toolDiscover',
-  'cron.schedule',
-  'cron.tick',
-  // Principal-layer hooks (ADR-041 §3.4). Fire on the Principal
-  // boundary, not on a single agent run. The 22 hooks above remain
-  // the agent-layer surface; these 13 extend the principal layer.
-  'principal.init',
-  'principal.shutdown',
-  'principal.iteration',
-  'principal.send',
-  'principal.receive',
-  'principal.permissionGrant',
-  'principal.permissionRevoke',
-  'principal.memory.store',
-  'principal.memory.retrieve',
-  'principal.router.decide',
-  'principal.router.fallback',
-  'principal.session.fork',
-  'principal.session.gc',
-]);
+// Runtime-aligned hook point string. Mirrors peko-runtime's
+// `HookPoint::name()` / `HookPoint::matches()` format
+// (src/extensions/framework/core/hook_points.rs).
+//
+// Three forms are accepted:
+//   1. Base form — one of the 23 runtime hook point names
+//      (e.g. "agent.init", "tool.execute", "session.compaction")
+//   2. Parameterized form — base + concrete 3rd segment
+//      (e.g. "tool.execute.Read", "prompt.system_section.skills",
+//      "event.subscribe.instance.created", "agent.iteration.3")
+//   3. Wildcard form — base + ".*"
+//      (e.g. "tool.execute.*", "session.*", "*")
+//
+// Rejected: anything not under one of the six runtime hook categories
+// (prompt / tool / session / io / event / agent).
+export const HookPoint = z.string().regex(
+  /^(?:prompt|tool|session|io|event|agent)\.[a-z_]+(?:\.[A-Za-z0-9_*]+)?$/,
+  'Hook point must be a peko-runtime HookPoint::name() string ' +
+    '(e.g. "agent.init", "tool.execute.Read", "session.*")',
+);
 export type HookPoint = z.infer<typeof HookPoint>;
+
+// Extension type validator: any of the 7 standard peko-runtime types,
+// or a "custom:<id>" string validated against CUSTOM_EXTENSION_PATTERN.
+export const ExtensionTypeSchema = z.union([
+  z.enum(ExtensionTypes),
+  z
+    .string()
+    .regex(CUSTOM_EXTENSION_PATTERN, `Custom extension type must be "${CUSTOM_EXTENSION_PREFIX}<id>" with lowercase kebab/slash/dot/underscore id`),
+]);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Bundle Manifest (Pekohub-specific metadata embedded in OCI manifest)
@@ -67,7 +58,7 @@ export const BundleMetadata = z.object({
   tags: nullishToUndefined(z.array(z.string().max(32)).max(20).optional()),
   categories: nullishToUndefined(z.array(z.enum(Categories)).optional()),
   bundleType: z.enum(BundleTypes),
-  extensionType: z.enum(ExtensionTypes).optional().nullable(),
+  extensionType: ExtensionTypeSchema.optional().nullable(),
   modelProviders: nullishToUndefined(z.array(z.enum(ModelProviders)).optional()),
   requiredMcpServers: nullishToUndefined(z.array(z.string()).optional()),
   homepage: z.string().url().optional().nullable(),
@@ -110,7 +101,7 @@ export const SearchQuery = z.object({
   filters: z
     .object({
       bundleType: z.enum(BundleTypes).optional(),
-      extensionType: z.enum(ExtensionTypes).optional(),
+      extensionType: ExtensionTypeSchema.optional(),
       modelProvider: z.enum(ModelProviders).optional(),
       category: z.enum(Categories).optional(),
       license: z.string().optional(),
@@ -126,7 +117,7 @@ export const SearchResultItem = z.object({
   description: z.string().optional(),
   author: z.string(),
   bundleType: z.enum(BundleTypes),
-  extensionType: z.enum(ExtensionTypes).optional(),
+  extensionType: ExtensionTypeSchema.optional(),
   tags: nullishToUndefined(z.array(z.string()).optional()),
   pullCount: z.number().int().nonnegative(),
   starCount: z.number().int().nonnegative(),
@@ -211,7 +202,7 @@ export const ExtensionManifest = z.object({
   id: z.string().regex(/^[a-z0-9-]+$/, 'Extension ID must be kebab-case'),
   name: z.string().min(1).max(128),
   version: z.string(),
-  extensionType: z.enum(ExtensionTypes),
+  extensionType: ExtensionTypeSchema,
   description: z.string().max(2000).optional(),
   hooks: z.array(
     z.object({

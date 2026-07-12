@@ -28,14 +28,32 @@ export const MediaTypes = {
 export const BundleTypes = ['principal', 'extension'] as const;
 export type BundleType = (typeof BundleTypes)[number];
 
+// Standard extension types — mirror peko-runtime/src/extensions/mod.rs
+// `extension_types::*`. `builtin` is intentionally absent: built-in
+// tools are framework-internal, not manifest-declarable.
 export const ExtensionTypes = [
   'skill',
+  'agent',
+  'slash',
   'mcp',
+  'universal-tool',
   'gateway',
-  'universal',
   'general',
 ] as const;
-export type ExtensionType = (typeof ExtensionTypes)[number];
+export type ExtensionStandardType = (typeof ExtensionTypes)[number];
+
+// Custom extension type prefix — peko-runtime's
+// `extension_types::CUSTOM_PREFIX`. Custom types are validated against
+// the `CUSTOM_EXTENSION_PATTERN` regex below.
+export const CUSTOM_EXTENSION_PREFIX = 'custom:' as const;
+
+// Matches peko-runtime's runtime check for `custom:<id>`:
+// `extension_types::is_valid_type` accepts any string starting with
+// the prefix and validates the suffix separately. Pekohub requires the
+// suffix to be lowercase kebab/slash/dot/underscore (e.g. "custom:my-org/skill").
+export const CUSTOM_EXTENSION_PATTERN = /^custom:[a-z0-9][a-z0-9._/-]*$/;
+
+export type ExtensionType = ExtensionStandardType | `custom:${string}`;
 
 export const ModelProviders = [
   'openai',
