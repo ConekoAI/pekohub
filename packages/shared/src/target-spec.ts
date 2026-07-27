@@ -39,10 +39,32 @@ const Namespace = z
   .regex(/^[a-z0-9][a-z0-9_-]*$/, 'Invalid namespace')
   .describe('Owner namespace (User-kind; the runtime no longer has a Team-kind principal).');
 
-const PrincipalName = z
+// Mirrors peko-runtime's `validate_agent_name`
+// (peko-runtime/peko-rs/core/src/common/identifiers.rs:49-76):
+//   - 1-64 chars
+//   - ASCII alphanumeric, "-", or "_"
+//   - no leading/trailing "-"
+//   - no ".." segment (path-traversal defense, runtime PR #241)
+//
+// The regex anchors the first char as alnum and the character class
+// to the alnum/`-`/`_` set. The leading/trailing "-" rule and the
+// ".." rule are enforced as explicit `.refine`s so the intent is
+// obvious and survives a future regex loosening. Without the
+// trailing-`-` refine, `trailing-` would match the regex.
+export const PrincipalName = z
   .string()
   .min(1)
-  .max(255)
+  .max(64)
+  .regex(
+    /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/,
+    'Principal name must be 1-64 chars: ASCII alnum, "-", or "_"; no leading/trailing "-" or "."',
+  )
+  .refine((s) => !s.startsWith('-') && !s.endsWith('-'), {
+    message: 'Principal name must not start or end with "-"',
+  })
+  .refine((s) => s !== '..' && s !== '.' && !s.includes('..'), {
+    message: 'Principal name must not contain ".."',
+  })
   .describe('The runtime-side principal name (== `instances.name`).');
 
 export const RemoteByDID = z.object({

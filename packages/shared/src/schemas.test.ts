@@ -3,8 +3,10 @@ import {
   SearchResultItem,
   SearchResponse,
   BundleMetadata,
+  ExtensionManifest,
   HookPoint,
 } from "../src/schemas.js";
+import { PrincipalName } from "../src/target-spec.js";
 
 describe("nullishToUndefined coercion", () => {
   describe("SearchResultItem", () => {
@@ -328,6 +330,77 @@ describe("ExtensionType (runtime-aligned)", () => {
       version: "1.0.0",
       extensionType: extType,
     });
+    expect(result.success).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PrincipalName (runtime-aligned; peko-runtime's `validate_agent_name`)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("PrincipalName (runtime-aligned)", () => {
+  it.each([
+    "a",
+    "alice",
+    "helper-1",
+    "test_principal",
+    "A1B2C3",
+    "a".repeat(64), // exact max
+  ])("accepts %s", (name) => {
+    const result = PrincipalName.safeParse(name);
+    expect(result.success).toBe(true);
+  });
+
+  it.each([
+    "",
+    "-leading",
+    "trailing-",
+    "has/slash",
+    "has\\backslash",
+    "has space",
+    "has.dot",
+    ".", // single dot
+    "..", // double dot (path traversal)
+    "..foo",
+    "foo..",
+    "foo..bar",
+    "a".repeat(65), // over max
+  ])("rejects %s", (name) => {
+    const result = PrincipalName.safeParse(name);
+    expect(result.success).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ExtensionManifest.id (runtime-aligned; extension ids are lowercase
+// kebab-case with no leading/trailing "-")
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("ExtensionManifest.id (runtime-aligned)", () => {
+  it.each([
+    "a",
+    "docker-skill",
+    "test-echo",
+    "a1b2c3",
+    "abc-def-ghi",
+    "x".repeat(64), // exact max
+  ])("accepts %s", (id) => {
+    const result = ExtensionManifest.shape.id.safeParse(id);
+    expect(result.success).toBe(true);
+  });
+
+  it.each([
+    "",
+    "-leading",
+    "trailing-",
+    "--double",
+    "-", // single dash
+    "FOO", // uppercase not allowed
+    "foo_bar", // underscore not allowed
+    "foo.bar", // dot not allowed
+    "x".repeat(65), // over max
+  ])("rejects %s", (id) => {
+    const result = ExtensionManifest.shape.id.safeParse(id);
     expect(result.success).toBe(false);
   });
 });

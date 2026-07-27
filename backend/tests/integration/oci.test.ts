@@ -91,4 +91,92 @@ describe("OCI Distribution API", () => {
       expect(bundleResult.rows[0].pull_count).toBe(1);
     });
   });
+
+  // Inner-config identity validation (audit section 7). The
+  // runtime emits `dev.pekohub.principalName` / `dev.pekohub.extensionId`
+  // in the OCI manifest annotations; PekoHub validates them here
+  // (without parsing the TOML config blob) before persisting.
+  describe("PUT /v2/:namespace/:name/manifests/:reference — inner-config validation", () => {
+    it("rejects unsafe dev.pekohub.principalName annotation", async () => {
+      const app = await buildTestApp({ testDb });
+      const user = await createUser(testDb.client, { namespace: "acme" });
+
+      // Pre-populate the config blob so BLOB_UNKNOWN doesn't shadow
+      // the inner-config check.
+      const configBody = "{}";
+      const configDigest = sha256(configBody);
+      await testDb.client.query(
+        `INSERT INTO blobs (digest, size, media_type, storage_key)
+         VALUES ($1, $2, $3, $4)`,
+        [configDigest, 2, "application/octet-stream", `blobs/${configDigest}`],
+      );
+      await app.storage.put(`blobs/${configDigest}`, Buffer.from(configBody));
+
+      const res = await app.inject({
+        method: "PUT",
+        url: "/v2/acme/my-principal/manifests/v1.0.0",
+        headers: {
+          "content-type": "application/vnd.oci.image.manifest.v1+json",
+          ...(await authHeaders(user)),
+        },
+        payload: JSON.stringify({
+          schemaVersion: 2,
+          mediaType: "application/vnd.oci.image.manifest.v1+json",
+          config: {
+            mediaType: "application/vnd.oci.image.config.v1+json",
+            digest: configDigest,
+            size: 2,
+          },
+          layers: [],
+          annotations: {
+            "dev.pekohub.principalName": "../escape",
+          },
+        }),
+      });
+      expect(res.statusCode).toBe(400);
+      const body = JSON.parse(res.body);
+      expect(body.errors[0].code).toBe("MANIFEST_INVALID");
+      expect(body.errors[0].message).toContain("principalName");
+    });
+
+    it("rejects unsafe dev.pekohub.extensionId annotation", async () => {
+      const app = await buildTestApp({ testDb });
+      const user = await createUser(testDb.client, { namespace: "acme" });
+
+      const configBody = "{}";
+      const configDigest = sha256(configBody);
+      await testDb.client.query(
+        `INSERT INTO blobs (digest, size, media_type, storage_key)
+         VALUES ($1, $2, $3, $4)`,
+        [configDigest, 2, "application/octet-stream", `blobs/${configDigest}`],
+      );
+      await app.storage.put(`blobs/${configDigest}`, Buffer.from(configBody));
+
+      const res = await app.inject({
+        method: "PUT",
+        url: "/v2/acme/my-extension/manifests/v1.0.0",
+        headers: {
+          "content-type": "application/vnd.oci.image.manifest.v1+json",
+          ...(await authHeaders(user)),
+        },
+        payload: JSON.stringify({
+          schemaVersion: 2,
+          mediaType: "application/vnd.oci.image.manifest.v1+json",
+          config: {
+            mediaType: "application/vnd.oci.image.config.v1+json",
+            digest: configDigest,
+            size: 2,
+          },
+          layers: [],
+          annotations: {
+            "dev.pekohub.extensionId": "-leading-dash",
+          },
+        }),
+      });
+      expect(res.statusCode).toBe(400);
+      const body = JSON.parse(res.body);
+      expect(body.errors[0].code).toBe("MANIFEST_INVALID");
+      expect(body.errors[0].message).toContain("extensionId");
+    });
+  });
 });
