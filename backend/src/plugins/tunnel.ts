@@ -4,6 +4,7 @@ import type { FastifyInstance } from "fastify";
 import type { SocketStream } from "@fastify/websocket";
 import { TunnelManager } from "../services/tunnel-manager.js";
 import { TunnelRouter } from "../services/tunnel-router.js";
+import { InMemoryQuotaStore } from "../services/quotas.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -18,7 +19,12 @@ const TUNNEL_UPGRADE_RATE_WINDOW = "1 minute";
 
 export default fp(async (fastify: FastifyInstance) => {
   const tunnelManager = new TunnelManager(fastify);
-  const tunnelRouter = new TunnelRouter(tunnelManager);
+  // Default to in-memory; the `quotas` plugin overwrites this
+  // reference with Redis or stays in-memory depending on REDIS_URL.
+  const tunnelRouter = new TunnelRouter(
+    tunnelManager,
+    new InMemoryQuotaStore(),
+  );
 
   fastify.decorate("tunnelManager", tunnelManager);
   fastify.decorate("tunnelRouter", tunnelRouter);

@@ -185,6 +185,51 @@ export const UserProfile = z.object({
 });
 export type UserProfile = z.infer<typeof UserProfile>;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Public principal profile (PR-C1)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// The shape returned by `GET /v1/public/principals/:owner/:principalName`.
+// The SPA consumes this for the share-link profile + chat page. The
+// owner object is intentionally minimal — just enough to render a
+// header avatar; no email or any PII.
+//
+// `tosRequired` / `tosText` mirror the `instances.tosRequired` /
+// `tosText` columns. When `tosRequired` is true, the SPA renders a
+// blocking TermsGate before exposing the chat input.
+//
+// `tags` / `description` are optional in the backend (`description`
+// is required for a public profile to be listed, but defensive
+// defaults keep the schema tolerant for older rows or test fixtures).
+export const PublicProfile = z.object({
+  instance: z.object({
+    id: z.string(),
+    publicName: z.string(),
+    description: z.string().nullable().optional(),
+    owner: z.object({
+      id: z.string(),
+      name: z.string(),
+      avatarUrl: z.string().nullable().optional(),
+    }),
+    capabilities: z.array(z.string()).default([]),
+    status: z.enum(['online', 'offline', 'busy', 'error']),
+    tosRequired: z.boolean().default(false),
+    tosText: z.string().nullable().optional(),
+  }),
+});
+export type PublicProfile = z.infer<typeof PublicProfile>;
+
+// Chat request body for the public chat endpoint
+// (POST /v1/public/principals/:owner/:principalName/chat). Mirrors
+// the backend's ChatBodySchema — single message plus an optional
+// ToS-acknowledged flag (PR-C4: TermsGate persists acks to
+// localStorage and re-sends them on subsequent messages).
+export const PublicChatBody = z.object({
+  message: z.string().min(1),
+  tos_acknowledged: z.boolean().optional(),
+});
+export type PublicChatBody = z.infer<typeof PublicChatBody>;
+
 export const ApiKey = z.object({
   id: z.string(),
   name: z.string(),

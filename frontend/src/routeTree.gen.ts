@@ -13,6 +13,7 @@ import { Route as SearchRouteImport } from './routes/search'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
+import { Route as POwnerPrincipalNameRouteImport } from './routes/p.$owner.$principalName'
 import { Route as BundlesNamespaceNameRouteImport } from './routes/bundles/$namespace.$name'
 
 const SearchRoute = SearchRouteImport.update({
@@ -35,6 +36,11 @@ const AuthCallbackRoute = AuthCallbackRouteImport.update({
   path: '/auth/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
+const POwnerPrincipalNameRoute = POwnerPrincipalNameRouteImport.update({
+  id: '/p/$owner/$principalName',
+  path: '/p/$owner/$principalName',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BundlesNamespaceNameRoute = BundlesNamespaceNameRouteImport.update({
   id: '/bundles/$namespace/$name',
   path: '/bundles/$namespace/$name',
@@ -46,6 +52,7 @@ export interface FileRoutesByFullPath {
   '/profile': typeof ProfileRoute
   '/search': typeof SearchRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/p/$owner/$principalName': typeof POwnerPrincipalNameRoute
   '/bundles/$namespace/$name': typeof BundlesNamespaceNameRoute
 }
 export interface FileRoutesByTo {
@@ -53,6 +60,7 @@ export interface FileRoutesByTo {
   '/profile': typeof ProfileRoute
   '/search': typeof SearchRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/p/$owner/$principalName': typeof POwnerPrincipalNameRoute
   '/bundles/$namespace/$name': typeof BundlesNamespaceNameRoute
 }
 export interface FileRoutesById {
@@ -61,6 +69,7 @@ export interface FileRoutesById {
   '/profile': typeof ProfileRoute
   '/search': typeof SearchRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/p/$owner/$principalName': typeof POwnerPrincipalNameRoute
   '/bundles/$namespace/$name': typeof BundlesNamespaceNameRoute
 }
 export interface FileRouteTypes {
@@ -70,6 +79,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/search'
     | '/auth/callback'
+    | '/p/$owner/$principalName'
     | '/bundles/$namespace/$name'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -77,6 +87,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/search'
     | '/auth/callback'
+    | '/p/$owner/$principalName'
     | '/bundles/$namespace/$name'
   id:
     | '__root__'
@@ -84,6 +95,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/search'
     | '/auth/callback'
+    | '/p/$owner/$principalName'
     | '/bundles/$namespace/$name'
   fileRoutesById: FileRoutesById
 }
@@ -92,6 +104,7 @@ export interface RootRouteChildren {
   ProfileRoute: typeof ProfileRoute
   SearchRoute: typeof SearchRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
+  POwnerPrincipalNameRoute: typeof POwnerPrincipalNameRoute
   BundlesNamespaceNameRoute: typeof BundlesNamespaceNameRoute
 }
 
@@ -125,6 +138,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/p/$owner/$principalName': {
+      id: '/p/$owner/$principalName'
+      path: '/p/$owner/$principalName'
+      fullPath: '/p/$owner/$principalName'
+      preLoaderRoute: typeof POwnerPrincipalNameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/bundles/$namespace/$name': {
       id: '/bundles/$namespace/$name'
       path: '/bundles/$namespace/$name'
@@ -140,6 +160,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProfileRoute: ProfileRoute,
   SearchRoute: SearchRoute,
   AuthCallbackRoute: AuthCallbackRoute,
+  POwnerPrincipalNameRoute: POwnerPrincipalNameRoute,
   BundlesNamespaceNameRoute: BundlesNamespaceNameRoute,
 }
 export const routeTree = rootRouteImport

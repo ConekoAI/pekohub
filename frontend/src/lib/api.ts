@@ -1,4 +1,4 @@
-import type { SearchQuery, SearchResponse, BundleDetail, UserProfile } from '@pekohub/shared';
+import type { SearchQuery, SearchResponse, BundleDetail, UserProfile, PublicProfile, PublicChatBody } from '@pekohub/shared';
 
 declare const __API_BASE__: string;
 export const API_BASE = typeof __API_BASE__ !== 'undefined' ? __API_BASE__ : '';
@@ -172,5 +172,38 @@ export const api = {
   deleteVersion: (namespace: string, name: string, version: string) =>
     fetch(`${API_BASE}/v1/bundles/${namespace}/${name}/versions/${version}`, { method: 'DELETE', credentials: 'include' }).then((r) => {
       if (!r.ok) throw new Error('Failed to delete version');
+    }),
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Public chat (PR-C) — anonymous, no JWT, visitor cookie round-trip.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Fetch the public profile for a principal. Used by `/p/$owner/$name`
+   * to render the share-link landing page (description, model,
+   * tags, ToS gate, chat input). No JWT — anyone with the link can
+   * see this; the visitor cookie is set by the backend so the
+   * subsequent `publicChat` call can resolve a thread.
+   */
+  publicProfile: (owner: string, principalName: string) =>
+    fetchJson<PublicProfile>(`/v1/public/principals/${owner}/${principalName}`),
+
+  /**
+   * Open a streaming SSE chat with a public principal. Returns the
+   * raw `Response` so the caller can attach a body-reader; callers
+   * that need a discriminated stream of `chunk | iteration | done |
+   * error` events should use `usePublicChat()` which parses the
+   * dual-channel SSE format. Throws on network error; quota
+   * rejections arrive as an `event: error` SSE frame.
+   *
+   * No `Authorization` header — public endpoint. The visitor cookie
+   * travels via `credentials: 'include'`.
+   */
+  publicChat: (owner: string, principalName: string, body: PublicChatBody) =>
+    fetch(`${API_BASE}/v1/public/principals/${owner}/${principalName}/chat`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
     }),
 };

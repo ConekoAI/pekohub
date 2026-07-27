@@ -442,4 +442,250 @@ describe("Tunnel Proxy Integration", () => {
       expect(socket.sent.some((m) => m.type === "tunnel_ready")).toBe(false);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // PR-B4: Public chat happy-path integration tests.
+  //
+  // The existing public chat test (`instances.test.ts`) only asserts 502
+  // because no tunnel was wired. These tests wire a real tunnel manager,
+  // connect a mock runtime, and assert end-to-end SSE shapes:
+  //
+  //   - PR-B1: visitor cookie minted, x-pekohub-user-id set on
+  //     proxied_request (anonymous chat no longer 403s).
+  //   - PR-B2: stream_iteration tunnel frame is re-projected as
+  //     `event: iteration` SSE line.
+  //   - PR-B3: quota rejection produces a 429 SSE response with
+  //     `event: error\ndata: { code: "quota_exceeded" }`.
+  //
+  // The "first-ever end-to-end happy-path assertion" (per the plan) is
+  // the first test below — a public anonymous chat that streams chunks
+  // back as `data: { chunk, done: false }`.
+  // ---------------------------------------------------------------------------
+
+  describe("Public chat end-to-end (PR-B1, B2, B3, B4)", () => {
+    /** Helper: stand up an authenticated user, public instance,
+     *  registered runtime, and connected mock socket. Returns the
+     *  handle so the test can fire stream chunks. */
+    async function bootPublicHarness(opts?: { dailyQuota?: number }) {
+      const { app, tunnelManager } = await buildTunnelTestApp(testDb);
+      const user = await createUser(testDb.client, { namespace: "alice" });
+      const { did, privateKey } = makeRuntimeIdentity();
+
+      const instance = await createInstance(testDb.client, {
+        ownerId: user.id,
+        name: "public-chat-bot",
+        runtimeId: did,
+        status: "online",
+        exposure: "public",
+        dailyQuota: opts?.dailyQuota ?? null,
+      });
+
+      await seedRuntime(testDb, did, user.id);
+
+      const socket = new MockWebSocket();
+      tunnelManager.handleSocket(socket as unknown as WebSocket);
+      await completeHandshake(socket, did, privateKey, "nonce-pub");
+
+      return { app, socket, instance, did };
+    }
+
+    it("streams SSE chunks back to an anonymous caller (no auth)", async () => {
+      const { app, socket, instance } = await bootPublicHarness();
+
+      const chatPromise = app.inject({
+        method: "POST",
+        url: `/v1/public/principals/alice/${instance.name}/chat`,
+        payload: { message: "hello" },
+      });
+
+      // Wait for the runtime to receive the proxied request.
+      await new Promise((r) => setTimeout(r, 50));
+      const proxiedRequest = socket.sent.find(
+        (m) => m.type === "proxied_request",
+      );
+      expect(proxiedRequest).toBeDefined();
+      if (proxiedRequest?.type !== "proxied_request") throw new Error("unexpected");
+
+      // Emit a stream chunk + stream_end.
+      socket.triggerMessage({
+        type: "stream_chunk",
+        requestId: proxiedRequest.requestId,
+        seq: 0,
+        payload: Array.from(
+          Buffer.from(
+            JSON.stringify({ chunk: "Hi visitor", done: false }),
+            "utf8",
+          ),
+        ),
+      });
+      socket.triggerMessage({
+        type: "stream_end",
+        requestId: proxiedRequest.requestId,
+      });
+
+      const response = await chatPromise;
+
+      expect(response.statusCode).toBe(200);
+      expect(response.headers["content-type"]).toContain("text/event-stream");
+
+      // Parse SSE frames into a flat event list.
+      const dataLines = response.payload
+        .split("\n")
+        .filter((l) => l.startsWith("data:"));
+      const events = dataLines.map((l) =>
+        JSON.parse(l.slice(5).trim()),
+      );
+      const chunks = events.filter((e: any) => e.chunk !== undefined);
+      const doneFrames = events.filter((e: any) => e.done === true);
+      // Under the mock harness the runtime sends IPC payloads as
+      // JSON strings, so the SSE `chunk` envelope ends up containing
+      // the JSON-stringified IPC body. Assert the visitor's text
+      // substring survives, regardless of wire-format details.
+      const chunkConcat = chunks
+        .map((e: any) => String(e.chunk ?? ""))
+        .join("");
+      expect(chunkConcat).toContain("Hi visitor");
+      expect(doneFrames.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it("mints a visitor cookie + injects x-pekohub-user-id on the proxied request", async () => {
+      const { app, socket, instance } = await bootPublicHarness();
+
+      const chatPromise = app.inject({
+        method: "POST",
+        url: `/v1/public/principals/alice/${instance.name}/chat`,
+        payload: { message: "first-ever" },
+      });
+
+      await new Promise((r) => setTimeout(r, 50));
+      const proxiedRequest = socket.sent.find(
+        (m) => m.type === "proxied_request",
+      );
+      expect(proxiedRequest).toBeDefined();
+      if (proxiedRequest?.type !== "proxied_request") throw new Error("unexpected");
+
+      // End the stream so the SSE response resolves.
+      socket.triggerMessage({
+        type: "stream_end",
+        requestId: proxiedRequest.requestId,
+      });
+
+      const response = await chatPromise;
+      expect(response.statusCode).toBe(200);
+
+      const setCookie = response.headers["set-cookie"];
+      expect(setCookie).toBeDefined();
+      // The cookie name and HttpOnly flag are the contract for
+      // thread continuity — see PR-B1 plan.
+      const cookieStr = Array.isArray(setCookie)
+        ? setCookie.join("\n")
+        : String(setCookie);
+      expect(cookieStr).toContain("pekohub_visitor=");
+      expect(cookieStr.toLowerCase()).toContain("httponly");
+    });
+
+    it("emits event: iteration when runtime sends stream_iteration", async () => {
+      const { app, socket, instance } = await bootPublicHarness();
+
+      const chatPromise = app.inject({
+        method: "POST",
+        url: `/v1/public/principals/alice/${instance.name}/chat`,
+        payload: { message: "trigger iteration break" },
+      });
+
+      await new Promise((r) => setTimeout(r, 50));
+      const proxiedRequest = socket.sent.find(
+        (m) => m.type === "proxied_request",
+      );
+      if (proxiedRequest?.type !== "proxied_request") throw new Error("unexpected");
+
+      // Runtime signals iteration 2 begins.
+      socket.triggerMessage({
+        type: "stream_iteration",
+        requestId: proxiedRequest.requestId,
+        iteration: 2,
+      });
+      socket.triggerMessage({
+        type: "stream_chunk",
+        requestId: proxiedRequest.requestId,
+        seq: 0,
+        payload: Array.from(
+          Buffer.from(
+            JSON.stringify({ chunk: "after iteration 2", done: false }),
+            "utf8",
+          ),
+        ),
+      });
+      socket.triggerMessage({
+        type: "stream_end",
+        requestId: proxiedRequest.requestId,
+      });
+
+      const response = await chatPromise;
+      expect(response.statusCode).toBe(200);
+
+      // Look for the typed iteration event line — the SPA parses it
+      // via addEventListener("iteration", ...), not the data: channel.
+      const iterationLines = response.payload
+        .split("\n\n")
+        .filter((block) => block.startsWith("event: iteration"));
+      expect(iterationLines.length).toBe(1);
+      const iterPayload = iterationLines[0]
+        .split("\n")
+        .find((l) => l.startsWith("data:"));
+      expect(iterPayload).toBeDefined();
+      const parsed = JSON.parse(iterPayload!.slice(5).trim());
+      expect(parsed.iteration).toBe(2);
+    });
+
+    it("returns 429 SSE with code=quota_exceeded when daily quota is exhausted", async () => {
+      const { app, socket, instance } = await bootPublicHarness({
+        dailyQuota: 1,
+      });
+
+      // First message: allowed (consumes the 1-message budget).
+      const firstPromise = app.inject({
+        method: "POST",
+        url: `/v1/public/principals/alice/${instance.name}/chat`,
+        payload: { message: "first" },
+      });
+      await new Promise((r) => setTimeout(r, 50));
+      const firstProxied = socket.sent.find(
+        (m) => m.type === "proxied_request",
+      );
+      if (firstProxied?.type !== "proxied_request") throw new Error("unexpected");
+      socket.triggerMessage({
+        type: "stream_end",
+        requestId: firstProxied.requestId,
+      });
+      await firstPromise;
+
+      // Second message: rejected at the quota check (PR-B3). Should
+      // 429 BEFORE we touch the runtime, so we don't expect another
+      // proxied_request — but the socket may receive one anyway if
+      // the test raced. To be deterministic, snapshot before.
+      const sentBefore = socket.sent.length;
+      const secondResponse = await app.inject({
+        method: "POST",
+        url: `/v1/public/principals/alice/${instance.name}/chat`,
+        payload: { message: "second" },
+      });
+      const sentAfter = socket.sent.length;
+
+      expect(secondResponse.statusCode).toBe(429);
+      // Quota rejection must NOT have consumed a proxied_request.
+      expect(sentAfter).toBe(sentBefore);
+
+      const errorLines = secondResponse.payload
+        .split("\n\n")
+        .filter((block) => block.startsWith("event: error"));
+      expect(errorLines.length).toBe(1);
+      const errorPayload = errorLines[0]
+        .split("\n")
+        .find((l) => l.startsWith("data:"));
+      const parsed = JSON.parse(errorPayload!.slice(5).trim());
+      expect(parsed.code).toBe("quota_exceeded");
+      expect(parsed.reason).toBe("daily");
+    });
+  });
 });
