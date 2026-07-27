@@ -70,6 +70,15 @@ export interface PendingRequest {
 
 export interface StreamSink {
   onChunk: (chunk: string) => void;
+  /**
+   * PR-B2: optional per-iteration boundary hook. Older routes
+   * (proxyChat's non-event-channel path, any custom consumer)
+   * can omit this and the manager will drop iteration frames
+   * silently; routes that forward SSE (proxyStream and the
+   * public proxyChat) provide it so the SPA can break
+   * assistant text into one bubble per agentic iteration.
+   */
+  onIteration?: (iteration: number) => void;
   onEnd: () => void;
   onError: (err: Error) => void;
 }
@@ -470,6 +479,17 @@ export class TunnelManager {
         break;
       }
 
+      case "stream_iteration": {
+        // PR-B2: per-iteration boundary marker on the streaming
+        // channel. The hub re-projects it to the SSE
+        // `event: iteration` channel via the sink's `onIteration`.
+        // Older sinks without `onIteration` drop it silently — they
+        // are pre-B2 routes and never expect a per-iteration
+        // marker, so this is the safe default.
+        this.handleStreamIteration(msg.requestId, msg.iteration);
+        break;
+      }
+
       case "stream_end": {
         this.handleStreamEnd(msg.requestId);
         break;
@@ -579,6 +599,28 @@ export class TunnelManager {
     conn?.pendingRequestIds.delete(requestId);
     if (pending.timer) {
       clearTimeout(pending.timer);
+    }
+  }
+
+  /**
+   * PR-B2: forward a per-iteration boundary to the active stream
+   * sink. No-op if the pending request has no sink, no
+   * `onIteration` hook, or has already completed. We do NOT
+   * call `pending.reject`/`pending.resolve` here — iteration
+   * markers are content-free metadata and the stream keeps
+   * going until `stream_end` lands.
+   */
+  private handleStreamIteration(requestId: string, iteration: number): void {
+    const pending = this.pendingRequests.get(requestId);
+    if (!pending) return;
+    if (!pending.streamSink?.onIteration) return;
+    try {
+      pending.streamSink.onIteration(iteration);
+    } catch (err) {
+      pending.streamSink.onError(
+        err instanceof Error ? err : new Error(String(err)),
+      );
+      this.rejectRequest(requestId, new Error("Stream sink error"));
     }
   }
 

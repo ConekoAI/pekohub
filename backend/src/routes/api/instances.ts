@@ -19,6 +19,7 @@ import {
   gte,
 } from "drizzle-orm";
 import { z } from "zod";
+import { readOrSetVisitor } from "../../services/visitor-cookie.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Caller extraction (issue #11, review #12 P1 fix)
@@ -677,6 +678,8 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       { "content-type": "application/json" },
       reply,
       caller,
+      null, // no visitor cookie on authenticated path
+      { daily: instance.dailyQuota, weekly: instance.weeklyQuota },
     );
   });
 
@@ -712,6 +715,8 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         { "content-type": "application/json" },
         reply,
         caller,
+        null,
+        { daily: instance.dailyQuota, weekly: instance.weeklyQuota },
       );
     } catch (err) {
       fastify.log.warn({ err, instanceId: id }, "Stream proxy failed");
@@ -963,6 +968,14 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       principalName: string;
     };
 
+    // PR-B1: ensure the visitor cookie is set on first page load
+    // so the subsequent POST .../chat can resolve the visitor
+    // without round-tripping through a redirect. `getOrMintVisitorId`
+    // returns the existing or newly-minted id; we set the cookie
+    // unconditionally because that's idempotent and keeps the
+    // expiry rolling.
+    readOrSetVisitor(request, reply);
+
     const ownerRow = await db.query.users.findFirst({
       where: eq(users.namespace, owner),
     });
@@ -1072,6 +1085,15 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           });
       }
 
+      // PR-B1: mint or refresh the visitor cookie so the runtime
+      // can resolve this anonymous caller's `Subject` (the visitor
+      // UUID round-trips via `x-pekohub-user-id`). Without this,
+      // `resolve_bridge_caller` returns NoCaller and the runtime
+      // rejects the proxied request with 403 — the historical
+      // blocker that prevented anonymous public chat from ever
+      // reaching the principal.
+      const visitorId = readOrSetVisitor(request, reply);
+
       // Proxy through tunnel as an SSE stream
       await fastify.tunnelRouter.proxyStream(
         instance.runtimeId,
@@ -1081,6 +1103,8 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         { "content-type": "application/json" },
         reply,
         null, // public endpoint — no authenticated user
+        visitorId,
+        { daily: instance.dailyQuota, weekly: instance.weeklyQuota },
       );
     },
   );

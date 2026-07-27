@@ -7,6 +7,7 @@ import configPlugin from "../../src/plugins/config.js";
 import authPlugin from "../../src/plugins/auth.js";
 import { TunnelManager } from "../../src/services/tunnel-manager.js";
 import { TunnelRouter } from "../../src/services/tunnel-router.js";
+import { InMemoryQuotaStore } from "../../src/services/quotas.js";
 import instanceRoutes from "../../src/routes/api/instances.js";
 import principalDirectoryRoutes from "../../src/routes/api/principals.js";
 
@@ -47,7 +48,13 @@ export async function buildTunnelTestApp(testDb: TestDb) {
 
   // Real tunnel manager + router (not mocked)
   const tunnelManager = new TunnelManager(app);
-  const tunnelRouter = new TunnelRouter(tunnelManager);
+  // Tests don't wire the `quota` plugin, so default to in-memory
+  // with no caps — quota enforcement is exercised in its own
+  // dedicated test file (services/__tests__/quotas.test.ts).
+  const tunnelRouter = new TunnelRouter(
+    tunnelManager,
+    new InMemoryQuotaStore(),
+  );
   app.decorate("tunnelManager", tunnelManager);
   app.decorate("tunnelRouter", tunnelRouter);
 

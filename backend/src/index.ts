@@ -11,6 +11,7 @@ import authPlugin from "./plugins/auth.js";
 import storagePlugin from "./plugins/storage.js";
 import searchPlugin from "./plugins/search.js";
 import tunnelPlugin from "./plugins/tunnel.js";
+import quotaPlugin from "./plugins/quotas.js";
 
 import ociRoutes from "./routes/oci/index.js";
 import searchApiRoutes from "./routes/api/search.js";
@@ -91,6 +92,7 @@ async function main() {
   await app.register(storagePlugin);
   await app.register(searchPlugin);
   await app.register(tunnelPlugin);
+  await app.register(quotaPlugin);
 
   // Swagger / OpenAPI
   await app.register(swagger, {

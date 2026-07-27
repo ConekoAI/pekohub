@@ -57,6 +57,24 @@ export interface StreamEndPayload {
   requestId: string;
 }
 
+/**
+ * PR-B2: per-iteration boundary marker on the streaming channel
+ * (peko-runtime#rfc `TunnelMessage::StreamIteration`). The runtime
+ * emits these just before the first token chunk of each
+ * agentic loop iteration so the hub can re-project them as SSE
+ * `event: iteration` lines for the SPA's iteration-bubble UI.
+ *
+ * Iteration is 1-based and per `requestId`. The hub-side
+ * decoder (in `tunnel-manager.ts` `handleStreamIteration`) is
+ * intentionally minimal — opaque payload, no schema migration —
+ * because the runtime pins the wire shape in
+ * `peko-runtime/peko-rs/core/src/tunnel/protocol.rs`.
+ */
+export interface StreamIterationPayload {
+  requestId: string;
+  iteration: number;
+}
+
 // --- Instance lifecycle extensions (ADR-004, ADR-041) ---
 
 export type InstanceStatus = "online" | "offline" | "busy" | "error";
@@ -178,6 +196,7 @@ export type TunnelMessage =
   | { type: "proxied_response"; requestId: string; payload: number[] }
   | { type: "stream_chunk"; requestId: string; seq: number; payload: number[] }
   | { type: "stream_end"; requestId: string }
+  | { type: "stream_iteration"; requestId: string; iteration: number }
   | { type: "instance_announce"; payload: InstanceAnnouncePayload }
   | { type: "instance_heartbeat"; payload: InstanceHeartbeatPayload }
   | { type: "instance_deregister"; payload: InstanceDeregisterPayload }
