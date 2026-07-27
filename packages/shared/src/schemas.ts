@@ -199,7 +199,19 @@ export type ApiKey = z.infer<typeof ApiKey>;
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const ExtensionManifest = z.object({
-  id: z.string().regex(/^[a-z0-9-]+$/, 'Extension ID must be kebab-case'),
+  // Mirrors the runtime's `validate_agent_name` for extension ids:
+  //   1-64 lowercase chars, digits, or "-"
+  //   no leading/trailing "-" (so "--" and "-" alone are rejected)
+  // The previous `/^[a-z0-9-]+$/` accepted "-" alone and "--" — a
+  // path-traversal spelling and a Zod UX regression.
+  id: z
+    .string()
+    .min(1)
+    .max(64)
+    .regex(
+      /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/,
+      'Extension ID must be 1-64 lowercase chars, digits, or "-"; no leading/trailing "-"',
+    ),
   name: z.string().min(1).max(128),
   version: z.string(),
   extensionType: ExtensionTypeSchema,

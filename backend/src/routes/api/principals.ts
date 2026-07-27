@@ -33,7 +33,13 @@ import { instanceService, type CallerSubject } from "../../services/instances.js
 
 const DID_PARAM = "[\\w:.\\-]{1,512}";
 const OWNER_PARAM = "[a-z0-9][a-z0-9_\\-]{0,127}";
-const AGENT_NAME_PARAM = "[A-Za-z0-9][A-Za-z0-9_\\-.]{0,254}";
+// Mirrors peko-runtime's `validate_agent_name`:
+//   1-64 chars, ASCII alnum + "-" or "_", no leading/trailing "-",
+//   no ".". The "." in the previous regex was a copy-paste artifact
+//   and would have allowed a path-traversal spelling. The Zod
+//   `PrincipalName` schema (target-spec.ts) is the authoritative
+//   validator; this is a cheap URL-level pre-filter.
+const AGENT_NAME_PARAM = "[A-Za-z0-9][A-Za-z0-9_\\-]{0,63}";
 
 /**
  * Extract the caller's `Principal` from the request. Mirrors the

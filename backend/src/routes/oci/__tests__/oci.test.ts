@@ -733,6 +733,70 @@ describe("OCI Distribution Spec Routes", () => {
       expect(body.errors[0].code).toBe("BLOB_UNKNOWN");
     });
 
+    // Inner-config identity validation (audit section 7). The
+    // runtime emits `dev.pekohub.principalName` / `dev.pekohub.extensionId`
+    // in the OCI manifest annotations; PekoHub validates them here
+    // (without parsing the TOML config blob) before persisting.
+    it("rejects manifest with unsafe principal name annotation", async () => {
+      const manifest = {
+        schemaVersion: 2,
+        mediaType: "application/vnd.oci.image.manifest.v1+json",
+        config: {
+          mediaType: "application/vnd.oci.image.config.v1+json",
+          digest: sha256("{}"),
+          size: 2,
+        },
+        layers: [],
+        annotations: {
+          "dev.pekohub.principalName": "../escape",
+        },
+      };
+      mockDbQueries.blobs.findFirst.mockResolvedValue({ digest: "x" });
+
+      const res = await app.inject({
+        method: "PUT",
+        url: "/v2/ns/name/manifests/v1.0.0",
+        headers: {
+          "content-type": "application/vnd.oci.image.manifest.v1+json",
+        },
+        payload: JSON.stringify(manifest),
+      });
+      expect(res.statusCode).toBe(400);
+      const body = JSON.parse(res.body);
+      expect(body.errors[0].code).toBe("MANIFEST_INVALID");
+      expect(body.errors[0].message).toContain("principalName");
+    });
+
+    it("rejects manifest with unsafe extension id annotation", async () => {
+      const manifest = {
+        schemaVersion: 2,
+        mediaType: "application/vnd.oci.image.manifest.v1+json",
+        config: {
+          mediaType: "application/vnd.oci.image.config.v1+json",
+          digest: sha256("{}"),
+          size: 2,
+        },
+        layers: [],
+        annotations: {
+          "dev.pekohub.extensionId": "-leading-dash",
+        },
+      };
+      mockDbQueries.blobs.findFirst.mockResolvedValue({ digest: "x" });
+
+      const res = await app.inject({
+        method: "PUT",
+        url: "/v2/ns/name/manifests/v1.0.0",
+        headers: {
+          "content-type": "application/vnd.oci.image.manifest.v1+json",
+        },
+        payload: JSON.stringify(manifest),
+      });
+      expect(res.statusCode).toBe(400);
+      const body = JSON.parse(res.body);
+      expect(body.errors[0].code).toBe("MANIFEST_INVALID");
+      expect(body.errors[0].message).toContain("extensionId");
+    });
+
     it("creates bundle and version on first push", async () => {
       const manifest = {
         schemaVersion: 2,

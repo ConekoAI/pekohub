@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { db } from "../../db/index.js";
 import { bundles, bundleVersions, blobs } from "../../db/schema.js";
 import { eq, and, desc } from "drizzle-orm";
-import { OCIManifest } from "@pekohub/shared";
+import { OCIManifest, ExtensionManifest, PrincipalName } from "@pekohub/shared";
 import crypto from "node:crypto";
 import { auditService } from "../../services/audit.js";
 
@@ -207,6 +207,49 @@ export default async function manifestRoutes(fastify: FastifyInstance) {
 
     const manifest = manifestParse.data;
 
+    // Inner-config identity validation (audit section 7).
+    //
+    // PekoHub does not parse the TOML config blob (the runtime's
+    // signed `PrincipalManifest`), so a path-traversal spelling in
+    // the inner `principal.name` or `extension.id` would otherwise
+    // reach the DB unchecked. The runtime emits the same names in
+    // flat `dev.pekohub.*` annotations (peko-runtime PR #241 +
+    // follow-up) so we can validate them here against the runtime's
+    // `validate_agent_name`-equivalent Zod schemas. The runtime
+    // rejects the same set upstream, so this is a defense-in-depth
+    // check, not a primary gate.
+    const annotations = (manifest.annotations ?? {}) as Record<string, string>;
+    const principalName = annotations["dev.pekohub.principalName"];
+    if (principalName !== undefined) {
+      const r = PrincipalName.safeParse(principalName);
+      if (!r.success) {
+        return reply.status(400).send({
+          errors: [
+            {
+              code: "MANIFEST_INVALID",
+              message: "Invalid dev.pekohub.principalName annotation",
+              detail: r.error.format(),
+            },
+          ],
+        });
+      }
+    }
+    const extensionId = annotations["dev.pekohub.extensionId"];
+    if (extensionId !== undefined) {
+      const r = ExtensionManifest.shape.id.safeParse(extensionId);
+      if (!r.success) {
+        return reply.status(400).send({
+          errors: [
+            {
+              code: "MANIFEST_INVALID",
+              message: "Invalid dev.pekohub.extensionId annotation",
+              detail: r.error.format(),
+            },
+          ],
+        });
+      }
+    }
+
     // Verify all referenced blobs exist
     const allDescriptors = [manifest.config, ...manifest.layers];
     for (const desc of allDescriptors) {
@@ -237,7 +280,7 @@ export default async function manifestRoutes(fastify: FastifyInstance) {
     });
 
     // Extract Pekohub metadata from flat annotations
-    const annotations = (manifest.annotations ?? {}) as Record<string, string>;
+    // (already declared above for the inner-config validation block)
 
     // Helper to parse JSON annotation values (arrays/objects)
     function parseJsonAnnotation<T>(key: string): T | undefined {
