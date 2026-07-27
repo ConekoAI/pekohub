@@ -14,10 +14,10 @@ interface ProfileHeaderProps {
 }
 
 export function ProfileHeader({ profile }: ProfileHeaderProps) {
-  const { instance } = profile;
-  const status = instance.status;
-  const ownerAvatar = instance.owner.avatarUrl;
-  const ownerInitial = instance.owner.name[0]?.toUpperCase() ?? "?";
+  const { liveInstance } = profile;
+  const status = liveInstance.status;
+  const ownerAvatar = liveInstance.owner.avatarUrl;
+  const ownerInitial = liveInstance.owner.name[0]?.toUpperCase() ?? "?";
 
   return (
     <div className="card p-5">
@@ -28,7 +28,7 @@ export function ProfileHeader({ profile }: ProfileHeaderProps) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h1 className="truncate text-xl font-bold text-gray-900">
-              {instance.publicName}
+              {liveInstance.publicName}
             </h1>
             <StatusPill status={status} />
           </div>
@@ -36,7 +36,7 @@ export function ProfileHeader({ profile }: ProfileHeaderProps) {
             {ownerAvatar !== null && ownerAvatar !== undefined ? (
               <img
                 src={ownerAvatar}
-                alt={instance.owner.name}
+                alt={liveInstance.owner.name}
                 className="h-5 w-5 rounded-full object-cover"
               />
             ) : (
@@ -45,17 +45,17 @@ export function ProfileHeader({ profile }: ProfileHeaderProps) {
               </span>
             )}
             <span className="text-sm text-gray-500">
-              by {instance.owner.name}
+              by {liveInstance.owner.name}
             </span>
           </div>
-          {instance.description !== null && instance.description !== undefined && (
+          {liveInstance.description !== null && liveInstance.description !== undefined && (
             <p className="mt-3 text-sm leading-relaxed text-gray-700">
-              {instance.description}
+              {liveInstance.description}
             </p>
           )}
-          {instance.capabilities.length > 0 && (
+          {liveInstance.capabilities.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-1.5">
-              {instance.capabilities.map((cap: string) => (
+              {liveInstance.capabilities.map((cap: string) => (
                 <span
                   key={cap}
                   className="inline-flex items-center rounded-md bg-gray-100 px-2 py-0.5 text-xs text-gray-600"
@@ -71,7 +71,7 @@ export function ProfileHeader({ profile }: ProfileHeaderProps) {
   );
 }
 
-function StatusPill({ status }: { status: PublicProfile["instance"]["status"] }) {
+function StatusPill({ status }: { status: PublicProfile["liveInstance"]["status"] }) {
   const map = {
     online: { icon: Wifi, label: "online", cls: "bg-emerald-50 text-emerald-700" },
     busy: { icon: Clock, label: "busy", cls: "bg-amber-50 text-amber-700" },

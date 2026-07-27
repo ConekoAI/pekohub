@@ -201,8 +201,16 @@ export type UserProfile = z.infer<typeof UserProfile>;
 // `tags` / `description` are optional in the backend (`description`
 // is required for a public profile to be listed, but defensive
 // defaults keep the schema tolerant for older rows or test fixtures).
+//
+// Package vs live-instance note: this endpoint surfaces a *live
+// instance* (a running actor on a specific runtime, owned by one
+// user). It is NOT a principal *package* (a reusable template that
+// can spawn many instances for many users). Future "install this
+// template" / "browse packages" features will use a sibling shape —
+// keep the `liveInstance` wrapper self-documenting so the two
+// concepts don't get conflated by callers.
 export const PublicProfile = z.object({
-  instance: z.object({
+  liveInstance: z.object({
     id: z.string(),
     publicName: z.string(),
     description: z.string().nullable().optional(),
