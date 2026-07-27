@@ -996,7 +996,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     }
 
     return {
-      instance: {
+      liveInstance: {
         id: instance.id,
         publicName: instance.publicName ?? instance.name,
         description: instance.description,

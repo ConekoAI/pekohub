@@ -21,10 +21,10 @@ interface PublicChatPanelProps {
 }
 
 export function PublicChatPanel({ profile }: PublicChatPanelProps) {
-  const { instance } = profile;
-  const ownerName = instance.owner.name;
+  const { liveInstance } = profile;
+  const ownerName = liveInstance.owner.name;
   const [tosAcknowledged, setTosAcknowledged] = useState<boolean>(() =>
-    instance.tosRequired ? hasAcknowledged(instance.owner.id, instance.publicName) : true,
+    liveInstance.tosRequired ? hasAcknowledged(liveInstance.owner.id, liveInstance.publicName) : true,
   );
 
   const {
@@ -34,8 +34,8 @@ export function PublicChatPanel({ profile }: PublicChatPanelProps) {
     error,
     sendMessage,
   } = usePublicChat({
-    owner: instance.owner.name,
-    principalName: instance.publicName,
+    owner: liveInstance.owner.name,
+    principalName: liveInstance.publicName,
     tosAcknowledged: tosAcknowledged || undefined,
   });
 
@@ -46,11 +46,11 @@ export function PublicChatPanel({ profile }: PublicChatPanelProps) {
     }
   }, [messages, awaitingToken]);
 
-  const offline = instance.status === "offline";
+  const offline = liveInstance.status === "offline";
   const requiresTos =
-    instance.tosRequired &&
-    instance.tosText !== null &&
-    instance.tosText !== undefined &&
+    liveInstance.tosRequired &&
+    liveInstance.tosText !== null &&
+    liveInstance.tosText !== undefined &&
     !tosAcknowledged;
 
   return (
@@ -62,7 +62,7 @@ export function PublicChatPanel({ profile }: PublicChatPanelProps) {
       >
         {messages.length === 0 && !streaming && (
           <div className="mx-auto my-8 max-w-sm text-center text-sm text-gray-500">
-            Say hello to {instance.publicName}.
+            Say hello to {liveInstance.publicName}.
           </div>
         )}
         {messages.map((m, i) => (
@@ -70,7 +70,7 @@ export function PublicChatPanel({ profile }: PublicChatPanelProps) {
             key={i}
             message={m}
             ownerName={ownerName}
-            principalName={instance.publicName}
+            principalName={liveInstance.publicName}
           />
         ))}
         {/* Thinking pill — surfaced between iterations. Mirrors
@@ -91,12 +91,12 @@ export function PublicChatPanel({ profile }: PublicChatPanelProps) {
       )}
 
       {/* ToS gate or composer */}
-      {requiresTos && instance.tosText !== null && instance.tosText !== undefined ? (
+      {requiresTos && liveInstance.tosText !== null && liveInstance.tosText !== undefined ? (
         <div className="border-t border-gray-200 bg-gray-50 p-4">
           <TermsGate
-            owner={instance.owner.name}
-            principalName={instance.publicName}
-            tosText={instance.tosText}
+            owner={liveInstance.owner.name}
+            principalName={liveInstance.publicName}
+            tosText={liveInstance.tosText}
             onAccept={() => setTosAcknowledged(true)}
           />
         </div>
@@ -108,7 +108,7 @@ export function PublicChatPanel({ profile }: PublicChatPanelProps) {
         <PublicChatInput
           onSend={sendMessage}
           streaming={streaming}
-          placeholder={`Message ${instance.publicName}…`}
+          placeholder={`Message ${liveInstance.publicName}…`}
         />
       )}
     </div>
