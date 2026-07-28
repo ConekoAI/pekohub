@@ -87,7 +87,11 @@ export async function subjectCanAccess(
 
 export type InstanceType = "principal";
 export type InstanceStatus = "online" | "offline" | "busy" | "error";
-export type InstanceExposure = "unexposed" | "private" | "public";
+export type InstanceExposure =
+  | "unexposed"
+  | "private"
+  | "public"
+  | "unlisted";
 export type TransportPreference = "auto" | "tunnel" | "direct";
 
 export type PublicCategory =
@@ -744,7 +748,13 @@ export class InstanceService {
     if (instance.status === "offline" || instance.exposure === "unexposed") {
       return false;
     }
-    if (instance.exposure === "public") return true;
+    // `public` and `unlisted` are both reachable via the public URL —
+    // pekohub only forwards the request; the runtime runs the
+    // defense-in-depth ACL in `check_request_allowed`. Discovery
+    // remains strictly `public` only.
+    if (instance.exposure === "public" || instance.exposure === "unlisted") {
+      return true;
+    }
 
     const c = normalizeCaller(caller);
     if (c === null) return false;

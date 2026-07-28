@@ -107,7 +107,7 @@ const CreateBodySchema = z.object({
   runtime_display_name: z.string().max(255).optional(),
   bundle_ref: z.string().max(255).optional(),
   status: z.enum(["online", "offline", "busy", "error"]).optional(),
-  exposure: z.enum(["private", "public", "unexposed"]).optional(),
+  exposure: z.enum(["private", "public", "unexposed", "unlisted"]).optional(),
   // Post-H4: allowedPrincipals request field is gone. The runtime
   // owns the ACL surface (R4); pekohub only knows the public-vs-
   // private exposure switch.
@@ -139,7 +139,7 @@ const UpdateBodySchema = z.object({
   name: z.string().min(1).max(255).optional(),
   runtime_display_name: z.string().max(255).optional(),
   status: z.enum(["online", "offline", "busy", "error"]).optional(),
-  exposure: z.enum(["private", "public", "unexposed"]).optional(),
+  exposure: z.enum(["private", "public", "unexposed", "unlisted"]).optional(),
   // Post-H4: allowedPrincipals update field is gone.
   metadata: z.record(z.unknown()).optional(),
 
@@ -165,7 +165,7 @@ const UpdateBodySchema = z.object({
 });
 
 const UpdateExposureBodySchema = z.object({
-  exposure: z.enum(["private", "public", "unexposed"]),
+  exposure: z.enum(["private", "public", "unexposed", "unlisted"]),
   // Post-H4: allowedPrincipals removed from the exposure PATCH
   // request. The runtime owns the ACL surface (R4).
   public_profile: z
@@ -453,9 +453,10 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
 
       // Validate transition
       const validTransitions: Record<string, string[]> = {
-        unexposed: ["private", "public"],
-        private: ["public", "unexposed"],
-        public: ["private", "unexposed"],
+        unexposed: ["private", "public", "unlisted"],
+        private: ["public", "unexposed", "unlisted"],
+        public: ["private", "unexposed", "unlisted"],
+        unlisted: ["private", "unexposed", "public"],
       };
       if (!validTransitions[from]?.includes(exposure)) {
         return reply
@@ -639,7 +640,8 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     // a missing header + missing JWT is handled by the 403 path below.
     const caller = await extractCallerSubject(fastify, request);
     if (
-      (instance.exposure === "private" || instance.exposure === "unexposed") &&
+      (instance.exposure === "private" ||
+        instance.exposure === "unexposed") &&
       caller === null
     ) {
       return reply.status(401).send({ error: "Authentication required" });
@@ -658,9 +660,9 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         .send({ error: "Invalid request body", details: body.error.format() });
     }
 
-    // ToS check for public instances
+    // ToS check for public-facing instances
     if (
-      instance.exposure === "public" &&
+      (instance.exposure === "public" || instance.exposure === "unlisted") &&
       instance.tosRequired &&
       !body.data.tos_acknowledged
     ) {
@@ -1023,7 +1025,11 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       where: and(
         sql`${instances.ownerSubject} = ${ownerSubjectLiteral}::jsonb`,
         eq(instances.name, principalName),
-        eq(instances.exposure, "public"),
+        // Public URL serves both `public` and `unlisted`. Discovery
+        // (separate endpoint below) still fences strictly to public
+        // so unlisted doesn't appear in search. PR #11 will narrow
+        // this further with an invite-token check.
+        inArray(instances.exposure, ["public", "unlisted"]),
       ),
     });
 
@@ -1090,7 +1096,9 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           // the same shape above in `/public/principals/:owner/:name`.
           sql`${instances.ownerSubject} = ${JSON.stringify({ kind: "user", id: String(ownerRow.id) })}::jsonb`,
           eq(instances.name, principalName),
-          eq(instances.exposure, "public"),
+          // Public URL serves both `public` and `unlisted`. See the
+          // matching filter in the GET endpoint above.
+          inArray(instances.exposure, ["public", "unlisted"]),
         ),
       });
 
