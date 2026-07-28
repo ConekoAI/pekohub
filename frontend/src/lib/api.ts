@@ -206,4 +206,163 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     }),
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Owner dashboard (PR #7) — instances scoped to the signed-in user.
+  // Mirrors `GET /v1/instances` on the backend (which already filters
+  // by owner subject for any non-admin caller via JWT). For the
+  // private-only view, `listAccessiblePrincipals` below still hits
+  // `/v1/me/accessible-principals`, which post-H4 returns a stripped
+  // shape without runtime metadata.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Owner dashboard primary feed. Lists every instance the caller
+   * owns across all exposure levels (`private` / `unlisted` /
+   * `public` / `unexposed`), with full metadata (lastSeenAt, runtime
+   * display name, category, public profile). Paginated.
+   */
+  listOwnedInstances: (opts?: { page?: number; perPage?: number; status?: string; exposure?: string }) => {
+    const params = new URLSearchParams();
+    params.set('page', String(opts?.page ?? 1));
+    params.set('per_page', String(opts?.perPage ?? 50));
+    if (opts?.status) params.set('status', opts.status);
+    if (opts?.exposure) params.set('exposure', opts.exposure);
+    return fetchJson<{ data: OwnedInstanceRecord[]; total: number }>(`/v1/instances?${params}`);
+  },
+
+  /**
+   * Private-only owner view (post-H4 shape — used by the
+   * "private discovery" side-panel; the dashboard itself uses
+   * `listOwnedInstances`).
+   */
+  listAccessiblePrincipals: () =>
+    fetchJson<{
+      principals: Array<{
+        id: string;
+        ownerName: string;
+        principalName: string;
+        publicName: string | null;
+        status: 'online' | 'offline' | 'busy' | 'error';
+      }>;
+    }>(`/v1/me/accessible-principals`),
+
+  /** Single-instance fetch (owner view; non-owners get a redacted shape). */
+  getInstance: (id: string) => fetchJson<OwnedInstanceRecord>(`/v1/instances/${id}`),
+
+  /**
+   * Change exposure (triggers search-index sync + tunnel control
+   * notification). Body shape matches the backend Zod schema.
+   */
+  setInstanceExposure: (
+    id: string,
+    exposure: 'private' | 'public' | 'unexposed' | 'unlisted',
+    publicProfile?: {
+      public_name: string;
+      description: string;
+      tags: string[];
+      category: string;
+      tos_required?: boolean;
+      tos_text?: string;
+      daily_quota?: number;
+      weekly_quota?: number;
+    },
+  ) =>
+    fetchJson<{ instance: OwnedInstanceRecord; tunnelStatus: 'opened' | 'already_open' | 'closed' }>(
+      `/v1/instances/${id}/exposure`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ exposure, public_profile: publicProfile }),
+      },
+    ),
+
+  /** Change status (online/offline/busy/error). Notifies the runtime over the tunnel. */
+  setInstanceStatus: (id: string, status: 'online' | 'offline' | 'busy' | 'error') =>
+    fetchJson<{ instance: OwnedInstanceRecord; tunnelStatus: 'opened' | 'already_open' | 'closed' }>(
+      `/v1/instances/${id}/status`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      },
+    ),
+
+  /** Delete (deregister) an instance. 204 No Content on success. */
+  deleteInstance: (id: string) =>
+    fetch(`${API_BASE}/v1/instances/${id}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    }).then((r) => {
+      if (!r.ok && r.status !== 204) {
+        throw new Error('Failed to delete instance');
+      }
+    }),
+
+  /**
+   * Mint an invite token for an instance. Returns a stubbed `not_implemented`
+   * envelope until PR #11 wires the runtime side. Kept on the client
+   * so PR #7 callers don't need to change again.
+   */
+  mintInvite: (
+    id: string,
+    body: { scope: string[]; ttl_secs: number },
+  ): Promise<{ token: string; url: string; expiresAt: string; jti: string }> =>
+    fetch(`${API_BASE}/v1/instances/${id}/invites`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${getAuthToken()}`,
+      },
+      body: JSON.stringify(body),
+    }).then(async (r) => {
+      if (r.status === 404 || r.status === 501) {
+        // PR #11 not yet wired — surface a typed result so the UI can
+        // render a "coming soon" message instead of crashing.
+        throw new Error('not_implemented');
+      }
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(err.error ?? `HTTP ${r.status}`);
+      }
+      return r.json();
+    }),
 };
+
+// Shape returned by GET /v1/instances for the owner. Mirrors
+// `InstanceRecord` in `backend/src/services/instances.ts:106-155`.
+// Local mirror — the shared package doesn't export this type yet
+// because the bundle search types are the only ones the SPA needs
+// from shared today.
+export interface OwnedInstanceRecord {
+  id: string;
+  type: 'principal';
+  name: string;
+  ownerSubject: { kind: 'user'; id: string } | null;
+  runtimeId: string;
+  runtimeDisplayName: string | null;
+  bundleRef: string | null;
+  status: 'online' | 'offline' | 'busy' | 'error';
+  exposure: 'private' | 'public' | 'unexposed' | 'unlisted';
+  lastSeenAt: string | null;
+  createdAt: string;
+  capabilities: string[];
+  metadata: Record<string, unknown>;
+  publicName: string | null;
+  description: string | null;
+  tags: string[];
+  category: string | null;
+  tosRequired: boolean;
+  tosText: string | null;
+  dailyQuota: number | null;
+  weeklyQuota: number | null;
+  publishedAt: string | null;
+  featured: boolean;
+  monetization: {
+    enabled: boolean;
+    pricingModel: 'free' | 'subscription' | 'usage' | null;
+    priceCents: number | null;
+    stripeProductId: string | null;
+  };
+  transportPreference: 'auto' | 'tunnel' | 'direct';
+  principalDid: string | null;
+}

@@ -28,6 +28,15 @@ export function Layout({ children }: LayoutProps) {
             <Link to="/" className="text-sm font-medium text-gray-600 hover:text-gray-900">
               Explore
             </Link>
+            {/* PR #7: auth-gated Dashboard link. Renders for any
+                signed-in user; the route itself renders a sign-in
+                prompt for visitors, so there's no race between
+                this link and the route guard. */}
+            {isAuthenticated && (
+              <Link to="/dashboard" className="text-sm font-medium text-gray-600 hover:text-gray-900">
+                Dashboard
+              </Link>
+            )}
             <a
               href="https://github.com/ConekoAI/pekohub"
               target="_blank"

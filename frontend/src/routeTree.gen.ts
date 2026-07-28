@@ -11,6 +11,8 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SearchRouteImport } from './routes/search'
 import { Route as ProfileRouteImport } from './routes/profile'
+import { Route as DiscoverRouteImport } from './routes/discover'
+import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
 import { Route as POwnerPrincipalNameRouteImport } from './routes/p.$owner.$principalName'
@@ -24,6 +26,16 @@ const SearchRoute = SearchRouteImport.update({
 const ProfileRoute = ProfileRouteImport.update({
   id: '/profile',
   path: '/profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DiscoverRoute = DiscoverRouteImport.update({
+  id: '/discover',
+  path: '/discover',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardRoute = DashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -49,63 +61,77 @@ const BundlesNamespaceNameRoute = BundlesNamespaceNameRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/dashboard': typeof DashboardRoute
+  '/discover': typeof DiscoverRoute
   '/profile': typeof ProfileRoute
   '/search': typeof SearchRoute
   '/auth/callback': typeof AuthCallbackRoute
-  '/p/$owner/$principalName': typeof POwnerPrincipalNameRoute
   '/bundles/$namespace/$name': typeof BundlesNamespaceNameRoute
+  '/p/$owner/$principalName': typeof POwnerPrincipalNameRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/dashboard': typeof DashboardRoute
+  '/discover': typeof DiscoverRoute
   '/profile': typeof ProfileRoute
   '/search': typeof SearchRoute
   '/auth/callback': typeof AuthCallbackRoute
-  '/p/$owner/$principalName': typeof POwnerPrincipalNameRoute
   '/bundles/$namespace/$name': typeof BundlesNamespaceNameRoute
+  '/p/$owner/$principalName': typeof POwnerPrincipalNameRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/dashboard': typeof DashboardRoute
+  '/discover': typeof DiscoverRoute
   '/profile': typeof ProfileRoute
   '/search': typeof SearchRoute
   '/auth/callback': typeof AuthCallbackRoute
-  '/p/$owner/$principalName': typeof POwnerPrincipalNameRoute
   '/bundles/$namespace/$name': typeof BundlesNamespaceNameRoute
+  '/p/$owner/$principalName': typeof POwnerPrincipalNameRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/dashboard'
+    | '/discover'
     | '/profile'
     | '/search'
     | '/auth/callback'
-    | '/p/$owner/$principalName'
     | '/bundles/$namespace/$name'
+    | '/p/$owner/$principalName'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/dashboard'
+    | '/discover'
     | '/profile'
     | '/search'
     | '/auth/callback'
-    | '/p/$owner/$principalName'
     | '/bundles/$namespace/$name'
+    | '/p/$owner/$principalName'
   id:
     | '__root__'
     | '/'
+    | '/dashboard'
+    | '/discover'
     | '/profile'
     | '/search'
     | '/auth/callback'
-    | '/p/$owner/$principalName'
     | '/bundles/$namespace/$name'
+    | '/p/$owner/$principalName'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  DashboardRoute: typeof DashboardRoute
+  DiscoverRoute: typeof DiscoverRoute
   ProfileRoute: typeof ProfileRoute
   SearchRoute: typeof SearchRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
-  POwnerPrincipalNameRoute: typeof POwnerPrincipalNameRoute
   BundlesNamespaceNameRoute: typeof BundlesNamespaceNameRoute
+  POwnerPrincipalNameRoute: typeof POwnerPrincipalNameRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -122,6 +148,20 @@ declare module '@tanstack/react-router' {
       path: '/profile'
       fullPath: '/profile'
       preLoaderRoute: typeof ProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/discover': {
+      id: '/discover'
+      path: '/discover'
+      fullPath: '/discover'
+      preLoaderRoute: typeof DiscoverRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard': {
+      id: '/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof DashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -157,11 +197,13 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DashboardRoute: DashboardRoute,
+  DiscoverRoute: DiscoverRoute,
   ProfileRoute: ProfileRoute,
   SearchRoute: SearchRoute,
   AuthCallbackRoute: AuthCallbackRoute,
-  POwnerPrincipalNameRoute: POwnerPrincipalNameRoute,
   BundlesNamespaceNameRoute: BundlesNamespaceNameRoute,
+  POwnerPrincipalNameRoute: POwnerPrincipalNameRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
