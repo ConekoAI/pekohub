@@ -122,4 +122,26 @@ describe("instanceService.canChat", () => {
     expect(await instanceService.canChat(instance, "7")).toBe(false);
     expect(await instanceService.canChat(instance, "99")).toBe(false);
   });
+
+  // PR #2: `unlisted` is reachable via the public URL (matches
+  // `public`) but never appears in discovery. The runtime runs the
+  // defense-in-depth ACL in `check_request_allowed`; PR #11 will
+  // add the invite-token narrow on top.
+  it("returns true when instance is unlisted and online (any caller)", async () => {
+    const instance = {
+      ...baseInstance,
+      status: "online" as const,
+      exposure: "unlisted" as const,
+    };
+    expect(await instanceService.canChat(instance, "999")).toBe(true);
+  });
+
+  it("returns false when unlisted instance is offline", async () => {
+    const instance = {
+      ...baseInstance,
+      status: "offline" as const,
+      exposure: "unlisted" as const,
+    };
+    expect(await instanceService.canChat(instance, "999")).toBe(false);
+  });
 });

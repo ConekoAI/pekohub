@@ -712,6 +712,51 @@ describe("Instance API", () => {
 
       expect(response.statusCode).toBe(404);
     });
+
+    // PR #2: unlisted is reachable via the public URL but never
+    // appears in discovery. The owner shares the link directly.
+    it("should return unlisted instance page data (PR #2)", async () => {
+      const app = await buildTestApp({ testDb });
+      const user = await createUser(testDb.client, {
+        namespace: "alice",
+        displayName: "Alice",
+      });
+      await createInstance(testDb.client, {
+        ownerSubject: { kind: "user", id: String(user.id) },
+        name: "unlisted-principal",
+        exposure: "unlisted",
+        publicName: "Alice Private Share",
+        description: "Share-via-URL",
+        status: "online",
+      });
+
+      const response = await app.inject({
+        method: "GET",
+        url: "/v1/public/principals/alice/unlisted-principal",
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.payload);
+      expect(body.liveInstance.publicName).toBe("Alice Private Share");
+      expect(body.liveInstance.description).toBe("Share-via-URL");
+    });
+
+    it("should return 404 for unexposed instance even on public URL", async () => {
+      const app = await buildTestApp({ testDb });
+      const user = await createUser(testDb.client, { namespace: "alice" });
+      await createInstance(testDb.client, {
+        ownerSubject: { kind: "user", id: String(user.id) },
+        name: "hidden-principal",
+        exposure: "unexposed",
+      });
+
+      const response = await app.inject({
+        method: "GET",
+        url: "/v1/public/principals/alice/hidden-principal",
+      });
+
+      expect(response.statusCode).toBe(404);
+    });
   });
 
   describe("POST /v1/public/principals/:owner/:principalName/chat", () => {

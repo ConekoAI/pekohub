@@ -16,6 +16,7 @@ import quotaPlugin from "./plugins/quotas.js";
 import ociRoutes from "./routes/oci/index.js";
 import searchApiRoutes from "./routes/api/search.js";
 import bundleApiRoutes from "./routes/api/bundles.js";
+import runtimeRoutes from "./routes/api/runtimes.js";
 import instanceRoutes from "./routes/api/instances.js";
 import principalDirectoryRoutes from "./routes/api/principals.js";
 import adminRoutes from "./routes/api/admin.js";
@@ -25,6 +26,7 @@ import apiKeyRoutes from "./routes/auth/api-keys.js";
 import { GarbageCollector } from "./services/gc.js";
 import { Scheduler } from "./services/scheduler.js";
 import { metrics } from "./services/metrics.js";
+import { instanceService } from "./services/instances.js";
 
 async function main() {
   const app = Fastify({
@@ -127,6 +129,11 @@ async function main() {
   // Custom API routes
   await app.register(searchApiRoutes, { prefix: "/v1" });
   await app.register(bundleApiRoutes, { prefix: "/v1" });
+  // Issue #15: runtime registration (POST /v1/runtimes/register) was dead
+  // code — the routes/api/index.ts aggregator was never imported, so
+  // `peko tunnel setup` calls were silently 404ing in production. Register
+  // the route file directly under /v1 to match the rest of the API.
+  await app.register(runtimeRoutes, { prefix: "/v1" });
   await app.register(instanceRoutes, { prefix: "/v1" });
   // Issue #14: principal directory (by-did / by-handle) for the cross-runtime
   // principal_send resolver. Mounted under /v1 to match the rest of the
@@ -185,8 +192,27 @@ async function main() {
     process.exit(1);
   }
 
-  // ── Scheduled garbage collection ────────────────────────────────────────────
+  // ── Scheduled jobs ─────────────────────────────────────────────────────────
   const scheduler = new Scheduler(app.log);
+
+  // Issue #15: defense-in-depth sweep for stranded online rows. The tunnel
+  // dispatcher marks instances offline on socket close via
+  // `propagateRuntimeOffline` (`tunnel-manager.ts:1074`), but a crashed
+  // hub-side process leaves rows at `status = "online"` forever. The
+  // runtime-side heartbeat timeout (90s) is authoritative at the
+  // protocol level; this sweep is the safety net.
+  scheduler.addJob(
+    "mark-offline-if-stale",
+    60_000,
+    async () => {
+      const n = await instanceService.markOfflineIfStale(90_000);
+      if (n > 0) {
+        app.log.info(
+          `Swept ${n} stale online instance(s) to offline (lastSeenAt > 90s ago)`,
+        );
+      }
+    },
+  );
 
   if (app.config.GC_ENABLED === "true") {
     const gc = new GarbageCollector(app.storage);
@@ -213,13 +239,15 @@ async function main() {
       },
     );
 
-    scheduler.start();
     app.log.info(
       `Scheduled GC enabled (interval=${app.config.GC_INTERVAL_MS}ms, retention=${app.config.GC_RETENTION_DAYS}days, batchSize=${app.config.GC_BATCH_SIZE})`,
     );
   } else {
     app.log.info("Scheduled GC disabled");
   }
+
+  scheduler.start();
+  app.log.info("Scheduler started (mark-offline-if-stale every 60s)");
 
   // ── Graceful shutdown ───────────────────────────────────────────────────────
   const shutdown = async (signal: string) => {
