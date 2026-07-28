@@ -391,9 +391,8 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
       ownerSubject: { kind: "user", id: String(ownerB.id) },
       name: "private-b",
       runtimeId: idB.did,
-      exposure: "private", // private — A's agent is not in the allow-list
+      exposure: "private", // private — A's caller agent is not the owner
       principalDid: DID_B_AGENT,
-      // No allowedPrincipals — A's caller agent is not on the list.
     });
 
     const socketA = new MockWebSocket();

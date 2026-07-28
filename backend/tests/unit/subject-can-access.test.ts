@@ -20,7 +20,6 @@
 import { describe, it, expect } from "vitest";
 import type { Subject } from "@pekohub/shared";
 import {
-  instanceService,
   subjectCanAccess,
   resolveOwnerSubject,
   type CallerSubject,
@@ -30,21 +29,20 @@ import {
 // Minimal InstanceRecord stub — only the fields the helpers actually
 // read. The `type: "principal"` literal matches the post-ADR-041
 // schema.
+//
+// Post-H4: the `allowedPrincipals` field is gone from the record.
+// The runtime owns the ACL surface (R4); pekohub only knows about
+// the typed owner + exposure switch.
 function makeInstance(overrides: {
   ownerSubject?: Subject | null;
-  allowedPrincipals?: Subject[];
   exposure?: InstanceRecord["exposure"];
   status?: InstanceRecord["status"];
-} = {}): Pick<
-  InstanceRecord,
-  "ownerSubject" | "allowedPrincipals"
-> {
+} = {}): Pick<InstanceRecord, "ownerSubject"> {
   return {
     ownerSubject:
       overrides.ownerSubject !== undefined
         ? overrides.ownerSubject
         : null,
-    allowedPrincipals: overrides.allowedPrincipals ?? [],
   };
 }
 
@@ -170,35 +168,6 @@ describe("resolveOwnerSubject", () => {
         }),
       ),
     ).toEqual({ kind: "public" });
-  });
-});
-
-// ── canAccess with the typed allow-list ─────────────────────────────────
-
-describe("canAccess — typed allow-list (allowedPrincipals)", () => {
-  it("allows a user caller whose subject is in allowedPrincipals", async () => {
-    const instance = makeInstance({
-      ownerSubject: { kind: "user", id: "1" },
-      allowedPrincipals: [
-        { kind: "user", id: "7" },
-        { kind: "principal", id: "helper" },
-      ],
-    });
-    // Owner (1) is allowed
-    expect(await instanceService.canAccess(instance, "1")).toBe(true);
-    // Allowed user (7)
-    expect(await instanceService.canAccess(instance, "7")).toBe(true);
-    // Allowed principal
-    const caller: CallerSubject = { kind: "principal", id: "helper" };
-    expect(await instanceService.canAccess(instance, caller)).toBe(true);
-  });
-
-  it("denies a caller that's not in either allow-list", async () => {
-    const instance = makeInstance({
-      ownerSubject: { kind: "user", id: "1" },
-      allowedPrincipals: [{ kind: "user", id: "7" }],
-    });
-    expect(await instanceService.canAccess(instance, "99")).toBe(false);
   });
 });
 

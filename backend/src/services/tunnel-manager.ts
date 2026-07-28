@@ -727,7 +727,7 @@ export class TunnelManager {
         bundleRef: payload.bundleRef,
         status: payload.status,
         exposure: payload.exposure,
-        allowedPrincipals: payload.allowedPrincipals,
+        // Post-H4: allowedPrincipals removed from the announce payload.
         capabilities: payload.capabilities,
         metadata: payload.metadata,
         // Issue #14: per-principal DID. Pre-#34 runtimes omit the field;

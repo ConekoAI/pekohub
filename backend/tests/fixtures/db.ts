@@ -139,7 +139,8 @@ const DDL_STATEMENTS = [
     bundle_ref VARCHAR(255),
     status VARCHAR(20) DEFAULT 'offline' NOT NULL,
     exposure VARCHAR(20) DEFAULT 'unexposed' NOT NULL,
-    allowed_principals JSONB DEFAULT '[]'::jsonb NOT NULL,
+    -- Post-H4: the legacy allowed_principals JSONB column is gone;
+    -- the runtime's PrincipalConfig.permissions is the canonical ACL.
     last_seen_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
     capabilities JSONB DEFAULT '[]',

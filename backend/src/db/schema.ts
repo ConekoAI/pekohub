@@ -249,10 +249,9 @@ export const instances = pgTable(
     exposure: varchar("exposure", { length: 20 })
       .notNull()
       .default("unexposed"),
-    // Typed allow-list per ADR-041. Each entry is a `Subject`.
-    allowedPrincipals: jsonb("allowed_principals")
-      .$type<Subject[]>()
-      .default([]),
+    // Post-H4: the typed `allowed_principals` JSONB column is gone.
+    // The runtime's `PrincipalConfig.permissions` is the canonical
+    // ACL surface (R4); pekohub only knows public vs private exposure.
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()

@@ -83,26 +83,6 @@ export async function subjectCanAccess(
   return false;
 }
 
-// ── Allow-list check (matches a caller against instance.allow) ──────────────
-
-/**
- * True if `caller` matches the instance's typed `allowedPrincipals`
- * allow-list.
- *
- * Public-kind callers are never on an allow-list (public access goes
- * through `instance.exposure === "public"` at a higher level).
- */
-function principalInAllowList(
-  instance: Pick<InstanceRecord, "allowedPrincipals">,
-  caller: CallerSubject,
-): boolean {
-  if (caller === null) return false;
-  if (caller.kind === "public") return false;
-  return instance.allowedPrincipals.some(
-    (p) => p.kind === caller.kind && p.id === caller.id,
-  );
-}
-
 // ── Instance model types ───────────────────────────────────────────────────
 
 export type InstanceType = "principal";
@@ -129,7 +109,9 @@ export interface InstanceRecord {
   bundleRef: string | null;
   status: InstanceStatus;
   exposure: InstanceExposure;
-  allowedPrincipals: Subject[];
+  // Post-H4: the typed `allowedPrincipals` array is gone. The runtime
+  // is the canonical ACL surface (R4); pekohub only knows the
+  // public-vs-private exposure switch.
   lastSeenAt: Date | null;
   createdAt: Date;
   capabilities: string[];
@@ -178,7 +160,7 @@ export interface CreateInstanceInput {
   bundleRef?: string;
   status?: InstanceStatus;
   exposure?: InstanceExposure;
-  allowedPrincipals?: Subject[];
+  // Post-H4: allowedPrincipals input — runtime owns ACLs.
   capabilities?: string[];
   metadata?: Record<string, unknown>;
 
@@ -205,7 +187,7 @@ export interface UpdateInstanceInput {
   runtimeDisplayName?: string;
   status?: InstanceStatus;
   exposure?: InstanceExposure;
-  allowedPrincipals?: Subject[];
+  // Post-H4: allowedPrincipals update — runtime owns ACLs.
   capabilities?: string[];
   metadata?: Record<string, unknown>;
 
@@ -383,7 +365,6 @@ export class InstanceService {
         bundleRef: input.bundleRef ?? null,
         status: input.status ?? "offline",
         exposure: input.exposure ?? "unexposed",
-        allowedPrincipals: input.allowedPrincipals ?? [],
         capabilities: input.capabilities ?? [],
         metadata: input.metadata ?? {},
         lastSeenAt: input.status === "online" ? new Date() : null,
@@ -487,8 +468,6 @@ export class InstanceService {
       }
     }
     if (input.exposure !== undefined) values.exposure = input.exposure;
-    if (input.allowedPrincipals !== undefined)
-      values.allowedPrincipals = input.allowedPrincipals;
     if (input.capabilities !== undefined)
       values.capabilities = input.capabilities;
     if (input.metadata !== undefined) values.metadata = input.metadata;
@@ -677,7 +656,6 @@ export class InstanceService {
         runtimeDisplayName: input.runtimeDisplayName,
         status: input.status,
         exposure: input.exposure,
-        allowedPrincipals: input.allowedPrincipals,
         capabilities: input.capabilities,
         metadata: input.metadata,
       };
@@ -727,9 +705,11 @@ export class InstanceService {
    * 1. Public exposure → world-readable.
    * 2. Null caller → denied (public is the only anonymous-friendly path).
    * 3. Resolved owner === caller → allowed (owner can always see).
-   * 4. Caller on the allow-list (`allowedPrincipals` or legacy
-   *    `allowedPrincipals`) → allowed.
-   * 5. Otherwise → denied.
+   * 4. Otherwise → denied.
+   *
+   * Post-H4: the typed `allowedPrincipals` allow-list is gone. The
+   * runtime's `PrincipalConfig.permissions` is the only ACL surface
+   * (R4); pekohub only knows the public-vs-private exposure switch.
    */
   async canAccess(
     instance: InstanceRecord,
@@ -743,7 +723,7 @@ export class InstanceService {
     const owner = resolveOwnerSubject(instance);
     if (owner && (await subjectCanAccess(owner, c))) return true;
 
-    return principalInAllowList(instance, c);
+    return false;
   }
 
   /**
@@ -753,6 +733,9 @@ export class InstanceService {
    * `canAccess` + the same offline / unexposed / public gates.
    * Unexposed and offline instances deny even owners; public allows
    * anonymous.
+   *
+   * Post-H4: see canAccess — the runtime owns the allow-list
+   * (`PrincipalConfig.permissions`), not pekohub.
    */
   async canChat(
     instance: InstanceRecord,
@@ -769,7 +752,7 @@ export class InstanceService {
     const owner = resolveOwnerSubject(instance);
     if (owner && (await subjectCanAccess(owner, c))) return true;
 
-    return principalInAllowList(instance, c);
+    return false;
   }
 
   /**
@@ -811,15 +794,16 @@ export class InstanceService {
       // that goes wrong) cannot flow through unchecked into
       // `subjectCanAccess` — where `null === null` would silently
       // grant access. A malformed owner drops to `null`, leaving the
-      // row ownerless (per `resolveOwnerSubject`). A malformed
-      // allow-list entry is filtered out of `allowedPrincipals`.
+      // row ownerless (per `resolveOwnerSubject`).
       ownerSubject: parseSubjectJsonb(row.ownerSubject),
       runtimeId: row.runtimeId,
       runtimeDisplayName: row.runtimeDisplayName,
       bundleRef: row.bundleRef,
       status: row.status as InstanceStatus,
       exposure: row.exposure as InstanceExposure,
-      allowedPrincipals: parseSubjectArrayJsonb(row.allowedPrincipals),
+      // Post-H4: allowedPrincipals is gone. The runtime owns the
+      // ACL surface (R4); pekohub only knows public-vs-private
+      // exposure.
       lastSeenAt: row.lastSeenAt,
       createdAt: row.createdAt,
       capabilities: (row.capabilities as string[]) ?? [],

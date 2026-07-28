@@ -108,15 +108,9 @@ const CreateBodySchema = z.object({
   bundle_ref: z.string().max(255).optional(),
   status: z.enum(["online", "offline", "busy", "error"]).optional(),
   exposure: z.enum(["private", "public", "unexposed"]).optional(),
-  allowedPrincipals: z
-    .array(
-      z.discriminatedUnion("kind", [
-        z.object({ kind: z.literal("user"), id: z.string() }),
-        z.object({ kind: z.literal("principal"), id: z.string() }),
-        z.object({ kind: z.literal("public") }),
-      ]),
-    )
-    .optional(),
+  // Post-H4: allowedPrincipals request field is gone. The runtime
+  // owns the ACL surface (R4); pekohub only knows the public-vs-
+  // private exposure switch.
   capabilities: z.array(z.string()).optional(),
   metadata: z.record(z.unknown()).optional(),
 
@@ -146,15 +140,7 @@ const UpdateBodySchema = z.object({
   runtime_display_name: z.string().max(255).optional(),
   status: z.enum(["online", "offline", "busy", "error"]).optional(),
   exposure: z.enum(["private", "public", "unexposed"]).optional(),
-  allowedPrincipals: z
-    .array(
-      z.discriminatedUnion("kind", [
-        z.object({ kind: z.literal("user"), id: z.string() }),
-        z.object({ kind: z.literal("principal"), id: z.string() }),
-        z.object({ kind: z.literal("public") }),
-      ]),
-    )
-    .optional(),
+  // Post-H4: allowedPrincipals update field is gone.
   metadata: z.record(z.unknown()).optional(),
 
   // Public profile
@@ -180,15 +166,8 @@ const UpdateBodySchema = z.object({
 
 const UpdateExposureBodySchema = z.object({
   exposure: z.enum(["private", "public", "unexposed"]),
-  allowedPrincipals: z
-    .array(
-      z.discriminatedUnion("kind", [
-        z.object({ kind: z.literal("user"), id: z.string() }),
-        z.object({ kind: z.literal("principal"), id: z.string() }),
-        z.object({ kind: z.literal("public") }),
-      ]),
-    )
-    .optional(),
+  // Post-H4: allowedPrincipals removed from the exposure PATCH
+  // request. The runtime owns the ACL surface (R4).
   public_profile: z
     .object({
       public_name: z.string().min(1).max(255),
@@ -285,13 +264,8 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       // Redact owner-only fields from the public-facing record.
       // ownerSubject is the typed subject (sensitive — leaks the
       // owner's identity) so it joins the redaction list.
-      // allowedPrincipals exposes the allow-list (also sensitive).
-      const {
-        allowedPrincipals,
-        ownerSubject,
-        runtimeId,
-        ...rest
-      } = instance;
+      // Post-H4: allowedPrincipals is gone from the record.
+      const { ownerSubject, runtimeId, ...rest } = instance;
       return rest;
     }
 
@@ -324,7 +298,6 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         bundleRef: body.data.bundle_ref,
         status: body.data.status,
         exposure: body.data.exposure,
-        allowedPrincipals: body.data.allowedPrincipals,
         capabilities: body.data.capabilities,
         metadata: body.data.metadata,
         publicName: body.data.public_name,
@@ -399,7 +372,6 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         runtimeDisplayName: body.data.runtime_display_name,
         status: body.data.status,
         exposure: body.data.exposure,
-        allowedPrincipals: body.data.allowedPrincipals,
         metadata: body.data.metadata,
         publicName: body.data.public_name,
         description: body.data.description,
@@ -476,7 +448,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           });
       }
 
-      const { exposure, allowedPrincipals, public_profile } = body.data;
+      const { exposure, public_profile } = body.data;
       const from = instance.exposure;
 
       // Validate transition
@@ -496,9 +468,8 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       const updateInput: Parameters<typeof instanceService.update>[1] = {
         exposure,
       };
-      if (exposure === "private" && allowedPrincipals !== undefined) {
-        updateInput.allowedPrincipals = allowedPrincipals;
-      }
+      // Post-H4: no allowedPrincipals update — the runtime owns the
+      // ACL surface (R4).
       if (exposure === "public" && public_profile) {
         updateInput.publicName = public_profile.public_name;
         updateInput.description = public_profile.description;
@@ -551,16 +522,14 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       // Notify runtime via tunnel control channel
       if (fastify.tunnelManager.isRuntimeConnected(instance.runtimeId)) {
         tunnelStatus = "opened";
-        // Issue #11: send the typed allow-list when present. Pre-#11
-        // runtimes will only see `allowedUserIds` and ignore
-        // `allowedPrincipals`; post-#11 runtimes prefer the typed
-        // list and ignore the legacy one.
+        // Post-H4: we don't sync an allow-list from pekohub — the
+        // runtime owns its own ACL (`PrincipalConfig.permissions`,
+        // R4). We only announce the new exposure switch.
         await fastify.tunnelRouter.sendControl(instance.runtimeId, {
           type: "exposure_update",
           payload: {
             instanceId: id,
             exposure,
-            allowedPrincipals: updated!.allowedPrincipals,
           },
         });
       } else {
@@ -812,14 +781,22 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
   });
 
   // ── List accessible principals (private discovery) ─────────────────────────
+  //
+  // Post-H4: the typed `allowedPrincipals` allow-list is gone. PekoHub
+  // can only see private instances where the caller is the resolved
+  // owner; remote-runtime ACLs (`PrincipalConfig.permissions`) live on
+  // the runtime side and aren't visible here. The hub-side view is
+  // owner-only + public-exposure.
   fastify.get(
     "/me/accessible-principals",
     { preHandler: [authenticateOrDevBypass] },
     async (request, reply) => {
       const user = request.user;
 
-      const userIdStr = String(user.id);
-      const allowedMatch = sql`${instances.allowedPrincipals} @> ${JSON.stringify([{ kind: "user", id: userIdStr }])}::jsonb`;
+      const ownerSubjectLiteral = JSON.stringify({
+        kind: "user",
+        id: String(user.id),
+      });
 
       const rows = await db
         .select({
@@ -831,14 +808,8 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         })
         .from(instances)
         // Post-H1: instances are joined to users via the typed
-        // `owner_subject` JSONB column, not a numeric FK. We extract
-        // the user id from `owner_subject->>'id'` and match it to
-        // `users.id` (cast to text on the user-id side because
-        // `owner_subject.id` is always stored as a JSON string).
-        // Principal-owned instances don't match any `users.id` row and
-        // drop out via `innerJoin`; that's fine — the response shape
-        // only needs an owner *name*, and Principal-owned instances
-        // don't expose one through `users.displayName` anyway.
+        // `owner_subject` JSONB column, not a numeric FK. We match
+        // exact JSONB equality on the user-owned subset.
         .innerJoin(
           users,
           sql`${users.id}::text = ${instances.ownerSubject}->>'id'`,
@@ -846,7 +817,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         .where(
           and(
             eq(instances.exposure, "private"),
-            allowedMatch,
+            sql`${instances.ownerSubject} = ${ownerSubjectLiteral}::jsonb`,
           ),
         )
         .orderBy(desc(instances.lastSeenAt));

@@ -234,14 +234,14 @@ describe("Tunnel Proxy Integration", () => {
       const headers = await authHeaders(user);
       const { did, privateKey } = makeRuntimeIdentity();
 
-      // Create a private instance with the user in allowedPrincipals
+      // Post-H4: ownership is the only auth signal. The user owns
+      // this private instance directly via ownerSubject.
       const instance = await createInstance(testDb.client, {
         ownerSubject: { kind: "user", id: String(user.id) },
         name: "private-principal",
         runtimeId: did,
         status: "online",
         exposure: "private",
-        allowedPrincipals: [String(user.id)],
       });
 
       // Allowlist for the handshake (issue #1)

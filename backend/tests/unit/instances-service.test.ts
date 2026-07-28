@@ -13,7 +13,7 @@ describe("instanceService.canChat", () => {
     bundleRef: null,
     status: "online" as const,
     exposure: "private" as const,
-    allowedPrincipals: [] as Subject[],
+    // Post-H4: allowedPrincipals removed from the record.
     lastSeenAt: null,
     createdAt: new Date(),
     capabilities: [],
@@ -69,29 +69,16 @@ describe("instanceService.canChat", () => {
     expect(await instanceService.canChat(instance, "42")).toBe(true);
   });
 
-  it("returns true when private instance and user is in typed allowedPrincipals", async () => {
+  // Post-H4: with `allowedPrincipals` gone, the only way a non-owner
+  // can chat against a private instance is if the runtime's
+  // PrincipalConfig.permissions grants them. pekohub itself only
+  // recognises the owner. We assert that a different user is denied.
+  it("returns false when private instance and user is not the owner (post-H4)", async () => {
     const instance = {
       ...baseInstance,
       status: "online" as const,
       exposure: "private" as const,
       ownerSubject: { kind: "user" as const, id: "1" } as Subject,
-      allowedPrincipals: [
-        { kind: "user" as const, id: "7" } as Subject,
-        { kind: "principal" as const, id: "helper" } as Subject,
-      ],
-    };
-    expect(await instanceService.canChat(instance, "7")).toBe(true);
-  });
-
-  it("returns false when private instance and user is not authorized", async () => {
-    const instance = {
-      ...baseInstance,
-      status: "online" as const,
-      exposure: "private" as const,
-      ownerSubject: { kind: "user" as const, id: "1" } as Subject,
-      allowedPrincipals: [
-        { kind: "user" as const, id: "7" } as Subject,
-      ],
     };
     expect(await instanceService.canChat(instance, "2")).toBe(false);
   });

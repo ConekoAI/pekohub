@@ -60,7 +60,9 @@ export interface TestInstance {
   bundleRef: string | null;
   status: "online" | "offline" | "busy" | "error";
   exposure: "private" | "public" | "unexposed";
-  allowedPrincipals: unknown[];
+  // Post-H4: allowedPrincipals removed from the test instance.
+  // The runtime owns the ACL surface (R4); pekohub only stores
+  // public-vs-private exposure.
   lastSeenAt: Date | null;
   createdAt: Date;
   capabilities: string[];
@@ -241,7 +243,6 @@ export async function createInstance(
     // `{ kind: "user", id: "<userId>" }` (or a Principal-kind subject)
     // — see `TestInstance.ownerSubject`.
     ownerSubject: unknown;
-    allowedPrincipals?: unknown[];
   },
 ): Promise<TestInstance> {
   const id = overrides.id ?? crypto.randomUUID();
@@ -253,13 +254,13 @@ export async function createInstance(
   const result = await client.query(
     `INSERT INTO instances (
       id, type, name, owner_subject, runtime_id, runtime_display_name, bundle_ref,
-      status, exposure, allowed_principals, capabilities, metadata,
+      status, exposure, capabilities, metadata,
       public_name, description, tags, category, tos_required, tos_text,
       daily_quota, weekly_quota, published_at, featured, transport_preference, principal_did
     )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
      RETURNING id, type, name, owner_subject, runtime_id, runtime_display_name, bundle_ref,
-       status, exposure, allowed_principals, last_seen_at, created_at, capabilities, metadata,
+       status, exposure, last_seen_at, created_at, capabilities, metadata,
        public_name, description, tags, category, tos_required, tos_text,
        daily_quota, weekly_quota, published_at, featured, transport_preference, principal_did`,
     [
@@ -272,7 +273,6 @@ export async function createInstance(
       overrides.bundleRef ?? null,
       overrides.status ?? "offline",
       overrides.exposure ?? "unexposed",
-      JSON.stringify(overrides.allowedPrincipals ?? []),
       JSON.stringify(overrides.capabilities ?? []),
       JSON.stringify(overrides.metadata ?? {}),
       overrides.publicName ?? null,
@@ -302,7 +302,7 @@ export async function createInstance(
     bundleRef: row.bundle_ref,
     status: row.status,
     exposure: row.exposure,
-    allowedPrincipals: row.allowed_principals ?? [],
+    // Post-H4: allowedPrincipals removed from the record.
     lastSeenAt: row.last_seen_at,
     createdAt: row.created_at,
     capabilities: row.capabilities ?? [],

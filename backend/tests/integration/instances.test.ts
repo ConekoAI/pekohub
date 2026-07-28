@@ -128,7 +128,6 @@ describe("Instance API", () => {
       const instance = await createInstance(testDb.client, {
         name: "public-principal",
         exposure: "public",
-        allowedPrincipals: [{ kind: "user", id: "999" }],
         runtimeId: "runtime-secret",
       });
 
@@ -140,11 +139,11 @@ describe("Instance API", () => {
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
       expect(body.name).toBe("public-principal");
-      expect(body.allowedPrincipals).toBeUndefined();
+      // Post-H4: `allowedPrincipals` is gone from the wire entirely.
       expect(body.runtimeId).toBeUndefined();
     });
 
-    it("should return full record including allowedPrincipals and runtimeId for owner", async () => {
+    it("should return full record including runtimeId for owner", async () => {
       const app = await buildTestApp({ testDb });
       const user = await createUser(testDb.client, { namespace: "alice" });
       const headers = await authHeaders(user);
@@ -152,7 +151,6 @@ describe("Instance API", () => {
         ownerSubject: { kind: "user", id: String(user.id) },
         name: "public-principal",
         exposure: "public",
-        allowedPrincipals: [{ kind: "user", id: String(user.id) }],
         runtimeId: "runtime-secret",
       });
 
@@ -165,11 +163,10 @@ describe("Instance API", () => {
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
       expect(body.name).toBe("public-principal");
-      expect(body.allowedPrincipals).toEqual([{ kind: "user", id: String(user.id) }]);
       expect(body.runtimeId).toBe("runtime-secret");
     });
 
-    it("should redact allowedPrincipals and runtimeId for authenticated non-owner", async () => {
+    it("should redact runtimeId for authenticated non-owner", async () => {
       const app = await buildTestApp({ testDb });
       const owner = await createUser(testDb.client, { namespace: "alice" });
       const viewer = await createUser(testDb.client, { namespace: "bob" });
@@ -177,7 +174,6 @@ describe("Instance API", () => {
       const instance = await createInstance(testDb.client, {
         name: "public-principal",
         exposure: "public",
-        allowedPrincipals: [{ kind: "user", id: String(viewer.id) }],
         runtimeId: "runtime-secret",
       });
 
@@ -189,15 +185,14 @@ describe("Instance API", () => {
 
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
-      expect(body.allowedPrincipals).toBeUndefined();
       expect(body.runtimeId).toBeUndefined();
     });
 
-    // Issue #11: the new typed columns (`owner_subject`,
-    // `allowed_principals`) are also sensitive — they leak the owner's
-    // identity and the allow-list. They join the redaction list for
-    // non-owners.
-    it("should redact ownerSubject and allowedPrincipals for non-owner", async () => {
+    // Issue #11: the typed `owner_subject` column is also sensitive
+    // — it leaks the owner's identity — so it joins the redaction
+    // list for non-owners. Post-H4 the legacy `allowed_principals`
+    // column is gone, so this assertion no longer covers it.
+    it("should redact ownerSubject for non-owner", async () => {
       const app = await buildTestApp({ testDb });
       const owner = await createUser(testDb.client, { namespace: "alice" });
       const viewer = await createUser(testDb.client, { namespace: "bob" });
@@ -206,7 +201,6 @@ describe("Instance API", () => {
         name: "typed-principal",
         exposure: "public",
         ownerSubject: { kind: "principal", id: "helper" },
-        allowedPrincipals: [{ kind: "principal", id: "helper" }],
       });
 
       const response = await app.inject({
@@ -218,10 +212,9 @@ describe("Instance API", () => {
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
       expect(body.ownerSubject).toBeUndefined();
-      expect(body.allowedPrincipals).toBeUndefined();
     });
 
-    it("should return ownerSubject and allowedPrincipals for the owner", async () => {
+    it("should return ownerSubject for the owner", async () => {
       const app = await buildTestApp({ testDb });
       const owner = await createUser(testDb.client, { namespace: "alice" });
       const headers = await authHeaders(owner);
@@ -230,7 +223,6 @@ describe("Instance API", () => {
         ownerSubject: { kind: "user", id: String(owner.id) },
         name: "owner-view",
         exposure: "private",
-        allowedPrincipals: [{ kind: "user", id: String(owner.id) }],
       });
 
       const response = await app.inject({
@@ -245,9 +237,6 @@ describe("Instance API", () => {
         kind: "user",
         id: String(owner.id),
       });
-      expect(body.allowedPrincipals).toEqual([
-        { kind: "user", id: String(owner.id) },
-      ]);
     });
 
     it("should deny access to private instance without auth", async () => {
@@ -615,17 +604,18 @@ describe("Instance API", () => {
   });
 
   describe("GET /v1/me/accessible-principals", () => {
-    it("should list private principals accessible to the user", async () => {
+    // Post-H4: ownership is the only signal — the runtime owns the
+    // ACL surface (R4). The endpoint returns the viewer's own
+    // private principals by matching `ownerSubject` JSONB equality.
+    it("should list the viewer's own private principals", async () => {
       const app = await buildTestApp({ testDb });
       const owner = await createUser(testDb.client, { namespace: "alice" });
-      const viewer = await createUser(testDb.client, { namespace: "bob" });
-      const headers = await authHeaders(viewer);
+      const headers = await authHeaders(owner);
 
       await createInstance(testDb.client, {
         ownerSubject: { kind: "user", id: String(owner.id) },
-        name: "shared-principal",
+        name: "my-private-principal",
         exposure: "private",
-        allowedPrincipals: [{ kind: "user", id: String(viewer.id) }],
         status: "online",
       });
 
@@ -638,8 +628,32 @@ describe("Instance API", () => {
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
       expect(body.principals).toHaveLength(1);
-      expect(body.principals[0].principalName).toBe("shared-principal");
+      expect(body.principals[0].principalName).toBe("my-private-principal");
       expect(body.principals[0].status).toBe("online");
+    });
+
+    it("should not list principals owned by a different user", async () => {
+      const app = await buildTestApp({ testDb });
+      const owner = await createUser(testDb.client, { namespace: "alice" });
+      const viewer = await createUser(testDb.client, { namespace: "bob" });
+      const headers = await authHeaders(viewer);
+
+      await createInstance(testDb.client, {
+        ownerSubject: { kind: "user", id: String(owner.id) },
+        name: "alice-private",
+        exposure: "private",
+        status: "online",
+      });
+
+      const response = await app.inject({
+        method: "GET",
+        url: "/v1/me/accessible-principals",
+        headers,
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.payload);
+      expect(body.principals).toHaveLength(0);
     });
 
     it("should return 401 when not authenticated", async () => {

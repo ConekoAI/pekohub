@@ -3,17 +3,22 @@
  * (`parseSubjectJsonb` and `parseSubjectArrayJsonb`).
  *
  * Review concern: the Drizzle `$type<Subject | null>()` cast on the
- * `owner_subject` and `allowed_principals` columns is compile-time
- * only. A malformed JSONB value (e.g. `{"kind": "user", "id": null}`
- * from a future migration bug, a manual psql edit, or a backfill
- * that goes wrong) would otherwise flow straight into
- * `subjectCanAccess` — where `null === null` would silently grant
- * access. These parsers are the fix; the tests are the proof.
+ * `owner_subject` column is compile-time only. A malformed JSONB
+ * value (e.g. `{"kind": "user", "id": null}` from a future migration
+ * bug, a manual psql edit, or a backfill that goes wrong) would
+ * otherwise flow straight into `subjectCanAccess` — where
+ * `null === null` would silently grant access. These parsers are
+ * the fix; the tests are the proof.
  *
  * Post-H1: the legacy `owner_id` integer FK is gone, so a malformed
  * `owner_subject` no longer has a column to fall back to. The
  * resolver treats a null `owner_subject` as "ownerless row" — see
  * `resolveOwnerSubject` in `services/instances.ts`.
+ *
+ * Post-H4: the `allowed_principals` column is gone from the
+ * `instances` table entirely. The `parseSubjectArrayJsonb` parser
+ * stays (re-used by other surfaces) but the per-row allowedPrincipals
+ * end-to-end tests are gone with it.
  */
 
 import { describe, it, expect } from "vitest";
@@ -127,10 +132,10 @@ describe("parseSubjectArrayJsonb (review #12 P1)", () => {
     ]);
   });
 
-  // The review concern: a single malformed entry in the
-  // `allowed_principals` array could let an attacker sneak a
-  // shape like `null` into the list, where `null === null` would
-  // match any caller. The fix is to filter malformed entries.
+  // The review concern: a single malformed entry in a subject
+  // array could let an attacker sneak a shape like `null` into
+  // the list, where `null === null` would match any caller. The
+  // fix is to filter malformed entries.
   it("filters out malformed entries (the null === null attack vector)", () => {
     const raw: unknown = [
       { kind: "user", id: "1" },
@@ -148,7 +153,7 @@ describe("parseSubjectArrayJsonb (review #12 P1)", () => {
     ]);
   });
 
-  it("preserves the empty-sentinel User(\"\") in the allow-list", () => {
+  it("preserves the empty-sentinel User(\"\") in the array", () => {
     const raw: unknown = [{ kind: "user", id: "" }];
     expect(parseSubjectArrayJsonb(raw)).toEqual([{ kind: "user", id: "" }]);
   });
@@ -168,30 +173,10 @@ describe("toRecord → resolveOwnerSubject pipeline (review #12 P1)", () => {
 
     const instance = {
       ownerSubject: validated, // null after validation
-      allowedPrincipals: [],
     };
     // Even the (hypothetical) legacy owner can no longer access —
     // the row is ownerless and would be invisible to the caller.
     expect(await instanceService.canAccess(instance, "7")).toBe(false);
-    expect(await instanceService.canAccess(instance, "99")).toBe(false);
-  });
-
-  it("a malformed allow-list entry doesn't grant a null === null match", async () => {
-    // Pre-validation: an attacker has injected {kind: 'user', id: null}
-    // into the allow-list. Post-validation: the entry is filtered out.
-    const validated = parseSubjectArrayJsonb([
-      { kind: "user", id: null },
-    ]);
-    expect(validated).toEqual([]);
-
-    // A user whose id is literally the string "null" should NOT match
-    // (because the malformed entry is gone, not because of any
-    // false-positive match).
-    const instance = {
-      ownerSubject: { kind: "user" as const, id: "1" } as Subject,
-      allowedPrincipals: validated,
-    };
-    expect(await instanceService.canAccess(instance, "1")).toBe(true); // owner
     expect(await instanceService.canAccess(instance, "99")).toBe(false);
   });
 });
