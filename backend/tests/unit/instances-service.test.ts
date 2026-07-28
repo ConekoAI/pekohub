@@ -32,12 +32,12 @@ describe("instanceService.canChat", () => {
 
   it("returns false when instance is offline", async () => {
     const instance = { ...baseInstance, status: "offline" as const };
-    expect(await instanceService.canChat(instance, 1)).toBe(false);
+    expect(await instanceService.canChat(instance, "1")).toBe(false);
   });
 
   it("returns false when instance is unexposed", async () => {
     const instance = { ...baseInstance, exposure: "unexposed" as const };
-    expect(await instanceService.canChat(instance, 1)).toBe(false);
+    expect(await instanceService.canChat(instance, "1")).toBe(false);
   });
 
   it("returns true when instance is public and online", async () => {
@@ -46,7 +46,7 @@ describe("instanceService.canChat", () => {
       status: "online" as const,
       exposure: "public" as const,
     };
-    expect(await instanceService.canChat(instance, 999)).toBe(true);
+    expect(await instanceService.canChat(instance, "999")).toBe(true);
   });
 
   it("returns false when private instance and no userId provided", async () => {
@@ -66,7 +66,7 @@ describe("instanceService.canChat", () => {
       exposure: "private" as const,
       ownerSubject: { kind: "user" as const, id: "42" } as Subject,
     };
-    expect(await instanceService.canChat(instance, 42)).toBe(true);
+    expect(await instanceService.canChat(instance, "42")).toBe(true);
   });
 
   it("returns true when private instance and user is in typed allowedPrincipals", async () => {
@@ -80,7 +80,7 @@ describe("instanceService.canChat", () => {
         { kind: "principal" as const, id: "helper" } as Subject,
       ],
     };
-    expect(await instanceService.canChat(instance, 7)).toBe(true);
+    expect(await instanceService.canChat(instance, "7")).toBe(true);
   });
 
   it("returns false when private instance and user is not authorized", async () => {
@@ -93,7 +93,7 @@ describe("instanceService.canChat", () => {
         { kind: "user" as const, id: "7" } as Subject,
       ],
     };
-    expect(await instanceService.canChat(instance, 2)).toBe(false);
+    expect(await instanceService.canChat(instance, "2")).toBe(false);
   });
 
   it("returns true when busy status and public exposure", async () => {
@@ -102,7 +102,7 @@ describe("instanceService.canChat", () => {
       status: "busy" as const,
       exposure: "public" as const,
     };
-    expect(await instanceService.canChat(instance, 123)).toBe(true);
+    expect(await instanceService.canChat(instance, "123")).toBe(true);
   });
 
   // Issue #11: Principal-kind caller against a Principal-owned instance.
@@ -132,7 +132,7 @@ describe("instanceService.canChat", () => {
       exposure: "private" as const,
       ownerSubject: { kind: "user" as const, id: "" } as Subject,
     };
-    expect(await instanceService.canChat(instance, 7)).toBe(false);
-    expect(await instanceService.canChat(instance, 99)).toBe(false);
+    expect(await instanceService.canChat(instance, "7")).toBe(false);
+    expect(await instanceService.canChat(instance, "99")).toBe(false);
   });
 });

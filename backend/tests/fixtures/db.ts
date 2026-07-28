@@ -8,8 +8,13 @@ export interface TestDb {
 }
 
 const DDL_STATEMENTS = [
+  // Post-H3: users.id is a UUID (was SERIAL). The runtime emits
+  // user.id as a string (JWT `sub`, `x-pekohub-user-id` header),
+  // so the native UUID column is the canonical shape on both sides.
+  // Drizzle's `$defaultFn` inserts a random UUID when the test
+  // factory doesn't pass one explicitly.
   `CREATE TABLE IF NOT EXISTS users (
-    id SERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     external_id VARCHAR(256) NOT NULL UNIQUE,
     provider VARCHAR(32) NOT NULL,
     namespace VARCHAR(128) NOT NULL UNIQUE,
@@ -22,7 +27,7 @@ const DDL_STATEMENTS = [
 
   `CREATE TABLE IF NOT EXISTS api_keys (
     id SERIAL PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name VARCHAR(128) NOT NULL,
     prefix VARCHAR(16) NOT NULL,
     hash VARCHAR(64) NOT NULL,
@@ -99,7 +104,7 @@ const DDL_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS audit_logs (
     id SERIAL PRIMARY KEY,
     namespace VARCHAR(128) NOT NULL,
-    user_id INTEGER REFERENCES users(id),
+    user_id UUID REFERENCES users(id),
     action VARCHAR(64) NOT NULL,
     resource VARCHAR(256) NOT NULL,
     details JSONB,
@@ -108,7 +113,7 @@ const DDL_STATEMENTS = [
 
   `CREATE TABLE IF NOT EXISTS refresh_tokens (
     id TEXT PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     token_prefix VARCHAR(16) NOT NULL,
     token_hash VARCHAR(256) NOT NULL,
     device_info TEXT,
@@ -179,7 +184,7 @@ const DDL_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS runtimes (
     id SERIAL PRIMARY KEY,
     runtime_did VARCHAR(255) NOT NULL UNIQUE,
-    owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     display_name VARCHAR(255),
     direct_endpoint VARCHAR(512),
     last_seen_at TIMESTAMPTZ,

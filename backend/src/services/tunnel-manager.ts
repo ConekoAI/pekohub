@@ -682,7 +682,8 @@ export class TunnelManager {
     if (pending.timer) clearTimeout(pending.timer);
   }
 
-  async resolveRuntimeOwner(runtimeId: string): Promise<number | null> {
+  async resolveRuntimeOwner(runtimeId: string): Promise<string | null> {
+    // Post-H3: ownerId is a UUID string (was number).
     const row = await db.query.runtimes.findFirst({
       where: eq(runtimes.runtimeDid, runtimeId),
     });

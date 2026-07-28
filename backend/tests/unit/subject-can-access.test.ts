@@ -131,24 +131,6 @@ describe("subjectCanAccess", () => {
   });
 });
 
-describe("legacy numeric userId coercion (back-compat shim)", () => {
-  it("accepts numeric userId for canAccess", async () => {
-    const instance = makeInstance({
-      ownerSubject: { kind: "user", id: "42" },
-    });
-    expect(await instanceService.canAccess(instance, 42)).toBe(true);
-    expect(await instanceService.canAccess(instance, 99)).toBe(false);
-  });
-
-  it("accepts numeric userId for isOwner", async () => {
-    const instance = makeInstance({
-      ownerSubject: { kind: "user", id: "42" },
-    });
-    expect(await instanceService.isOwner(instance, 42)).toBe(true);
-    expect(await instanceService.isOwner(instance, 99)).toBe(false);
-  });
-});
-
 // ── resolveOwnerSubject (post-H1) ───────────────────────────────────────
 
 describe("resolveOwnerSubject", () => {
@@ -203,9 +185,9 @@ describe("canAccess — typed allow-list (allowedPrincipals)", () => {
       ],
     });
     // Owner (1) is allowed
-    expect(await instanceService.canAccess(instance, 1)).toBe(true);
+    expect(await instanceService.canAccess(instance, "1")).toBe(true);
     // Allowed user (7)
-    expect(await instanceService.canAccess(instance, 7)).toBe(true);
+    expect(await instanceService.canAccess(instance, "7")).toBe(true);
     // Allowed principal
     const caller: CallerSubject = { kind: "principal", id: "helper" };
     expect(await instanceService.canAccess(instance, caller)).toBe(true);
@@ -216,7 +198,7 @@ describe("canAccess — typed allow-list (allowedPrincipals)", () => {
       ownerSubject: { kind: "user", id: "1" },
       allowedPrincipals: [{ kind: "user", id: "7" }],
     });
-    expect(await instanceService.canAccess(instance, 99)).toBe(false);
+    expect(await instanceService.canAccess(instance, "99")).toBe(false);
   });
 });
 

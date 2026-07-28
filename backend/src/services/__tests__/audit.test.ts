@@ -36,7 +36,7 @@ describe("AuditService", () => {
         values: vi.fn().mockReturnThis(),
       }));
 
-      await service.logPush("acme", 1, "my-bundle", "1.0.0", "sha256:abc", {
+      await service.logPush("acme", "00000000-0000-0000-0000-000000000001", "my-bundle", "1.0.0", "sha256:abc", {
         size: 42,
       });
 
@@ -80,7 +80,7 @@ describe("AuditService", () => {
       });
 
       await expect(
-        service.logPush("acme", 1, "my-bundle", "1.0.0", "sha256:abc"),
+        service.logPush("acme", "00000000-0000-0000-0000-000000000001", "my-bundle", "1.0.0", "sha256:abc"),
       ).resolves.toBeUndefined();
     });
   });
@@ -91,7 +91,7 @@ describe("AuditService", () => {
         values: vi.fn().mockReturnThis(),
       }));
 
-      await service.logPull("acme", 2, "my-bundle", "1.0.0", "sha256:def");
+      await service.logPull("acme", "00000000-0000-0000-0000-000000000002", "my-bundle", "1.0.0", "sha256:def");
 
       expect(mockDbInsert).toHaveBeenCalled();
       const valuesCall = mockDbInsert.mock.results[0].value.values;
@@ -112,7 +112,7 @@ describe("AuditService", () => {
       });
 
       await expect(
-        service.logPull("acme", 1, "my-bundle", "1.0.0", "sha256:def"),
+        service.logPull("acme", "00000000-0000-0000-0000-000000000001", "my-bundle", "1.0.0", "sha256:def"),
       ).resolves.toBeUndefined();
     });
   });
@@ -123,7 +123,7 @@ describe("AuditService", () => {
         values: vi.fn().mockReturnThis(),
       }));
 
-      await service.logDelete("acme", 3, "acme/my-bundle:1.0.0", {
+      await service.logDelete("acme", "00000000-0000-0000-0000-000000000003", "acme/my-bundle:1.0.0", {
         reason: "cleanup",
       });
 
@@ -145,7 +145,7 @@ describe("AuditService", () => {
       });
 
       await expect(
-        service.logDelete("acme", 1, "acme/my-bundle:1.0.0"),
+        service.logDelete("acme", "00000000-0000-0000-0000-000000000001", "acme/my-bundle:1.0.0"),
       ).resolves.toBeUndefined();
     });
   });
@@ -156,7 +156,7 @@ describe("AuditService", () => {
         values: vi.fn().mockReturnThis(),
       }));
 
-      await service.logPermissionChange("acme", 4, "acme/my-bundle", {
+      await service.logPermissionChange("acme", "00000000-0000-0000-0000-000000000004", "acme/my-bundle", {
         role: "admin",
       });
 
@@ -178,7 +178,7 @@ describe("AuditService", () => {
       });
 
       await expect(
-        service.logPermissionChange("acme", 1, "acme/my-bundle"),
+        service.logPermissionChange("acme", "00000000-0000-0000-0000-000000000001", "acme/my-bundle"),
       ).resolves.toBeUndefined();
     });
   });

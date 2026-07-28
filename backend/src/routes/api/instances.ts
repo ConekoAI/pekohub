@@ -59,25 +59,36 @@ async function extractCallerSubject(
 }
 
 /**
- * Derive the legacy `ownerId` numeric field for the search index
- * from the typed `ownerSubject`. Post-H1 the column is gone, but the
- * Meilisearch document keeps a numeric `ownerId` for filterability
- * (only user-owned instances can be indexed today — principal-owned
+ * Derive the `ownerId` field for the search index from the typed
+ * `ownerSubject`. Post-H1 the column is gone; the Meilisearch
+ * document keeps an `ownerId` field for filterability (only
+ * user-owned instances can be indexed today — principal-owned
  * instances would need a separate index key).
  *
  * Returns `null` when:
  *   - the instance has no owner (`ownerSubject` is null or the empty
  *     sentinel)
  *   - the owner is not a `user` Subject (a Principal-owned instance
- *     gets no `ownerId` in the index).
+ *     gets no `ownerId` in the index)
+ *   - the user-id is not a valid UUID (the typed `ownerSubject.id`
+ *     is always stored as a JSON string; pre-launch we don't
+ *     attempt to coerce non-UUID values — null is the safe default)
  *
- * H3 will swap the return type to `string | null` (UUID); the
- * `indexInstance` signature will be updated in that PR.
+ * Post-H3 the `id` is a UUID string and the `indexInstance`
+ * signature is `string | null`.
  */
-function ownerSubjectUserId(ownerSubject: Subject | null | undefined): number | null {
+function ownerSubjectUserId(
+  ownerSubject: Subject | null | undefined,
+): string | null {
   if (!ownerSubject || ownerSubject.kind !== "user") return null;
-  const n = Number(ownerSubject.id);
-  return Number.isFinite(n) ? n : null;
+  // Bare UUID check — the runtime emits UUID strings, the typed
+  // owner_subject carries the same shape, and an arbitrary string
+  // ("42", "abc") would never match a users.id row.
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    ownerSubject.id,
+  )
+    ? ownerSubject.id
+    : null;
 }
 
 const ListQuerySchema = z.object({

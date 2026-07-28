@@ -79,7 +79,7 @@ export default async function manifestRoutes(fastify: FastifyInstance) {
     reply.header("Content-Length", JSON.stringify(manifest).length);
 
     // Fire-and-forget audit log (must not throw)
-    const userId = (request as unknown as { user?: { id?: number } }).user?.id;
+    const userId = (request as unknown as { user?: { id?: string } }).user?.id;
     await auditService.logPull(
       namespace,
       userId,
@@ -444,7 +444,7 @@ export default async function manifestRoutes(fastify: FastifyInstance) {
     reply.status(201).send();
 
     // Fire-and-forget audit log (must not throw)
-    const userId = (user as { id?: number }).id;
+    const userId = (user as { id?: string }).id;
     await auditService.logPush(namespace, userId, name, reference, digest, {
       size: manifestBytes.length,
     });

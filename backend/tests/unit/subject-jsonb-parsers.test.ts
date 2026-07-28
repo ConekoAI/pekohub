@@ -172,8 +172,8 @@ describe("toRecord → resolveOwnerSubject pipeline (review #12 P1)", () => {
     };
     // Even the (hypothetical) legacy owner can no longer access —
     // the row is ownerless and would be invisible to the caller.
-    expect(await instanceService.canAccess(instance, 7)).toBe(false);
-    expect(await instanceService.canAccess(instance, 99)).toBe(false);
+    expect(await instanceService.canAccess(instance, "7")).toBe(false);
+    expect(await instanceService.canAccess(instance, "99")).toBe(false);
   });
 
   it("a malformed allow-list entry doesn't grant a null === null match", async () => {
@@ -191,7 +191,7 @@ describe("toRecord → resolveOwnerSubject pipeline (review #12 P1)", () => {
       ownerSubject: { kind: "user" as const, id: "1" } as Subject,
       allowedPrincipals: validated,
     };
-    expect(await instanceService.canAccess(instance, 1)).toBe(true); // owner
-    expect(await instanceService.canAccess(instance, 99)).toBe(false);
+    expect(await instanceService.canAccess(instance, "1")).toBe(true); // owner
+    expect(await instanceService.canAccess(instance, "99")).toBe(false);
   });
 });

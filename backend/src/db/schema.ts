@@ -24,7 +24,15 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const users = pgTable("users", {
-  id: serial("id").primaryKey(),
+  // Post-H3: native UUID column. The runtime always emits `user.id`
+  // as a string (JWT `sub`, `x-pekohub-user-id` header), so the
+  // integer round-trip was a coercion hazard. The DB-side default
+  // `gen_random_uuid()` is set in migration 0011; Drizzle's `uuid()`
+  // column doesn't carry a server-side default, so inserts must
+  // pass an explicit id (or rely on the pg default).
+  id: uuid("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
   externalId: varchar("external_id", { length: 256 }).notNull().unique(),
   provider: varchar("provider", { length: 32 }).notNull(), // github, google
   namespace: varchar("namespace", { length: 128 }).notNull().unique(),
@@ -41,7 +49,8 @@ export const users = pgTable("users", {
 
 export const apiKeys = pgTable("api_keys", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id")
+  // Post-H3: FK is uuid to match users.id (was integer).
+  userId: uuid("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   name: varchar("name", { length: 128 }).notNull(),
@@ -57,7 +66,8 @@ export const refreshTokens = pgTable(
   "refresh_tokens",
   {
     id: text("id").primaryKey(),
-    userId: integer("user_id")
+    // Post-H3: FK is uuid to match users.id (was integer).
+    userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     tokenPrefix: varchar("token_prefix", { length: 16 }).notNull(),
@@ -307,8 +317,9 @@ export const instanceRelations = relations(instances, ({ one }) => ({
   // Owner lookup routes through `instances.owner_subject` (JSONB)
   // post-H1; the legacy `instances.owner_id` integer FK is gone, so
   // no Drizzle relation ships for it. Callers join via
-  // `users.id = (instances.owner_subject->>'id')::int` (or
-  // `::uuid` after H3) where the typed owner is a user.
+  // `users.id::text = instances.owner_subject->>'id'` (text-text
+  // comparison; both sides are string after H3) where the typed
+  // owner is a user.
 }));
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -320,7 +331,8 @@ export const runtimes = pgTable(
   {
     id: serial("id").primaryKey(),
     runtimeDid: varchar("runtime_did", { length: 255 }).notNull().unique(),
-    ownerId: integer("owner_id")
+    // Post-H3: FK is uuid to match users.id (was integer).
+    ownerId: uuid("owner_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     displayName: varchar("display_name", { length: 255 }),
@@ -345,7 +357,7 @@ export const runtimes = pgTable(
 export const auditLogs = pgTable("audit_logs", {
   id: serial("id").primaryKey(),
   namespace: varchar("namespace", { length: 128 }).notNull(),
-  userId: integer("user_id").references(() => users.id),
+  userId: uuid("user_id").references(() => users.id),
   action: varchar("action", { length: 64 }).notNull(), // push, pull, delete, permission_change
   resource: varchar("resource", { length: 256 }).notNull(),
   details: jsonb("details"),

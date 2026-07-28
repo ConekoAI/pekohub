@@ -573,12 +573,11 @@ export class InstanceService {
     if (!ownerRow) return null;
 
     // Post-H1 the legacy `instances.owner_id` integer FK is gone; the
-    // typed `owner_subject` JSONB is the source of truth. We extract
-    // the user id from `owner_subject->>'id'` and cast to `users.id`'s
-    // type (int today, uuid after H3). Drizzle can't generate the
-    // expression through a helper, so the JSONB is built inline —
-    // any operator that produces this exact JSON shape will match
-    // (the runtime always emits `{kind:"user",id:"<str>"}`).
+    // typed `owner_subject` JSONB is the source of truth. We match
+    // exact JSONB equality using a string literal that mirrors the
+    // runtime's `instance_announce` shape. Post-H3, `users.id` is a
+    // UUID string but the `id` field in `owner_subject` is JSON-text
+    // either way — `String(user.id)` covers both.
     const ownerSubjectLiteral = JSON.stringify({
       kind: "user",
       id: String(ownerRow.id),
@@ -734,7 +733,7 @@ export class InstanceService {
    */
   async canAccess(
     instance: InstanceRecord,
-    caller: CallerSubject | number | null,
+    caller: CallerSubject | string | null,
   ): Promise<boolean> {
     if (instance.exposure === "public") return true;
 
@@ -757,7 +756,7 @@ export class InstanceService {
    */
   async canChat(
     instance: InstanceRecord,
-    caller: CallerSubject | number | null,
+    caller: CallerSubject | string | null,
   ): Promise<boolean> {
     if (instance.status === "offline" || instance.exposure === "unexposed") {
       return false;
@@ -781,7 +780,7 @@ export class InstanceService {
    */
   async isOwner(
     instance: InstanceRecord,
-    caller: CallerSubject | number | null,
+    caller: CallerSubject | string | null,
   ): Promise<boolean> {
     const owner = resolveOwnerSubject(instance);
     if (owner === null) return false;
@@ -862,16 +861,19 @@ export class InstanceService {
  * `CallerSubject`. Accepts:
  *
  * - `null` → null (unauthenticated)
- * - `number` → `Principal::User(String(n))` (the legacy `userId: number`
- *   shape from the auth plugin)
- * - `Principal` → as-is
+ * - `string` → `Subject::User(s)` (the post-H3 UUID `userId` shape
+ *   from the auth plugin)
+ * - `Subject` → as-is
+ *
+ * The legacy `number` shape is gone post-H3 — `users.id` is a UUID
+ * string on both sides.
  */
 function normalizeCaller(
-  caller: CallerSubject | number | null,
+  caller: CallerSubject | string | null,
 ): CallerSubject {
   if (caller === null || caller === undefined) return null;
-  if (typeof caller === "number") {
-    return { kind: "user", id: String(caller) };
+  if (typeof caller === "string") {
+    return { kind: "user", id: caller };
   }
   return caller;
 }

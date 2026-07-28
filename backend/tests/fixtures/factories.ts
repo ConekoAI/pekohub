@@ -2,7 +2,8 @@ import { faker } from "@faker-js/faker";
 import type { PGlite } from "@electric-sql/pglite";
 
 export interface TestUser {
-  id: number;
+  // Post-H3: users.id is a UUID string (was number).
+  id: string;
   externalId: string;
   provider: "github" | "google";
   namespace: string;
@@ -94,20 +95,40 @@ export async function createUser(
       .toLowerCase()
       .replace(/[^a-z0-9_-]/g, "");
   const provider = overrides.provider ?? "github";
-  const externalId = `${provider}:${overrides.id ?? faker.number.int({ min: 100000, max: 999999 })}`;
+  // Post-H3: `id` is a UUID string. PGlite honors the column
+  // `DEFAULT gen_random_uuid()` when we omit it, so we only pass
+  // `id` when the caller explicitly overrides it.
+  const explicitId = overrides.id;
+  const externalId = `${provider}:${faker.number.int({ min: 100000, max: 999999 })}`;
+
+  const columns = explicitId
+    ? "id, external_id, provider, namespace, display_name, email, avatar_url"
+    : "external_id, provider, namespace, display_name, email, avatar_url";
+  const placeholders = explicitId ? "($1, $2, $3, $4, $5, $6, $7)" : "($1, $2, $3, $4, $5, $6)";
+  const params = explicitId
+    ? [
+        explicitId,
+        externalId,
+        provider,
+        namespace,
+        overrides.displayName ?? faker.person.fullName(),
+        overrides.email ?? faker.internet.email(),
+        overrides.avatarUrl ?? faker.image.avatar(),
+      ]
+    : [
+        externalId,
+        provider,
+        namespace,
+        overrides.displayName ?? faker.person.fullName(),
+        overrides.email ?? faker.internet.email(),
+        overrides.avatarUrl ?? faker.image.avatar(),
+      ];
 
   const result = await client.query(
-    `INSERT INTO users (external_id, provider, namespace, display_name, email, avatar_url)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO users (${columns})
+     VALUES ${placeholders}
      RETURNING id, external_id, provider, namespace, display_name, email, avatar_url`,
-    [
-      externalId,
-      provider,
-      namespace,
-      overrides.displayName ?? faker.person.fullName(),
-      overrides.email ?? faker.internet.email(),
-      overrides.avatarUrl ?? faker.image.avatar(),
-    ],
+    params,
   );
 
   return result.rows[0] as TestUser;
@@ -304,7 +325,8 @@ export async function createInstance(
 export interface TestRuntime {
   id: number;
   runtimeDid: string;
-  ownerId: number;
+  // Post-H3: ownerId is a UUID string (was number).
+  ownerId: string;
   displayName: string | null;
   directEndpoint: string | null;
   lastSeenAt: Date | null;
@@ -316,7 +338,7 @@ export interface TestRuntime {
  */
 export async function createRuntime(
   client: PGlite,
-  overrides: Partial<TestRuntime> & { ownerId: number; runtimeDid: string },
+  overrides: Partial<TestRuntime> & { ownerId: string; runtimeDid: string },
 ): Promise<TestRuntime> {
   const result = await client.query(
     `INSERT INTO runtimes (runtime_did, owner_id, display_name, direct_endpoint, last_seen_at)

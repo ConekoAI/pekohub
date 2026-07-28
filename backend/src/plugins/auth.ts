@@ -8,7 +8,10 @@ import bcrypt from "bcryptjs";
 import { auditService } from "../services/audit.js";
 
 export interface AuthenticatedUser {
-  id: number;
+  // Post-H3: user id is a UUID string (was number). The runtime
+  // already emits this as a string (JWT `sub`, `x-pekohub-user-id`
+  // header), so the integer round-trip was a coercion hazard.
+  id: string;
   namespace: string;
   displayName: string | null;
   email: string | null;
@@ -24,15 +27,16 @@ declare module "@fastify/jwt" {
 declare module "fastify" {
   interface FastifyInstance {
     authenticate: (request: FastifyRequest) => Promise<AuthenticatedUser>;
-    issueRefreshToken: (userId: number, deviceInfo?: string) => Promise<string>;
+    // Post-H3: userId is a UUID string (was number).
+    issueRefreshToken: (userId: string, deviceInfo?: string) => Promise<string>;
     validateRefreshToken: (
       token: string,
-    ) => Promise<{ id: string; userId: number } | null>;
+    ) => Promise<{ id: string; userId: string } | null>;
     revokeRefreshToken: (id: string) => Promise<void>;
-    revokeAllUserRefreshTokens: (userId: number) => Promise<void>;
+    revokeAllUserRefreshTokens: (userId: string) => Promise<void>;
     rotateRefreshToken: (
       oldId: string,
-      userId: number,
+      userId: string,
       deviceInfo?: string,
     ) => Promise<string>;
   }
@@ -116,13 +120,15 @@ async function authPlugin(fastify: FastifyInstance) {
         };
       }
 
-      // Otherwise treat as JWT access token
+      // Otherwise treat as JWT access token. Post-H3 the `sub` claim
+      // is a UUID string (was integer-Stringified); convert before
+      // comparing to users.id.
       const decoded = await request.jwtVerify<{
         sub: string;
         namespace: string;
       }>();
       const user = await db.query.users.findFirst({
-        where: eq(users.id, Number(decoded.sub)),
+        where: eq(users.id, decoded.sub),
       });
 
       if (!user) {
@@ -145,7 +151,7 @@ async function authPlugin(fastify: FastifyInstance) {
 
   fastify.decorate(
     "issueRefreshToken",
-    async (userId: number, deviceInfo?: string) => {
+    async (userId: string, deviceInfo?: string) => {
       const plainToken = generateRefreshTokenValue();
       const tokenHash = await bcrypt.hash(plainToken, 10);
       const tokenPrefix = await sha256Prefix(plainToken);
@@ -233,7 +239,7 @@ async function authPlugin(fastify: FastifyInstance) {
       .where(eq(refreshTokens.id, id));
   });
 
-  fastify.decorate("revokeAllUserRefreshTokens", async (userId: number) => {
+  fastify.decorate("revokeAllUserRefreshTokens", async (userId: string) => {
     await db
       .update(refreshTokens)
       .set({ revokedAt: new Date() })
@@ -244,7 +250,7 @@ async function authPlugin(fastify: FastifyInstance) {
 
   fastify.decorate(
     "rotateRefreshToken",
-    async (oldId: string, userId: number, deviceInfo?: string) => {
+    async (oldId: string, userId: string, deviceInfo?: string) => {
       // Revoke old token
       await fastify.revokeRefreshToken(oldId);
 
