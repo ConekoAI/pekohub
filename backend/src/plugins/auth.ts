@@ -74,8 +74,11 @@ async function authPlugin(fastify: FastifyInstance) {
       const token = authHeader.slice(7);
 
       // Check if it's an API key (starts with a known prefix pattern)
-      if (token.startsWith("ph_")) {
-        const prefix = token.slice(0, 8);
+      if (token.startsWith("pkr_")) {
+        // The full prefix is `pkr_` (4 chars) + 6 hex chars = 10 chars.
+        // Match the api_keys.prefix column exactly so the by-prefix lookup
+        // hits a single row.
+        const prefix = token.slice(0, 10);
         const keyRecord = await db.query.apiKeys.findFirst({
           where: eq(apiKeys.prefix, prefix),
         });

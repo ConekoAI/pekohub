@@ -23,11 +23,13 @@ export default async function apiKeyRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ error: "Name is required" });
     }
 
-    // Generate key: ph_<6-char prefix><24-char secret>
-    //   prefix = "ph_" (3 chars) + 6 hex chars = 9 chars total
-    //   full   = 9 + 24 = 33 chars total (matches the `ph_…` format)
+    // Generate key: pkr_<6-char prefix><24-char secret>
+    //   prefix = "pkr_" (4 chars) + 6 hex chars = 10 chars total
+    //   full   = 10 + 24 = 34 chars total
     // The api_keys.prefix column is varchar(16) — plenty of headroom.
-    const prefix = "ph_" + crypto.randomBytes(3).toString("hex");
+    // Aligns with peko-runtime's `pkr_` format (peko-rs/auth/src/api_key.rs)
+    // so a single key universe is recognized across both sides.
+    const prefix = "pkr_" + crypto.randomBytes(3).toString("hex");
     const secret = crypto.randomBytes(18).toString("base64url"); // 24 chars
     const fullKey = prefix + secret;
 
