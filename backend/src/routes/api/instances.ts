@@ -19,6 +19,7 @@ import {
   gte,
 } from "drizzle-orm";
 import { z } from "zod";
+import type { Subject } from "@pekohub/shared";
 import { readOrSetVisitor } from "../../services/visitor-cookie.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -55,6 +56,28 @@ async function extractCallerSubject(
   } catch {
     return null;
   }
+}
+
+/**
+ * Derive the legacy `ownerId` numeric field for the search index
+ * from the typed `ownerSubject`. Post-H1 the column is gone, but the
+ * Meilisearch document keeps a numeric `ownerId` for filterability
+ * (only user-owned instances can be indexed today — principal-owned
+ * instances would need a separate index key).
+ *
+ * Returns `null` when:
+ *   - the instance has no owner (`ownerSubject` is null or the empty
+ *     sentinel)
+ *   - the owner is not a `user` Subject (a Principal-owned instance
+ *     gets no `ownerId` in the index).
+ *
+ * H3 will swap the return type to `string | null` (UUID); the
+ * `indexInstance` signature will be updated in that PR.
+ */
+function ownerSubjectUserId(ownerSubject: Subject | null | undefined): number | null {
+  if (!ownerSubject || ownerSubject.kind !== "user") return null;
+  const n = Number(ownerSubject.id);
+  return Number.isFinite(n) ? n : null;
 }
 
 const ListQuerySchema = z.object({
@@ -207,7 +230,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       }
 
       const result = await instanceService.list({
-        ownerId: user.id,
+        ownerSubject: { kind: "user", id: String(user.id) },
         status: query.data.status as InstanceStatus | undefined,
         type: query.data.type as InstanceType | undefined,
         runtimeId: query.data.runtime_id,
@@ -284,7 +307,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         id: body.data.id,
         type: body.data.type,
         name: body.data.name,
-        ownerId: user.id,
+        ownerSubject: { kind: "user", id: String(user.id) },
         runtimeId: body.data.runtime_id,
         runtimeDisplayName: body.data.runtime_display_name,
         bundleRef: body.data.bundle_ref,
@@ -314,7 +337,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
             bundleRef: instance.bundleRef ?? undefined,
             status: instance.status,
             capabilities: instance.capabilities,
-            ownerId: instance.ownerId,
+            ownerId: ownerSubjectUserId(instance.ownerSubject),
             runtimeDisplayName: instance.runtimeDisplayName ?? undefined,
             createdAt: instance.createdAt.toISOString(),
             publicName: instance.publicName ?? undefined,
@@ -388,7 +411,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
             bundleRef: updated!.bundleRef ?? undefined,
             status: updated!.status,
             capabilities: updated!.capabilities,
-            ownerId: updated!.ownerId,
+            ownerId: ownerSubjectUserId(updated!.ownerSubject),
             runtimeDisplayName: updated!.runtimeDisplayName ?? undefined,
             createdAt: updated!.createdAt.toISOString(),
             publicName: updated!.publicName ?? undefined,
@@ -494,7 +517,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
             bundleRef: updated!.bundleRef ?? undefined,
             status: updated!.status,
             capabilities: updated!.capabilities,
-            ownerId: updated!.ownerId,
+            ownerId: ownerSubjectUserId(updated!.ownerSubject),
             runtimeDisplayName: updated!.runtimeDisplayName ?? undefined,
             createdAt: updated!.createdAt.toISOString(),
             publicName: updated!.publicName ?? undefined,
@@ -790,14 +813,25 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       const rows = await db
         .select({
           id: instances.id,
-          ownerId: instances.ownerId,
           ownerName: users.displayName,
           principalName: instances.name,
           publicName: instances.publicName,
           status: instances.status,
         })
         .from(instances)
-        .innerJoin(users, eq(instances.ownerId, users.id))
+        // Post-H1: instances are joined to users via the typed
+        // `owner_subject` JSONB column, not a numeric FK. We extract
+        // the user id from `owner_subject->>'id'` and match it to
+        // `users.id` (cast to text on the user-id side because
+        // `owner_subject.id` is always stored as a JSON string).
+        // Principal-owned instances don't match any `users.id` row and
+        // drop out via `innerJoin`; that's fine — the response shape
+        // only needs an owner *name*, and Principal-owned instances
+        // don't expose one through `users.displayName` anyway.
+        .innerJoin(
+          users,
+          sql`${users.id}::text = ${instances.ownerSubject}->>'id'`,
+        )
         .where(
           and(
             eq(instances.exposure, "private"),
@@ -809,7 +843,6 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       return {
         principals: rows.map((r) => ({
           id: r.id,
-          ownerId: r.ownerId,
           ownerName: r.ownerName,
           principalName: r.principalName,
           publicName: r.publicName,
@@ -864,7 +897,14 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
               avatarUrl: users.avatarUrl,
             })
             .from(instances)
-            .innerJoin(users, eq(instances.ownerId, users.id))
+            // Post-H1: typed `owner_subject` JSONB. `users.id` cast
+            // to text matches `owner_subject->>'id'` for user-owned
+            // instances; principal-owned instances drop out via
+            // innerJoin.
+            .innerJoin(
+              users,
+              sql`${users.id}::text = ${instances.ownerSubject}->>'id'`,
+            )
             .where(inArray(instances.id, hitIds))
         : [];
 
@@ -935,7 +975,14 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
               avatarUrl: users.avatarUrl,
             })
             .from(instances)
-            .innerJoin(users, eq(instances.ownerId, users.id))
+            // Post-H1: typed `owner_subject` JSONB. `users.id` cast
+            // to text matches `owner_subject->>'id'` for user-owned
+            // instances; principal-owned instances drop out via
+            // innerJoin.
+            .innerJoin(
+              users,
+              sql`${users.id}::text = ${instances.ownerSubject}->>'id'`,
+            )
             .where(inArray(instances.id, hitIds))
         : [];
 
@@ -983,9 +1030,16 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       return reply.status(404).send({ error: "Owner not found" });
     }
 
+    // Post-H1: typed `owner_subject` JSONB. The runtime emits
+    // `{kind:"user",id:"<user.id>"}` on `instance_announce`, so we
+    // match exact JSONB equality on the user-owned subset.
+    const ownerSubjectLiteral = JSON.stringify({
+      kind: "user",
+      id: String(ownerRow.id),
+    });
     const instance = await db.query.instances.findFirst({
       where: and(
-        eq(instances.ownerId, ownerRow.id),
+        sql`${instances.ownerSubject} = ${ownerSubjectLiteral}::jsonb`,
         eq(instances.name, principalName),
         eq(instances.exposure, "public"),
       ),
@@ -1050,7 +1104,9 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
 
       const instance = await db.query.instances.findFirst({
         where: and(
-          eq(instances.ownerId, ownerRow.id),
+          // Post-H1: typed `owner_subject` JSONB exact match — see
+          // the same shape above in `/public/principals/:owner/:name`.
+          sql`${instances.ownerSubject} = ${JSON.stringify({ kind: "user", id: String(ownerRow.id) })}::jsonb`,
           eq(instances.name, principalName),
           eq(instances.exposure, "public"),
         ),

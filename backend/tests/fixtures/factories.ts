@@ -49,7 +49,11 @@ export interface TestInstance {
   id: string;
   type: "principal";
   name: string;
-  ownerId: number;
+  // Post-H1: typed `owner_subject` JSONB is the only owner signal
+  // (the legacy `owner_id` integer FK was dropped in migration
+  // 0010). Tests that want a user-owned instance should set
+  // `{ kind: "user", id: "<userId>" }`.
+  ownerSubject: unknown;
   runtimeId: string;
   runtimeDisplayName: string | null;
   bundleRef: string | null;
@@ -210,8 +214,12 @@ export async function createBundleWithVersions(
 export async function createInstance(
   client: PGlite,
   overrides: Partial<TestInstance> & {
-    ownerId: number;
-    ownerSubject?: unknown;
+    // Post-H1: `owner_subject` JSONB is required (was previously
+    // optional; the legacy `owner_id` integer FK used to be the
+    // required field). Tests should pass
+    // `{ kind: "user", id: "<userId>" }` (or a Principal-kind subject)
+    // — see `TestInstance.ownerSubject`.
+    ownerSubject: unknown;
     allowedPrincipals?: unknown[];
   },
 ): Promise<TestInstance> {
@@ -223,13 +231,13 @@ export async function createInstance(
 
   const result = await client.query(
     `INSERT INTO instances (
-      id, type, name, owner_id, owner_subject, runtime_id, runtime_display_name, bundle_ref,
+      id, type, name, owner_subject, runtime_id, runtime_display_name, bundle_ref,
       status, exposure, allowed_principals, capabilities, metadata,
       public_name, description, tags, category, tos_required, tos_text,
       daily_quota, weekly_quota, published_at, featured, transport_preference, principal_did
     )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
-     RETURNING id, type, name, owner_id, owner_subject, runtime_id, runtime_display_name, bundle_ref,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+     RETURNING id, type, name, owner_subject, runtime_id, runtime_display_name, bundle_ref,
        status, exposure, allowed_principals, last_seen_at, created_at, capabilities, metadata,
        public_name, description, tags, category, tos_required, tos_text,
        daily_quota, weekly_quota, published_at, featured, transport_preference, principal_did`,
@@ -237,10 +245,7 @@ export async function createInstance(
       id,
       type,
       name,
-      overrides.ownerId,
-      overrides.ownerSubject !== undefined
-        ? JSON.stringify(overrides.ownerSubject)
-        : null,
+      JSON.stringify(overrides.ownerSubject),
       runtimeId,
       overrides.runtimeDisplayName ?? null,
       overrides.bundleRef ?? null,
@@ -270,7 +275,7 @@ export async function createInstance(
     id: row.id,
     type: row.type,
     name: row.name,
-    ownerId: row.owner_id,
+    ownerSubject: row.owner_subject,
     runtimeId: row.runtime_id,
     runtimeDisplayName: row.runtime_display_name,
     bundleRef: row.bundle_ref,

@@ -46,7 +46,6 @@ describe("Agent directory API", () => {
       const headers = await authHeaders(owner);
 
       const instance = await createInstance(testDb.client, {
-        ownerId: owner.id,
         ownerSubject: { kind: "user", id: String(owner.id) },
         name: "helper",
         exposure: "private",
@@ -94,7 +93,6 @@ describe("Agent directory API", () => {
 
       // A private agent owned by alice — bob must not see it.
       await createInstance(testDb.client, {
-        ownerId: owner.id,
         ownerSubject: { kind: "user", id: String(owner.id) },
         name: "secret",
         exposure: "private",
@@ -116,7 +114,6 @@ describe("Agent directory API", () => {
       const headers = await authHeaders(owner);
 
       await createInstance(testDb.client, {
-        ownerId: owner.id,
         ownerSubject: { kind: "user", id: String(owner.id) },
         name: "public-principal",
         exposure: "public",
@@ -140,7 +137,6 @@ describe("Agent directory API", () => {
       const owner = await createUser(testDb.client, { namespace: "alice" });
 
       await createInstance(testDb.client, {
-        ownerId: owner.id,
         ownerSubject: { kind: "user", id: String(owner.id) },
         name: "public-principal",
         exposure: "public",
@@ -175,7 +171,6 @@ describe("Agent directory API", () => {
       const headers = await authHeaders(owner);
 
       await createInstance(testDb.client, {
-        ownerId: owner.id,
         ownerSubject: { kind: "user", id: String(owner.id) },
         name: "helper",
         exposure: "private",
@@ -201,13 +196,12 @@ describe("Agent directory API", () => {
 
       const runtimeDid = `did:key:z${faker.string.alphanumeric(40)}`;
       await createRuntime(testDb.client, {
-        ownerId: owner.id,
         runtimeDid,
+        ownerId: owner.id,
         directEndpoint: "wss://example.com:11436",
       });
 
       await createInstance(testDb.client, {
-        ownerId: owner.id,
         ownerSubject: { kind: "user", id: String(owner.id) },
         name: "helper",
         exposure: "private",
@@ -234,7 +228,6 @@ describe("Agent directory API", () => {
       const headers = await authHeaders(owner);
 
       const instance = await createInstance(testDb.client, {
-        ownerId: owner.id,
         ownerSubject: { kind: "user", id: String(owner.id) },
         name: "helper",
         exposure: "private",
@@ -281,7 +274,6 @@ describe("Agent directory API", () => {
 
       // Owner exists, but no instance with that name.
       await createInstance(testDb.client, {
-        ownerId: owner.id,
         ownerSubject: { kind: "user", id: String(owner.id) },
         name: "different-name",
       });
@@ -302,7 +294,6 @@ describe("Agent directory API", () => {
       const otherHeaders = await authHeaders(other);
 
       await createInstance(testDb.client, {
-        ownerId: owner.id,
         ownerSubject: { kind: "user", id: String(owner.id) },
         name: "secret",
         exposure: "private",

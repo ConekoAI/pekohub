@@ -225,18 +225,12 @@ export const instances = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     type: varchar("type", { length: 16 }).notNull(), // 'principal' (post-ADR-041)
     name: varchar("name", { length: 255 }).notNull(),
-    // Legacy owner reference — kept for one release so peers on the
-    // pre-ADR-039 hub continue to work. New code should treat
-    // `ownerSubject` (or the resolved owner) as the source of truth
-    // and use this column only as a backfill target.
-    ownerId: integer("owner_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    // Typed owner per ADR-041 / peko-runtime's `Subject` enum. Nullable
-    // because pre-upgrade rows have no value; `resolveOwnerSubject`
-    // falls back to `Subject::User(ownerId)` in that case. The
-    // empty-sentinel `Subject::User("")` is treated the same way
-    // (see `EMPTY_OWNER_SUBJECT` in @pekohub/shared).
+    // Typed owner per ADR-041 / peko-runtime's `Subject` enum. This
+    // is the source of truth for "who owns this instance" — the
+    // pre-ADR-041 integer `owner_id` column was dropped in migration
+    // 0010 (H1). Nullable so a row may exist without a declared owner
+    // (the empty-sentinel `Subject::User("")` is treated the same way;
+    // see `EMPTY_OWNER_SUBJECT` in @pekohub/shared).
     ownerSubject: jsonb("owner_subject").$type<Subject | null>(),
     runtimeId: varchar("runtime_id", { length: 255 }).notNull(),
     runtimeDisplayName: varchar("runtime_display_name", { length: 255 }),
@@ -290,7 +284,6 @@ export const instances = pgTable(
     principalDid: varchar("principal_did", { length: 512 }),
   },
   (table) => ({
-    ownerIdIdx: index("idx_instances_owner_id").on(table.ownerId),
     runtimeIdIdx: index("idx_instances_runtime_id").on(table.runtimeId),
     exposureStatusIdx: index("idx_instances_exposure_status").on(
       table.exposure,
@@ -311,7 +304,11 @@ export const instances = pgTable(
 );
 
 export const instanceRelations = relations(instances, ({ one }) => ({
-  owner: one(users, { fields: [instances.ownerId], references: [users.id] }),
+  // Owner lookup routes through `instances.owner_subject` (JSONB)
+  // post-H1; the legacy `instances.owner_id` integer FK is gone, so
+  // no Drizzle relation ships for it. Callers join via
+  // `users.id = (instances.owner_subject->>'id')::int` (or
+  // `::uuid` after H3) where the typed owner is a user.
 }));
 
 // ─────────────────────────────────────────────────────────────────────────────

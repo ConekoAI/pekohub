@@ -1,6 +1,6 @@
 /**
  * Unit tests for ADR-041's `subjectCanAccess` helper and the
- * `resolveOwnerSubject` backfill shim.
+ * `resolveOwnerSubject` resolver.
  *
  * Pure functions — no DB, no Fastify. Mirrors the peko-runtime
  * ADR-039 back-compat test pattern (`auth::ownership::tests` in
@@ -9,6 +9,12 @@
  * ADR-041 removed the `Team` subject variant, so there is no
  * "team owner" describe block — all access is `User` / `Principal`
  * / `Public`.
+ *
+ * Post-H1 the legacy `owner_id` integer FK is gone; the typed
+ * `owner_subject` JSONB column is the only source of truth. The
+ * legacy "fall back to `owner_id`" tests in this file are gone
+ * with it — see the comment on `resolveOwnerSubject` in
+ * `services/instances.ts`.
  */
 
 import { describe, it, expect } from "vitest";
@@ -25,17 +31,15 @@ import {
 // read. The `type: "principal"` literal matches the post-ADR-041
 // schema.
 function makeInstance(overrides: {
-  ownerId?: number;
   ownerSubject?: Subject | null;
   allowedPrincipals?: Subject[];
   exposure?: InstanceRecord["exposure"];
   status?: InstanceRecord["status"];
 } = {}): Pick<
   InstanceRecord,
-  "ownerId" | "ownerSubject" | "allowedPrincipals"
+  "ownerSubject" | "allowedPrincipals"
 > {
   return {
-    ownerId: overrides.ownerId ?? 0,
     ownerSubject:
       overrides.ownerSubject !== undefined
         ? overrides.ownerSubject
@@ -130,7 +134,6 @@ describe("subjectCanAccess", () => {
 describe("legacy numeric userId coercion (back-compat shim)", () => {
   it("accepts numeric userId for canAccess", async () => {
     const instance = makeInstance({
-      ownerId: 42,
       ownerSubject: { kind: "user", id: "42" },
     });
     expect(await instanceService.canAccess(instance, 42)).toBe(true);
@@ -139,7 +142,6 @@ describe("legacy numeric userId coercion (back-compat shim)", () => {
 
   it("accepts numeric userId for isOwner", async () => {
     const instance = makeInstance({
-      ownerId: 42,
       ownerSubject: { kind: "user", id: "42" },
     });
     expect(await instanceService.isOwner(instance, 42)).toBe(true);
@@ -147,12 +149,11 @@ describe("legacy numeric userId coercion (back-compat shim)", () => {
   });
 });
 
-// ── resolveOwnerSubject (backfill shim) ──────────────────────────────────
+// ── resolveOwnerSubject (post-H1) ───────────────────────────────────────
 
 describe("resolveOwnerSubject", () => {
   it("returns the typed owner when present and non-sentinel", () => {
     const instance = makeInstance({
-      ownerId: 99, // would resolve to User("99") if backfilled
       ownerSubject: { kind: "principal", id: "helper" },
     });
     expect(resolveOwnerSubject(instance)).toEqual({
@@ -161,37 +162,20 @@ describe("resolveOwnerSubject", () => {
     });
   });
 
-  it("falls back to legacy ownerId when owner_subject is null", () => {
+  it("returns null when owner_subject is null", () => {
     const instance = makeInstance({
-      ownerId: 42,
       ownerSubject: null,
     });
-    expect(resolveOwnerSubject(instance)).toEqual({
-      kind: "user",
-      id: "42",
-    });
+    expect(resolveOwnerSubject(instance)).toBeNull();
   });
 
   // The runtime migration backfills empty-sentinel
-  // `Subject::User("")` on legacy rows. The shim must treat this
-  // the same as a null `owner_subject` — fall back to the legacy
-  // `ownerId`. Without this, the strict `instance.ownerId !== user.id`
-  // check would reject every backfilled instance.
-  it("falls back to legacy ownerId when owner_subject is the empty sentinel", () => {
+  // `Subject::User("")` on legacy rows. The resolver must treat this
+  // as "no owner asserted" (post-H1 there is nothing to fall back to)
+  // so that downstream access checks correctly drop the row.
+  it("returns null when owner_subject is the empty sentinel", () => {
     const instance = makeInstance({
-      ownerId: 42,
       ownerSubject: { kind: "user", id: "" },
-    });
-    expect(resolveOwnerSubject(instance)).toEqual({
-      kind: "user",
-      id: "42",
-    });
-  });
-
-  it("returns null when both owner_subject and ownerId are empty", () => {
-    const instance = makeInstance({
-      ownerId: 0,
-      ownerSubject: null,
     });
     expect(resolveOwnerSubject(instance)).toBeNull();
   });
@@ -200,7 +184,6 @@ describe("resolveOwnerSubject", () => {
     expect(
       resolveOwnerSubject(
         makeInstance({
-          ownerId: 42,
           ownerSubject: { kind: "public" },
         }),
       ),
@@ -213,7 +196,6 @@ describe("resolveOwnerSubject", () => {
 describe("canAccess — typed allow-list (allowedPrincipals)", () => {
   it("allows a user caller whose subject is in allowedPrincipals", async () => {
     const instance = makeInstance({
-      ownerId: 1,
       ownerSubject: { kind: "user", id: "1" },
       allowedPrincipals: [
         { kind: "user", id: "7" },
@@ -231,7 +213,6 @@ describe("canAccess — typed allow-list (allowedPrincipals)", () => {
 
   it("denies a caller that's not in either allow-list", async () => {
     const instance = makeInstance({
-      ownerId: 1,
       ownerSubject: { kind: "user", id: "1" },
       allowedPrincipals: [{ kind: "user", id: "7" }],
     });
@@ -252,21 +233,5 @@ describe("ADR-041 acceptance smoke tests", () => {
     const owner: Subject = { kind: "principal", id: "helper" };
     const caller: CallerSubject = { kind: "principal", id: "other" };
     expect(await subjectCanAccess(owner, caller)).toBe(false);
-  });
-
-  it("backfilled User(\"\") sentinel resolves to the legacy User owner", () => {
-    // Pre-#11 row that the runtime has now touched — the runtime
-    // wrote the empty sentinel to `owner_subject` but the
-    // pre-existing `owner_id` is the real legacy owner.
-    const instance = makeInstance({
-      ownerId: 7,
-      ownerSubject: { kind: "user", id: "" },
-    });
-    const owner = resolveOwnerSubject(instance);
-    expect(owner).toEqual({ kind: "user", id: "7" });
-    // And the access check matches a User caller with that numeric id.
-    expect(
-      subjectCanAccess(owner!, { kind: "user", id: "7" }),
-    ).resolves.toBe(true);
   });
 });

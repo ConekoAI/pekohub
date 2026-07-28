@@ -7,7 +7,6 @@ describe("instanceService.canChat", () => {
     id: "test-id",
     type: "principal" as const,
     name: "Test Instance",
-    ownerId: 1,
     ownerSubject: { kind: "user" as const, id: "1" } as Subject,
     runtimeId: "runtime-1",
     runtimeDisplayName: null,
@@ -65,7 +64,6 @@ describe("instanceService.canChat", () => {
       ...baseInstance,
       status: "online" as const,
       exposure: "private" as const,
-      ownerId: 42,
       ownerSubject: { kind: "user" as const, id: "42" } as Subject,
     };
     expect(await instanceService.canChat(instance, 42)).toBe(true);
@@ -76,7 +74,6 @@ describe("instanceService.canChat", () => {
       ...baseInstance,
       status: "online" as const,
       exposure: "private" as const,
-      ownerId: 1,
       ownerSubject: { kind: "user" as const, id: "1" } as Subject,
       allowedPrincipals: [
         { kind: "user" as const, id: "7" } as Subject,
@@ -91,7 +88,6 @@ describe("instanceService.canChat", () => {
       ...baseInstance,
       status: "online" as const,
       exposure: "private" as const,
-      ownerId: 1,
       ownerSubject: { kind: "user" as const, id: "1" } as Subject,
       allowedPrincipals: [
         { kind: "user" as const, id: "7" } as Subject,
@@ -115,7 +111,6 @@ describe("instanceService.canChat", () => {
       ...baseInstance,
       status: "online" as const,
       exposure: "private" as const,
-      ownerId: 99, // legacy column populated but the typed owner wins
       ownerSubject: { kind: "principal" as const, id: "helper" } as Subject,
     };
     expect(
@@ -126,17 +121,18 @@ describe("instanceService.canChat", () => {
     ).toBe(true);
   });
 
-  // Issue #11 backfill: the runtime migration writes
-  // `Subject::User("")` as the empty-sentinel. The hub must fall
-  // back to the legacy `ownerId` rather than reject the row.
-  it("backfilled empty-sentinel owner_subject falls back to legacy ownerId", async () => {
+  // Post-H1: the runtime migration backfilled empty-sentinel
+  // `Subject::User("")` on legacy rows. With `owner_id` gone there
+  // is no longer a fallback column, so the row becomes ownerless and
+  // the access check must deny everyone (even legacy user 7).
+  it("empty-sentinel owner_subject makes the row ownerless (post-H1)", async () => {
     const instance = {
       ...baseInstance,
       status: "online" as const,
       exposure: "private" as const,
-      ownerId: 7,
       ownerSubject: { kind: "user" as const, id: "" } as Subject,
     };
-    expect(await instanceService.canChat(instance, 7)).toBe(true);
+    expect(await instanceService.canChat(instance, 7)).toBe(false);
+    expect(await instanceService.canChat(instance, 99)).toBe(false);
   });
 });

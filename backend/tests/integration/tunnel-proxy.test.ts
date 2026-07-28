@@ -41,7 +41,7 @@ describe("Tunnel Proxy Integration", () => {
       const headers = await authHeaders(user);
 
       const instance = await createInstance(testDb.client, {
-        ownerId: user.id,
+        ownerSubject: { kind: "user", id: String(user.id) },
         name: "online-principal",
         runtimeId: "did:key:zOffline",
         status: "online",
@@ -68,7 +68,7 @@ describe("Tunnel Proxy Integration", () => {
 
       // Create a connected runtime with an instance
       const instance = await createInstance(testDb.client, {
-        ownerId: user.id,
+        ownerSubject: { kind: "user", id: String(user.id) },
         name: "streaming-agent",
         runtimeId: did,
         status: "online",
@@ -169,7 +169,7 @@ describe("Tunnel Proxy Integration", () => {
       const { did, privateKey } = makeRuntimeIdentity();
 
       const instance = await createInstance(testDb.client, {
-        ownerId: user.id,
+        ownerSubject: { kind: "user", id: String(user.id) },
         name: "done-agent",
         runtimeId: did,
         status: "online",
@@ -236,7 +236,7 @@ describe("Tunnel Proxy Integration", () => {
 
       // Create a private instance with the user in allowedPrincipals
       const instance = await createInstance(testDb.client, {
-        ownerId: user.id,
+        ownerSubject: { kind: "user", id: String(user.id) },
         name: "private-principal",
         runtimeId: did,
         status: "online",
@@ -294,7 +294,7 @@ describe("Tunnel Proxy Integration", () => {
       const { did, privateKey } = makeRuntimeIdentity();
 
       const instance = await createInstance(testDb.client, {
-        ownerId: user.id,
+        ownerSubject: { kind: "user", id: String(user.id) },
         name: "fallback-agent",
         runtimeId: did,
         status: "online",
@@ -472,7 +472,7 @@ describe("Tunnel Proxy Integration", () => {
       const { did, privateKey } = makeRuntimeIdentity();
 
       const instance = await createInstance(testDb.client, {
-        ownerId: user.id,
+        ownerSubject: { kind: "user", id: String(user.id) },
         name: "public-chat-bot",
         runtimeId: did,
         status: "online",

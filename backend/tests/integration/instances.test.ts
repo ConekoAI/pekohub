@@ -27,12 +27,12 @@ describe("Instance API", () => {
       const headers = await authHeaders(user);
 
       await createInstance(testDb.client, {
-        ownerId: user.id,
+        ownerSubject: { kind: "user", id: String(user.id) },
         name: "principal-1",
         type: "principal",
       });
       await createInstance(testDb.client, {
-        ownerId: user.id,
+        ownerSubject: { kind: "user", id: String(user.id) },
         name: "principal-2",
         type: "principal",
       });
@@ -55,12 +55,12 @@ describe("Instance API", () => {
       const headers = await authHeaders(user);
 
       await createInstance(testDb.client, {
-        ownerId: user.id,
+        ownerSubject: { kind: "user", id: String(user.id) },
         name: "online-principal",
         status: "online",
       });
       await createInstance(testDb.client, {
-        ownerId: user.id,
+        ownerSubject: { kind: "user", id: String(user.id) },
         name: "offline-agent",
         status: "offline",
       });
@@ -93,7 +93,7 @@ describe("Instance API", () => {
       const user = await createUser(testDb.client, { namespace: "alice" });
       const headers = await authHeaders(user);
       const instance = await createInstance(testDb.client, {
-        ownerId: user.id,
+        ownerSubject: { kind: "user", id: String(user.id) },
         name: "my-principal",
       });
 
@@ -126,7 +126,6 @@ describe("Instance API", () => {
       const app = await buildTestApp({ testDb });
       const user = await createUser(testDb.client, { namespace: "alice" });
       const instance = await createInstance(testDb.client, {
-        ownerId: user.id,
         name: "public-principal",
         exposure: "public",
         allowedPrincipals: [{ kind: "user", id: "999" }],
@@ -150,7 +149,7 @@ describe("Instance API", () => {
       const user = await createUser(testDb.client, { namespace: "alice" });
       const headers = await authHeaders(user);
       const instance = await createInstance(testDb.client, {
-        ownerId: user.id,
+        ownerSubject: { kind: "user", id: String(user.id) },
         name: "public-principal",
         exposure: "public",
         allowedPrincipals: [{ kind: "user", id: String(user.id) }],
@@ -176,7 +175,6 @@ describe("Instance API", () => {
       const viewer = await createUser(testDb.client, { namespace: "bob" });
       const headers = await authHeaders(viewer);
       const instance = await createInstance(testDb.client, {
-        ownerId: owner.id,
         name: "public-principal",
         exposure: "public",
         allowedPrincipals: [{ kind: "user", id: String(viewer.id) }],
@@ -205,7 +203,6 @@ describe("Instance API", () => {
       const viewer = await createUser(testDb.client, { namespace: "bob" });
       const headers = await authHeaders(viewer);
       const instance = await createInstance(testDb.client, {
-        ownerId: owner.id,
         name: "typed-principal",
         exposure: "public",
         ownerSubject: { kind: "principal", id: "helper" },
@@ -229,9 +226,7 @@ describe("Instance API", () => {
       const owner = await createUser(testDb.client, { namespace: "alice" });
       const headers = await authHeaders(owner);
       const instance = await createInstance(testDb.client, {
-        ownerId: owner.id,
-        // Typed owner matches the legacy `ownerId` — the user that
-        // registered the row is the resolved owner.
+        // The user that registered the row is the resolved owner.
         ownerSubject: { kind: "user", id: String(owner.id) },
         name: "owner-view",
         exposure: "private",
@@ -259,7 +254,6 @@ describe("Instance API", () => {
       const app = await buildTestApp({ testDb });
       const user = await createUser(testDb.client, { namespace: "alice" });
       const instance = await createInstance(testDb.client, {
-        ownerId: user.id,
         name: "private-principal",
         exposure: "private",
       });
@@ -320,7 +314,7 @@ describe("Instance API", () => {
       const user = await createUser(testDb.client, { namespace: "alice" });
       const headers = await authHeaders(user);
       const instance = await createInstance(testDb.client, {
-        ownerId: user.id,
+        ownerSubject: { kind: "user", id: String(user.id) },
         name: "old-name",
       });
 
@@ -343,7 +337,6 @@ describe("Instance API", () => {
       const other = await createUser(testDb.client, { namespace: "bob" });
       const headers = await authHeaders(other);
       const instance = await createInstance(testDb.client, {
-        ownerId: owner.id,
         name: "my-principal",
       });
 
@@ -364,7 +357,7 @@ describe("Instance API", () => {
       const user = await createUser(testDb.client, { namespace: "alice" });
       const headers = await authHeaders(user);
       const instance = await createInstance(testDb.client, {
-        ownerId: user.id,
+        ownerSubject: { kind: "user", id: String(user.id) },
         name: "to-delete",
       });
 
@@ -390,7 +383,6 @@ describe("Instance API", () => {
       const other = await createUser(testDb.client, { namespace: "bob" });
       const headers = await authHeaders(other);
       const instance = await createInstance(testDb.client, {
-        ownerId: owner.id,
         name: "my-principal",
       });
 
@@ -410,13 +402,11 @@ describe("Instance API", () => {
       const user = await createUser(testDb.client, { namespace: "alice" });
 
       await createInstance(testDb.client, {
-        ownerId: user.id,
         name: "public-1",
         exposure: "public",
         status: "online",
       });
       await createInstance(testDb.client, {
-        ownerId: user.id,
         name: "private-1",
         exposure: "private",
         status: "online",
@@ -449,7 +439,6 @@ describe("Instance API", () => {
       const app = await buildTestApp({ testDb });
       const user = await createUser(testDb.client, { namespace: "alice" });
       const instance = await createInstance(testDb.client, {
-        ownerId: user.id,
         name: "private-principal",
         exposure: "private",
       });
@@ -470,7 +459,6 @@ describe("Instance API", () => {
       const app = await buildTestApp({ testDb });
       const owner = await createUser(testDb.client, { namespace: "alice" });
       const instance = await createInstance(testDb.client, {
-        ownerId: owner.id,
         name: "private-principal",
         exposure: "private",
       });
@@ -495,7 +483,6 @@ describe("Instance API", () => {
       const app = await buildTestApp({ testDb });
       const user = await createUser(testDb.client, { namespace: "alice" });
       const instance = await createInstance(testDb.client, {
-        ownerId: user.id,
         name: "public-principal",
         exposure: "public",
         status: "online",
@@ -515,7 +502,6 @@ describe("Instance API", () => {
       const app = await buildTestApp({ testDb });
       const user = await createUser(testDb.client, { namespace: "alice" });
       const instance = await createInstance(testDb.client, {
-        ownerId: user.id,
         name: "tos-principal",
         exposure: "public",
         status: "online",
@@ -542,7 +528,7 @@ describe("Instance API", () => {
       const user = await createUser(testDb.client, { namespace: "alice" });
       const headers = await authHeaders(user);
       const instance = await createInstance(testDb.client, {
-        ownerId: user.id,
+        ownerSubject: { kind: "user", id: String(user.id) },
         name: "my-principal",
       });
 
@@ -583,7 +569,7 @@ describe("Instance API", () => {
       const user = await createUser(testDb.client, { namespace: "alice" });
       const headers = await authHeaders(user);
       const instance = await createInstance(testDb.client, {
-        ownerId: user.id,
+        ownerSubject: { kind: "user", id: String(user.id) },
         name: "my-principal",
         exposure: "public",
       });
@@ -606,7 +592,6 @@ describe("Instance API", () => {
       const other = await createUser(testDb.client, { namespace: "bob" });
       const headers = await authHeaders(other);
       const instance = await createInstance(testDb.client, {
-        ownerId: owner.id,
         name: "my-principal",
       });
 
@@ -637,7 +622,7 @@ describe("Instance API", () => {
       const headers = await authHeaders(viewer);
 
       await createInstance(testDb.client, {
-        ownerId: owner.id,
+        ownerSubject: { kind: "user", id: String(owner.id) },
         name: "shared-principal",
         exposure: "private",
         allowedPrincipals: [{ kind: "user", id: String(viewer.id) }],
@@ -675,7 +660,7 @@ describe("Instance API", () => {
         displayName: "Alice",
       });
       await createInstance(testDb.client, {
-        ownerId: user.id,
+        ownerSubject: { kind: "user", id: String(user.id) },
         name: "public-principal",
         exposure: "public",
         publicName: "Alice Principal",
@@ -691,18 +676,17 @@ describe("Instance API", () => {
 
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
-      expect(body.instance.publicName).toBe("Alice Principal");
-      expect(body.instance.description).toBe("A principal by Alice");
-      expect(body.instance.owner.name).toBe("Alice");
-      expect(body.instance.capabilities).toEqual(["chat", "search"]);
-      expect(body.instance.status).toBe("online");
+      expect(body.liveInstance.publicName).toBe("Alice Principal");
+      expect(body.liveInstance.description).toBe("A principal by Alice");
+      expect(body.liveInstance.owner.name).toBe("Alice");
+      expect(body.liveInstance.capabilities).toEqual(["chat", "search"]);
+      expect(body.liveInstance.status).toBe("online");
     });
 
     it("should return 404 for non-public instance", async () => {
       const app = await buildTestApp({ testDb });
       const user = await createUser(testDb.client, { namespace: "alice" });
       await createInstance(testDb.client, {
-        ownerId: user.id,
         name: "private-principal",
         exposure: "private",
       });
@@ -721,7 +705,7 @@ describe("Instance API", () => {
       const app = await buildTestApp({ testDb });
       const user = await createUser(testDb.client, { namespace: "alice" });
       await createInstance(testDb.client, {
-        ownerId: user.id,
+        ownerSubject: { kind: "user", id: String(user.id) },
         name: "public-principal",
         exposure: "public",
         status: "online",
@@ -741,7 +725,7 @@ describe("Instance API", () => {
       const app = await buildTestApp({ testDb });
       const user = await createUser(testDb.client, { namespace: "alice" });
       await createInstance(testDb.client, {
-        ownerId: user.id,
+        ownerSubject: { kind: "user", id: String(user.id) },
         name: "tos-principal",
         exposure: "public",
         status: "online",

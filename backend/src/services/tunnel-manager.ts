@@ -708,15 +708,19 @@ export class TunnelManager {
     }
 
     try {
+      // Post-H1: instances carry only the typed `owner_subject`
+      // (the legacy `owner_id` integer FK is gone). Project the
+      // resolved runtime owner into the same `{kind:"user",id:"…"}`
+      // shape so `upsertFromAnnounce` doesn't need a backfill shim.
+      const ownerSubject = payload.owner ?? {
+        kind: "user" as const,
+        id: String(ownerId),
+      };
       await instanceService.upsertFromAnnounce({
         id: payload.id,
         type: payload.type,
         name: payload.name,
-        ownerId,
-        // Issue #11: typed owner from the runtime. When absent
-        // (pre-#11 runtime), the service layer backfills from
-        // `ownerId` via `Principal::User(ownerId)`.
-        ownerSubject: payload.owner ?? null,
+        ownerSubject,
         runtimeId,
         runtimeDisplayName: payload.runtimeDisplayName,
         bundleRef: payload.bundleRef,

@@ -27,28 +27,22 @@ export type CallerSubject = Subject | null;
 /**
  * Resolve the effective owner of an instance.
  *
- * Three cases, in order of preference:
+ * Post-H1 the typed `owner_subject` JSONB column is the only source
+ * of truth — the legacy `owner_id` integer FK was dropped in
+ * migration 0010. Two cases remain:
  *
  * 1. `instance.ownerSubject` is set and is not the empty sentinel
  *    `Subject::User("")` → use it.
- * 2. Otherwise, fall back to `Subject::User(instance.ownerId)`. This
- *    covers both pre-#11 rows (no `owner_subject` column at all) and
- *    post-#11 rows that were backfilled by the runtime migration with
- *    the empty sentinel
- *    ([peko-runtime/src/runtime/migration.rs:170-171, 234-235]).
- * 3. If even `ownerId` is null, return `null` (truly ownerless row).
+ * 2. Otherwise, return `null` (truly ownerless row).
  */
 export function resolveOwnerSubject(
-  instance: Pick<InstanceRecord, "ownerId" | "ownerSubject">,
+  instance: Pick<InstanceRecord, "ownerSubject">,
 ): Subject | null {
   if (
     instance.ownerSubject &&
     !isEmptyOwnerSubject(instance.ownerSubject)
   ) {
     return instance.ownerSubject;
-  }
-  if (instance.ownerId) {
-    return { kind: "user", id: String(instance.ownerId) };
   }
   return null;
 }
@@ -129,7 +123,6 @@ export interface InstanceRecord {
   id: string;
   type: InstanceType;
   name: string;
-  ownerId: number;
   ownerSubject: Subject | null;
   runtimeId: string;
   runtimeDisplayName: string | null;
@@ -179,7 +172,6 @@ export interface CreateInstanceInput {
   id?: string;
   type: InstanceType;
   name: string;
-  ownerId: number;
   ownerSubject?: Subject | null;
   runtimeId: string;
   runtimeDisplayName?: string;
@@ -241,7 +233,6 @@ export interface UpdateInstanceInput {
 }
 
 export interface ListInstancesOptions {
-  ownerId?: number;
   ownerSubject?: Subject;
   runtimeId?: string;
   status?: InstanceStatus;
@@ -336,10 +327,10 @@ function parseAllowEntry(s: string): Subject | null {
  * (Drizzle `$type` is a compile-time cast only — there is no runtime
  * check), so any garbage that lands in the column would otherwise flow
  * straight into `subjectCanAccess`. A `null`/missing JSONB returns
- * `null` (the "no owner asserted" case, which is then backfilled from
- * the legacy `ownerId` by `resolveOwnerSubject`). Anything that
- * doesn't match the discriminated union returns `null` as well — the
- * safe "ignore" default, not the raw garbage.
+ * `null` (the "no owner asserted" case, which makes the row
+ * ownerless per `resolveOwnerSubject`). Anything that doesn't match
+ * the discriminated union returns `null` as well — the safe "ignore"
+ * default, not the raw garbage.
  *
  * Exported for unit tests.
  */
@@ -380,23 +371,13 @@ export class InstanceService {
   // ── CRUD ───────────────────────────────────────────────────────────────────
 
   async create(input: CreateInstanceInput): Promise<InstanceRecord> {
-    // Resolve ownerSubject: prefer the input, otherwise backfill from
-    // the legacy ownerId.
-    const ownerSubject =
-      input.ownerSubject !== undefined
-        ? input.ownerSubject
-        : input.ownerId
-          ? { kind: "user" as const, id: String(input.ownerId) }
-          : null;
-
     const [row] = await db
       .insert(instances)
       .values({
         id: input.id,
         type: input.type,
         name: input.name,
-        ownerId: input.ownerId,
-        ownerSubject,
+        ownerSubject: input.ownerSubject ?? null,
         runtimeId: input.runtimeId,
         runtimeDisplayName: input.runtimeDisplayName ?? null,
         bundleRef: input.bundleRef ?? null,
@@ -436,7 +417,6 @@ export class InstanceService {
 
   async list(options: ListInstancesOptions = {}): Promise<ListInstancesResult> {
     const {
-      ownerId,
       ownerSubject,
       runtimeId,
       status,
@@ -447,12 +427,11 @@ export class InstanceService {
     } = options;
 
     const conditions: SQL[] = [];
-    if (ownerId !== undefined) conditions.push(eq(instances.ownerId, ownerId));
     if (ownerSubject !== undefined) {
-      // JSONB equality is exact-match. For "list my instances as user X"
-      // we use the legacy `ownerId` column (numeric FK). The principal
-      // filter is for the typed case (e.g. list all Principal-owned
-      // instances for a given principal id).
+      // JSONB equality is exact-match — same kind + same id matches a
+      // single owner. Post-H1 the typed `owner_subject` column is the
+      // only owner source, so "list my instances as user X" filters
+      // through here too.
       conditions.push(sql`${instances.ownerSubject} = ${JSON.stringify(ownerSubject)}::jsonb`);
     }
     if (runtimeId !== undefined)
@@ -593,9 +572,20 @@ export class InstanceService {
     });
     if (!ownerRow) return null;
 
+    // Post-H1 the legacy `instances.owner_id` integer FK is gone; the
+    // typed `owner_subject` JSONB is the source of truth. We extract
+    // the user id from `owner_subject->>'id'` and cast to `users.id`'s
+    // type (int today, uuid after H3). Drizzle can't generate the
+    // expression through a helper, so the JSONB is built inline —
+    // any operator that produces this exact JSON shape will match
+    // (the runtime always emits `{kind:"user",id:"<str>"}`).
+    const ownerSubjectLiteral = JSON.stringify({
+      kind: "user",
+      id: String(ownerRow.id),
+    });
     const row = await db.query.instances.findFirst({
       where: and(
-        eq(instances.ownerId, ownerRow.id),
+        sql`${instances.ownerSubject} = ${ownerSubjectLiteral}::jsonb`,
         eq(instances.name, principalName),
       ),
     });
@@ -785,10 +775,9 @@ export class InstanceService {
 
   /**
    * True if `caller` is the resolved owner of `instance`. This is the
-   * issue #11 replacement for the legacy
-   * `instance.ownerId !== user.id` check at the ~9 owner-check sites
-   * in `routes/api/instances.ts`. Returns `false` if the instance has
-   * no resolvable owner.
+   * issue #11 replacement for the legacy `owner_id !== user.id` check
+   * at the owner-check sites in `routes/api/instances.ts`. Returns
+   * `false` if the instance has no resolvable owner.
    */
   async isOwner(
     instance: InstanceRecord,
@@ -817,16 +806,14 @@ export class InstanceService {
       id: row.id,
       type: row.type as InstanceType,
       name: row.name,
-      ownerId: row.ownerId,
       // Issue #11 review #12 P1: validate the JSONB columns through
       // Zod so a malformed row (e.g. `{"kind": "user", "id": null}`
       // from a future migration bug, a manual psql edit, or a backfill
       // that goes wrong) cannot flow through unchecked into
       // `subjectCanAccess` — where `null === null` would silently
-      // grant access. A malformed owner drops to `null` (which makes
-      // the row ownerless and triggers the legacy `ownerId`
-      // backfill in `resolveOwnerSubject`). A malformed allow-list
-      // entry is filtered out of `allowedPrincipals`.
+      // grant access. A malformed owner drops to `null`, leaving the
+      // row ownerless (per `resolveOwnerSubject`). A malformed
+      // allow-list entry is filtered out of `allowedPrincipals`.
       ownerSubject: parseSubjectJsonb(row.ownerSubject),
       runtimeId: row.runtimeId,
       runtimeDisplayName: row.runtimeDisplayName,

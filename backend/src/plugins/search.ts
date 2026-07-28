@@ -46,7 +46,14 @@ export interface SearchService {
     bundleRef?: string;
     status: string;
     capabilities: string[];
-    ownerId: number;
+    // Post-H1 the legacy `instances.owner_id` column is gone, so
+    // the user-owned signal comes from the typed `owner_subject`
+    // JSONB. The search document keeps a numeric `ownerId` for
+    // filterability; `null` means "no known user owner" (i.e. the
+    // row is principal-owned or ownerless) and the document just
+    // stores `ownerId: null` rather than fabricating a 0 sentinel.
+    // H3 will change this to `string | null` (UUID).
+    ownerId: number | null;
     runtimeDisplayName?: string;
     createdAt: string;
     publicName?: string;

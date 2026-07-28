@@ -124,7 +124,10 @@ const DDL_STATEMENTS = [
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     type VARCHAR(16) NOT NULL,
     name VARCHAR(255) NOT NULL,
-    owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    -- Post-H1: the typed owner_subject JSONB column is the only
+    -- owner signal. The legacy owner_id integer FK was dropped in
+    -- migration 0010; the test fixture mirrors that shape so
+    -- integration tests don't drift from production.
     owner_subject JSONB,
     runtime_id VARCHAR(255) NOT NULL,
     runtime_display_name VARCHAR(255),
@@ -154,13 +157,17 @@ const DDL_STATEMENTS = [
     -- the by-did resolver.
     principal_did VARCHAR(512)
   );`,
-  `CREATE INDEX IF NOT EXISTS idx_instances_owner_id ON instances(owner_id);`,
   `CREATE INDEX IF NOT EXISTS idx_instances_runtime_id ON instances(runtime_id);`,
   `CREATE INDEX IF NOT EXISTS idx_instances_exposure_status ON instances(exposure, status);`,
   `CREATE INDEX IF NOT EXISTS idx_instances_last_seen_at ON instances(last_seen_at);`,
   `CREATE INDEX IF NOT EXISTS idx_instances_published_at ON instances(published_at);`,
   `CREATE INDEX IF NOT EXISTS idx_instances_featured ON instances(featured);`,
   `CREATE INDEX IF NOT EXISTS idx_instances_category ON instances(category);`,
+  // Issue #14: helpful for the typed-owner join in
+  // `routes/api/instances.ts`. Without this the by-handle resolver
+  // scans instances and filters by `owner_subject->>'id'`, which is
+  // O(n) for the public-discovery path.
+  `CREATE INDEX IF NOT EXISTS idx_instances_owner_subject_id ON instances ((owner_subject->>'id'));`,
   // Issue #14: unique B-tree on `principal_did` so the by-did resolver
   // (GET /v1/principals/by-did/:did) is a single indexed lookup. We
   // mirror the production migration (0007_add_principal_did.sql) — NULLs
