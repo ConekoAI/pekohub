@@ -193,7 +193,7 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
       }
 
       // Fire-and-forget audit log (must not throw)
-      const userId = (user as { id?: number }).id;
+      const userId = (user as { id?: string }).id;
       await auditService.logPermissionChange(
         namespace,
         userId,
@@ -321,7 +321,7 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
     }
 
     // Fire-and-forget audit log
-    const userId = (user as { id?: number }).id;
+    const userId = (user as { id?: string }).id;
     await auditService.logDelete(namespace, userId, `${namespace}/${name}`, {
       versionsDeleted: versions.length,
       digestsReferenced: Array.from(referencedDigests),
@@ -383,7 +383,7 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
       }
 
       // Fire-and-forget audit log
-      const userId = (user as { id?: number }).id;
+      const userId = (user as { id?: string }).id;
       await auditService.logDelete(
         namespace,
         userId,
@@ -407,10 +407,10 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
     };
     const { targetName } = request.query;
 
-    let user: { id: number; namespace: string };
+    let user: { id: string; namespace: string };
     try {
       user = (await fastify.authenticate(request)) as {
-        id: number;
+        id: string;
         namespace: string;
       };
     } catch {
@@ -418,7 +418,7 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
         fastify.config.NODE_ENV === "development" &&
         fastify.config.ALLOW_DEV_AUTH_BYPASS === "true"
       ) {
-        user = { id: 0, namespace: "dev-user" };
+        user = { id: "00000000-0000-0000-0000-000000000000", namespace: "dev-user" };
       } else {
         return reply.status(401).send({ error: "Authentication required" });
       }

@@ -2,7 +2,8 @@ import { faker } from "@faker-js/faker";
 import type { PGlite } from "@electric-sql/pglite";
 
 export interface TestUser {
-  id: number;
+  // Post-H3: users.id is a UUID string (was number).
+  id: string;
   externalId: string;
   provider: "github" | "google";
   namespace: string;
@@ -49,13 +50,19 @@ export interface TestInstance {
   id: string;
   type: "principal";
   name: string;
-  ownerId: number;
+  // Post-H1: typed `owner_subject` JSONB is the only owner signal
+  // (the legacy `owner_id` integer FK was dropped in migration
+  // 0010). Tests that want a user-owned instance should set
+  // `{ kind: "user", id: "<userId>" }`.
+  ownerSubject: unknown;
   runtimeId: string;
   runtimeDisplayName: string | null;
   bundleRef: string | null;
   status: "online" | "offline" | "busy" | "error";
   exposure: "private" | "public" | "unexposed";
-  allowedPrincipals: unknown[];
+  // Post-H4: allowedPrincipals removed from the test instance.
+  // The runtime owns the ACL surface (R4); pekohub only stores
+  // public-vs-private exposure.
   lastSeenAt: Date | null;
   createdAt: Date;
   capabilities: string[];
@@ -90,20 +97,40 @@ export async function createUser(
       .toLowerCase()
       .replace(/[^a-z0-9_-]/g, "");
   const provider = overrides.provider ?? "github";
-  const externalId = `${provider}:${overrides.id ?? faker.number.int({ min: 100000, max: 999999 })}`;
+  // Post-H3: `id` is a UUID string. PGlite honors the column
+  // `DEFAULT gen_random_uuid()` when we omit it, so we only pass
+  // `id` when the caller explicitly overrides it.
+  const explicitId = overrides.id;
+  const externalId = `${provider}:${faker.number.int({ min: 100000, max: 999999 })}`;
+
+  const columns = explicitId
+    ? "id, external_id, provider, namespace, display_name, email, avatar_url"
+    : "external_id, provider, namespace, display_name, email, avatar_url";
+  const placeholders = explicitId ? "($1, $2, $3, $4, $5, $6, $7)" : "($1, $2, $3, $4, $5, $6)";
+  const params = explicitId
+    ? [
+        explicitId,
+        externalId,
+        provider,
+        namespace,
+        overrides.displayName ?? faker.person.fullName(),
+        overrides.email ?? faker.internet.email(),
+        overrides.avatarUrl ?? faker.image.avatar(),
+      ]
+    : [
+        externalId,
+        provider,
+        namespace,
+        overrides.displayName ?? faker.person.fullName(),
+        overrides.email ?? faker.internet.email(),
+        overrides.avatarUrl ?? faker.image.avatar(),
+      ];
 
   const result = await client.query(
-    `INSERT INTO users (external_id, provider, namespace, display_name, email, avatar_url)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO users (${columns})
+     VALUES ${placeholders}
      RETURNING id, external_id, provider, namespace, display_name, email, avatar_url`,
-    [
-      externalId,
-      provider,
-      namespace,
-      overrides.displayName ?? faker.person.fullName(),
-      overrides.email ?? faker.internet.email(),
-      overrides.avatarUrl ?? faker.image.avatar(),
-    ],
+    params,
   );
 
   return result.rows[0] as TestUser;
@@ -210,9 +237,12 @@ export async function createBundleWithVersions(
 export async function createInstance(
   client: PGlite,
   overrides: Partial<TestInstance> & {
-    ownerId: number;
-    ownerSubject?: unknown;
-    allowedPrincipals?: unknown[];
+    // Post-H1: `owner_subject` JSONB is required (was previously
+    // optional; the legacy `owner_id` integer FK used to be the
+    // required field). Tests should pass
+    // `{ kind: "user", id: "<userId>" }` (or a Principal-kind subject)
+    // — see `TestInstance.ownerSubject`.
+    ownerSubject: unknown;
   },
 ): Promise<TestInstance> {
   const id = overrides.id ?? crypto.randomUUID();
@@ -223,30 +253,26 @@ export async function createInstance(
 
   const result = await client.query(
     `INSERT INTO instances (
-      id, type, name, owner_id, owner_subject, runtime_id, runtime_display_name, bundle_ref,
-      status, exposure, allowed_principals, capabilities, metadata,
+      id, type, name, owner_subject, runtime_id, runtime_display_name, bundle_ref,
+      status, exposure, capabilities, metadata,
       public_name, description, tags, category, tos_required, tos_text,
       daily_quota, weekly_quota, published_at, featured, transport_preference, principal_did
     )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
-     RETURNING id, type, name, owner_id, owner_subject, runtime_id, runtime_display_name, bundle_ref,
-       status, exposure, allowed_principals, last_seen_at, created_at, capabilities, metadata,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+     RETURNING id, type, name, owner_subject, runtime_id, runtime_display_name, bundle_ref,
+       status, exposure, last_seen_at, created_at, capabilities, metadata,
        public_name, description, tags, category, tos_required, tos_text,
        daily_quota, weekly_quota, published_at, featured, transport_preference, principal_did`,
     [
       id,
       type,
       name,
-      overrides.ownerId,
-      overrides.ownerSubject !== undefined
-        ? JSON.stringify(overrides.ownerSubject)
-        : null,
+      JSON.stringify(overrides.ownerSubject),
       runtimeId,
       overrides.runtimeDisplayName ?? null,
       overrides.bundleRef ?? null,
       overrides.status ?? "offline",
       overrides.exposure ?? "unexposed",
-      JSON.stringify(overrides.allowedPrincipals ?? []),
       JSON.stringify(overrides.capabilities ?? []),
       JSON.stringify(overrides.metadata ?? {}),
       overrides.publicName ?? null,
@@ -270,13 +296,13 @@ export async function createInstance(
     id: row.id,
     type: row.type,
     name: row.name,
-    ownerId: row.owner_id,
+    ownerSubject: row.owner_subject,
     runtimeId: row.runtime_id,
     runtimeDisplayName: row.runtime_display_name,
     bundleRef: row.bundle_ref,
     status: row.status,
     exposure: row.exposure,
-    allowedPrincipals: row.allowed_principals ?? [],
+    // Post-H4: allowedPrincipals removed from the record.
     lastSeenAt: row.last_seen_at,
     createdAt: row.created_at,
     capabilities: row.capabilities ?? [],
@@ -299,7 +325,8 @@ export async function createInstance(
 export interface TestRuntime {
   id: number;
   runtimeDid: string;
-  ownerId: number;
+  // Post-H3: ownerId is a UUID string (was number).
+  ownerId: string;
   displayName: string | null;
   directEndpoint: string | null;
   lastSeenAt: Date | null;
@@ -311,7 +338,7 @@ export interface TestRuntime {
  */
 export async function createRuntime(
   client: PGlite,
-  overrides: Partial<TestRuntime> & { ownerId: number; runtimeDid: string },
+  overrides: Partial<TestRuntime> & { ownerId: string; runtimeDid: string },
 ): Promise<TestRuntime> {
   const result = await client.query(
     `INSERT INTO runtimes (runtime_did, owner_id, display_name, direct_endpoint, last_seen_at)

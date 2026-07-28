@@ -13,7 +13,7 @@ export interface ListAuditResult {
   logs: {
     id: number;
     namespace: string;
-    userId: number | null;
+    userId: string | null;
     action: string;
     resource: string;
     details: unknown;
@@ -40,7 +40,7 @@ export class AuditService {
 
   async logPush(
     namespace: string,
-    userId: number | undefined,
+    userId: string | undefined,
     bundleName: string,
     version: string,
     digest: string,
@@ -61,7 +61,7 @@ export class AuditService {
 
   async logPull(
     namespace: string,
-    userId: number | undefined,
+    userId: string | undefined,
     bundleName: string,
     version: string,
     digest: string,
@@ -82,7 +82,7 @@ export class AuditService {
 
   async logDelete(
     namespace: string,
-    userId: number | undefined,
+    userId: string | undefined,
     resource: string,
     details?: Record<string, unknown>,
   ): Promise<void> {
@@ -101,7 +101,7 @@ export class AuditService {
 
   async logPermissionChange(
     namespace: string,
-    userId: number | undefined,
+    userId: string | undefined,
     resource: string,
     details?: Record<string, unknown>,
   ): Promise<void> {
@@ -120,7 +120,7 @@ export class AuditService {
 
   async logSecurityEvent(
     action: string,
-    userId: number | undefined,
+    userId: string | undefined,
     resource: string,
     details?: Record<string, unknown>,
   ): Promise<void> {

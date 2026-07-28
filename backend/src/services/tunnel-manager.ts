@@ -682,7 +682,8 @@ export class TunnelManager {
     if (pending.timer) clearTimeout(pending.timer);
   }
 
-  async resolveRuntimeOwner(runtimeId: string): Promise<number | null> {
+  async resolveRuntimeOwner(runtimeId: string): Promise<string | null> {
+    // Post-H3: ownerId is a UUID string (was number).
     const row = await db.query.runtimes.findFirst({
       where: eq(runtimes.runtimeDid, runtimeId),
     });
@@ -708,21 +709,25 @@ export class TunnelManager {
     }
 
     try {
+      // Post-H1: instances carry only the typed `owner_subject`
+      // (the legacy `owner_id` integer FK is gone). Project the
+      // resolved runtime owner into the same `{kind:"user",id:"…"}`
+      // shape so `upsertFromAnnounce` doesn't need a backfill shim.
+      const ownerSubject = payload.owner ?? {
+        kind: "user" as const,
+        id: String(ownerId),
+      };
       await instanceService.upsertFromAnnounce({
         id: payload.id,
         type: payload.type,
         name: payload.name,
-        ownerId,
-        // Issue #11: typed owner from the runtime. When absent
-        // (pre-#11 runtime), the service layer backfills from
-        // `ownerId` via `Principal::User(ownerId)`.
-        ownerSubject: payload.owner ?? null,
+        ownerSubject,
         runtimeId,
         runtimeDisplayName: payload.runtimeDisplayName,
         bundleRef: payload.bundleRef,
         status: payload.status,
         exposure: payload.exposure,
-        allowedPrincipals: payload.allowedPrincipals,
+        // Post-H4: allowedPrincipals removed from the announce payload.
         capabilities: payload.capabilities,
         metadata: payload.metadata,
         // Issue #14: per-principal DID. Pre-#34 runtimes omit the field;

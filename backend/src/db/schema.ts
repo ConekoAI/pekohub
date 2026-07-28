@@ -24,7 +24,15 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const users = pgTable("users", {
-  id: serial("id").primaryKey(),
+  // Post-H3: native UUID column. The runtime always emits `user.id`
+  // as a string (JWT `sub`, `x-pekohub-user-id` header), so the
+  // integer round-trip was a coercion hazard. The DB-side default
+  // `gen_random_uuid()` is set in migration 0011; Drizzle's `uuid()`
+  // column doesn't carry a server-side default, so inserts must
+  // pass an explicit id (or rely on the pg default).
+  id: uuid("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
   externalId: varchar("external_id", { length: 256 }).notNull().unique(),
   provider: varchar("provider", { length: 32 }).notNull(), // github, google
   namespace: varchar("namespace", { length: 128 }).notNull().unique(),
@@ -41,7 +49,8 @@ export const users = pgTable("users", {
 
 export const apiKeys = pgTable("api_keys", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id")
+  // Post-H3: FK is uuid to match users.id (was integer).
+  userId: uuid("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   name: varchar("name", { length: 128 }).notNull(),
@@ -57,7 +66,8 @@ export const refreshTokens = pgTable(
   "refresh_tokens",
   {
     id: text("id").primaryKey(),
-    userId: integer("user_id")
+    // Post-H3: FK is uuid to match users.id (was integer).
+    userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     tokenPrefix: varchar("token_prefix", { length: 16 }).notNull(),
@@ -225,18 +235,12 @@ export const instances = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     type: varchar("type", { length: 16 }).notNull(), // 'principal' (post-ADR-041)
     name: varchar("name", { length: 255 }).notNull(),
-    // Legacy owner reference — kept for one release so peers on the
-    // pre-ADR-039 hub continue to work. New code should treat
-    // `ownerSubject` (or the resolved owner) as the source of truth
-    // and use this column only as a backfill target.
-    ownerId: integer("owner_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    // Typed owner per ADR-041 / peko-runtime's `Subject` enum. Nullable
-    // because pre-upgrade rows have no value; `resolveOwnerSubject`
-    // falls back to `Subject::User(ownerId)` in that case. The
-    // empty-sentinel `Subject::User("")` is treated the same way
-    // (see `EMPTY_OWNER_SUBJECT` in @pekohub/shared).
+    // Typed owner per ADR-041 / peko-runtime's `Subject` enum. This
+    // is the source of truth for "who owns this instance" — the
+    // pre-ADR-041 integer `owner_id` column was dropped in migration
+    // 0010 (H1). Nullable so a row may exist without a declared owner
+    // (the empty-sentinel `Subject::User("")` is treated the same way;
+    // see `EMPTY_OWNER_SUBJECT` in @pekohub/shared).
     ownerSubject: jsonb("owner_subject").$type<Subject | null>(),
     runtimeId: varchar("runtime_id", { length: 255 }).notNull(),
     runtimeDisplayName: varchar("runtime_display_name", { length: 255 }),
@@ -245,10 +249,9 @@ export const instances = pgTable(
     exposure: varchar("exposure", { length: 20 })
       .notNull()
       .default("unexposed"),
-    // Typed allow-list per ADR-041. Each entry is a `Subject`.
-    allowedPrincipals: jsonb("allowed_principals")
-      .$type<Subject[]>()
-      .default([]),
+    // Post-H4: the typed `allowed_principals` JSONB column is gone.
+    // The runtime's `PrincipalConfig.permissions` is the canonical
+    // ACL surface (R4); pekohub only knows public vs private exposure.
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
@@ -290,7 +293,6 @@ export const instances = pgTable(
     principalDid: varchar("principal_did", { length: 512 }),
   },
   (table) => ({
-    ownerIdIdx: index("idx_instances_owner_id").on(table.ownerId),
     runtimeIdIdx: index("idx_instances_runtime_id").on(table.runtimeId),
     exposureStatusIdx: index("idx_instances_exposure_status").on(
       table.exposure,
@@ -311,7 +313,12 @@ export const instances = pgTable(
 );
 
 export const instanceRelations = relations(instances, ({ one }) => ({
-  owner: one(users, { fields: [instances.ownerId], references: [users.id] }),
+  // Owner lookup routes through `instances.owner_subject` (JSONB)
+  // post-H1; the legacy `instances.owner_id` integer FK is gone, so
+  // no Drizzle relation ships for it. Callers join via
+  // `users.id::text = instances.owner_subject->>'id'` (text-text
+  // comparison; both sides are string after H3) where the typed
+  // owner is a user.
 }));
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -323,7 +330,8 @@ export const runtimes = pgTable(
   {
     id: serial("id").primaryKey(),
     runtimeDid: varchar("runtime_did", { length: 255 }).notNull().unique(),
-    ownerId: integer("owner_id")
+    // Post-H3: FK is uuid to match users.id (was integer).
+    ownerId: uuid("owner_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     displayName: varchar("display_name", { length: 255 }),
@@ -348,7 +356,7 @@ export const runtimes = pgTable(
 export const auditLogs = pgTable("audit_logs", {
   id: serial("id").primaryKey(),
   namespace: varchar("namespace", { length: 128 }).notNull(),
-  userId: integer("user_id").references(() => users.id),
+  userId: uuid("user_id").references(() => users.id),
   action: varchar("action", { length: 64 }).notNull(), // push, pull, delete, permission_change
   resource: varchar("resource", { length: 256 }).notNull(),
   details: jsonb("details"),

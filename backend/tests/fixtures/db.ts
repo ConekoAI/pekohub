@@ -8,8 +8,13 @@ export interface TestDb {
 }
 
 const DDL_STATEMENTS = [
+  // Post-H3: users.id is a UUID (was SERIAL). The runtime emits
+  // user.id as a string (JWT `sub`, `x-pekohub-user-id` header),
+  // so the native UUID column is the canonical shape on both sides.
+  // Drizzle's `$defaultFn` inserts a random UUID when the test
+  // factory doesn't pass one explicitly.
   `CREATE TABLE IF NOT EXISTS users (
-    id SERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     external_id VARCHAR(256) NOT NULL UNIQUE,
     provider VARCHAR(32) NOT NULL,
     namespace VARCHAR(128) NOT NULL UNIQUE,
@@ -22,7 +27,7 @@ const DDL_STATEMENTS = [
 
   `CREATE TABLE IF NOT EXISTS api_keys (
     id SERIAL PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name VARCHAR(128) NOT NULL,
     prefix VARCHAR(16) NOT NULL,
     hash VARCHAR(64) NOT NULL,
@@ -99,7 +104,7 @@ const DDL_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS audit_logs (
     id SERIAL PRIMARY KEY,
     namespace VARCHAR(128) NOT NULL,
-    user_id INTEGER REFERENCES users(id),
+    user_id UUID REFERENCES users(id),
     action VARCHAR(64) NOT NULL,
     resource VARCHAR(256) NOT NULL,
     details JSONB,
@@ -108,7 +113,7 @@ const DDL_STATEMENTS = [
 
   `CREATE TABLE IF NOT EXISTS refresh_tokens (
     id TEXT PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     token_prefix VARCHAR(16) NOT NULL,
     token_hash VARCHAR(256) NOT NULL,
     device_info TEXT,
@@ -124,14 +129,18 @@ const DDL_STATEMENTS = [
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     type VARCHAR(16) NOT NULL,
     name VARCHAR(255) NOT NULL,
-    owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    -- Post-H1: the typed owner_subject JSONB column is the only
+    -- owner signal. The legacy owner_id integer FK was dropped in
+    -- migration 0010; the test fixture mirrors that shape so
+    -- integration tests don't drift from production.
     owner_subject JSONB,
     runtime_id VARCHAR(255) NOT NULL,
     runtime_display_name VARCHAR(255),
     bundle_ref VARCHAR(255),
     status VARCHAR(20) DEFAULT 'offline' NOT NULL,
     exposure VARCHAR(20) DEFAULT 'unexposed' NOT NULL,
-    allowed_principals JSONB DEFAULT '[]'::jsonb NOT NULL,
+    -- Post-H4: the legacy allowed_principals JSONB column is gone;
+    -- the runtime's PrincipalConfig.permissions is the canonical ACL.
     last_seen_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
     capabilities JSONB DEFAULT '[]',
@@ -154,13 +163,17 @@ const DDL_STATEMENTS = [
     -- the by-did resolver.
     principal_did VARCHAR(512)
   );`,
-  `CREATE INDEX IF NOT EXISTS idx_instances_owner_id ON instances(owner_id);`,
   `CREATE INDEX IF NOT EXISTS idx_instances_runtime_id ON instances(runtime_id);`,
   `CREATE INDEX IF NOT EXISTS idx_instances_exposure_status ON instances(exposure, status);`,
   `CREATE INDEX IF NOT EXISTS idx_instances_last_seen_at ON instances(last_seen_at);`,
   `CREATE INDEX IF NOT EXISTS idx_instances_published_at ON instances(published_at);`,
   `CREATE INDEX IF NOT EXISTS idx_instances_featured ON instances(featured);`,
   `CREATE INDEX IF NOT EXISTS idx_instances_category ON instances(category);`,
+  // Issue #14: helpful for the typed-owner join in
+  // `routes/api/instances.ts`. Without this the by-handle resolver
+  // scans instances and filters by `owner_subject->>'id'`, which is
+  // O(n) for the public-discovery path.
+  `CREATE INDEX IF NOT EXISTS idx_instances_owner_subject_id ON instances ((owner_subject->>'id'));`,
   // Issue #14: unique B-tree on `principal_did` so the by-did resolver
   // (GET /v1/principals/by-did/:did) is a single indexed lookup. We
   // mirror the production migration (0007_add_principal_did.sql) — NULLs
@@ -172,7 +185,7 @@ const DDL_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS runtimes (
     id SERIAL PRIMARY KEY,
     runtime_did VARCHAR(255) NOT NULL UNIQUE,
-    owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     display_name VARCHAR(255),
     direct_endpoint VARCHAR(512),
     last_seen_at TIMESTAMPTZ,

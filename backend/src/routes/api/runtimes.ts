@@ -117,8 +117,13 @@ async function authenticateOrDevBypass(
       fastify.config.NODE_ENV === "development" &&
       fastify.config.ALLOW_DEV_AUTH_BYPASS === "true"
     ) {
-      // Dev bypass: create a synthetic user so the route can proceed
-      request.user = { id: 0, username: "dev", role: "developer" } as any;
+      // Dev bypass: create a synthetic user so the route can proceed.
+      // `id` is the all-zeros UUID (post-H3 — was integer 0).
+      request.user = {
+        id: "00000000-0000-0000-0000-000000000000",
+        username: "dev",
+        role: "developer",
+      } as any;
     } else {
       return reply.status(401).send({ error: "Authentication required" });
     }

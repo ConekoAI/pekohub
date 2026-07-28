@@ -96,8 +96,9 @@ export interface InstanceAnnouncePayload {
   // legacy numeric `ownerId` (the user that owns the runtime, via
   // the `runtimes` table).
   owner?: Subject;
-  // ADR-041: typed allow-list. Each entry is a `Subject`.
-  allowedPrincipals?: Subject[];
+  // Post-H4: allowedPrincipals removed from the announce payload.
+  // The runtime owns the ACL surface in `PrincipalConfig.permissions`
+  // (R4); pekohub only stores the public-vs-private exposure switch.
   capabilities?: string[];
   metadata?: Record<string, unknown>;
   // ADR-041: per-Principal DID, written to `instances.principal_did`
@@ -126,8 +127,8 @@ export interface InstanceDeregisterPayload {
 export interface ExposureUpdatePayload {
   instanceId: string;
   exposure: InstanceExposure;
-  /** ADR-041: typed allow-list (Subject[]). */
-  allowedPrincipals?: Subject[];
+  // Post-H4: allowedPrincipals removed. The runtime owns the ACL
+  // surface (R4); pekohub only announces the public-vs-private switch.
 }
 
 export interface StatusUpdatePayload {

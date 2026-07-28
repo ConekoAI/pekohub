@@ -148,7 +148,6 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
     const DID_B_AGENT = "did:peko:principal:helper-b";
 
     await createInstance(testDb.client, {
-      ownerId: ownerA.id,
       ownerSubject: { kind: "user", id: String(ownerA.id) },
       name: "caller-a",
       runtimeId: idA.did,
@@ -162,7 +161,6 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
     // via a Principal-kind caller, the runtime would never get a hit on the
     // directory API to begin with, so this case is the realistic path.
     await createInstance(testDb.client, {
-      ownerId: ownerB.id,
       ownerSubject: { kind: "user", id: String(ownerB.id) },
       name: "target-b",
       runtimeId: idB.did,
@@ -243,7 +241,6 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
 
     const DID_B_AGENT = "did:peko:principal:helper-b";
     await createInstance(testDb.client, {
-      ownerId: ownerB.id,
       ownerSubject: { kind: "user", id: String(ownerB.id) },
       name: "target-b",
       runtimeId: idB.did,
@@ -340,7 +337,6 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
 
     const DID_B_AGENT = "did:peko:principal:helper-b";
     await createInstance(testDb.client, {
-      ownerId: ownerB.id,
       ownerSubject: { kind: "user", id: String(ownerB.id) },
       name: "target-b",
       runtimeId: idB.did,
@@ -392,13 +388,11 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
 
     const DID_B_AGENT = "did:peko:principal:private-b";
     await createInstance(testDb.client, {
-      ownerId: ownerB.id,
       ownerSubject: { kind: "user", id: String(ownerB.id) },
       name: "private-b",
       runtimeId: idB.did,
-      exposure: "private", // private — A's agent is not in the allow-list
+      exposure: "private", // private — A's caller agent is not the owner
       principalDid: DID_B_AGENT,
-      // No allowedPrincipals — A's caller agent is not on the list.
     });
 
     const socketA = new MockWebSocket();
@@ -455,7 +449,6 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
 
     const DID_B_AGENT = "did:peko:principal:target-b";
     await createInstance(testDb.client, {
-      ownerId: ownerB.id,
       ownerSubject: { kind: "user", id: String(ownerB.id) },
       name: "target-b",
       runtimeId: idB.did,
@@ -516,7 +509,6 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
 
     const DID_B_AGENT = "did:peko:principal:target-b";
     await createInstance(testDb.client, {
-      ownerId: ownerB.id,
       ownerSubject: { kind: "user", id: String(ownerB.id) },
       name: "target-b",
       runtimeId: idB.did,
@@ -578,7 +570,6 @@ describe("Cross-runtime a2a forwarding (issue #16)", () => {
 
     const DID_B_AGENT = "did:peko:principal:target-b";
     await createInstance(testDb.client, {
-      ownerId: ownerB.id,
       ownerSubject: { kind: "user", id: String(ownerB.id) },
       name: "target-b",
       runtimeId: idB.did,

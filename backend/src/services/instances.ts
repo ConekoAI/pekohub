@@ -27,28 +27,22 @@ export type CallerSubject = Subject | null;
 /**
  * Resolve the effective owner of an instance.
  *
- * Three cases, in order of preference:
+ * Post-H1 the typed `owner_subject` JSONB column is the only source
+ * of truth — the legacy `owner_id` integer FK was dropped in
+ * migration 0010. Two cases remain:
  *
  * 1. `instance.ownerSubject` is set and is not the empty sentinel
  *    `Subject::User("")` → use it.
- * 2. Otherwise, fall back to `Subject::User(instance.ownerId)`. This
- *    covers both pre-#11 rows (no `owner_subject` column at all) and
- *    post-#11 rows that were backfilled by the runtime migration with
- *    the empty sentinel
- *    ([peko-runtime/src/runtime/migration.rs:170-171, 234-235]).
- * 3. If even `ownerId` is null, return `null` (truly ownerless row).
+ * 2. Otherwise, return `null` (truly ownerless row).
  */
 export function resolveOwnerSubject(
-  instance: Pick<InstanceRecord, "ownerId" | "ownerSubject">,
+  instance: Pick<InstanceRecord, "ownerSubject">,
 ): Subject | null {
   if (
     instance.ownerSubject &&
     !isEmptyOwnerSubject(instance.ownerSubject)
   ) {
     return instance.ownerSubject;
-  }
-  if (instance.ownerId) {
-    return { kind: "user", id: String(instance.ownerId) };
   }
   return null;
 }
@@ -89,26 +83,6 @@ export async function subjectCanAccess(
   return false;
 }
 
-// ── Allow-list check (matches a caller against instance.allow) ──────────────
-
-/**
- * True if `caller` matches the instance's typed `allowedPrincipals`
- * allow-list.
- *
- * Public-kind callers are never on an allow-list (public access goes
- * through `instance.exposure === "public"` at a higher level).
- */
-function principalInAllowList(
-  instance: Pick<InstanceRecord, "allowedPrincipals">,
-  caller: CallerSubject,
-): boolean {
-  if (caller === null) return false;
-  if (caller.kind === "public") return false;
-  return instance.allowedPrincipals.some(
-    (p) => p.kind === caller.kind && p.id === caller.id,
-  );
-}
-
 // ── Instance model types ───────────────────────────────────────────────────
 
 export type InstanceType = "principal";
@@ -129,14 +103,15 @@ export interface InstanceRecord {
   id: string;
   type: InstanceType;
   name: string;
-  ownerId: number;
   ownerSubject: Subject | null;
   runtimeId: string;
   runtimeDisplayName: string | null;
   bundleRef: string | null;
   status: InstanceStatus;
   exposure: InstanceExposure;
-  allowedPrincipals: Subject[];
+  // Post-H4: the typed `allowedPrincipals` array is gone. The runtime
+  // is the canonical ACL surface (R4); pekohub only knows the
+  // public-vs-private exposure switch.
   lastSeenAt: Date | null;
   createdAt: Date;
   capabilities: string[];
@@ -179,14 +154,13 @@ export interface CreateInstanceInput {
   id?: string;
   type: InstanceType;
   name: string;
-  ownerId: number;
   ownerSubject?: Subject | null;
   runtimeId: string;
   runtimeDisplayName?: string;
   bundleRef?: string;
   status?: InstanceStatus;
   exposure?: InstanceExposure;
-  allowedPrincipals?: Subject[];
+  // Post-H4: allowedPrincipals input — runtime owns ACLs.
   capabilities?: string[];
   metadata?: Record<string, unknown>;
 
@@ -213,7 +187,7 @@ export interface UpdateInstanceInput {
   runtimeDisplayName?: string;
   status?: InstanceStatus;
   exposure?: InstanceExposure;
-  allowedPrincipals?: Subject[];
+  // Post-H4: allowedPrincipals update — runtime owns ACLs.
   capabilities?: string[];
   metadata?: Record<string, unknown>;
 
@@ -241,7 +215,6 @@ export interface UpdateInstanceInput {
 }
 
 export interface ListInstancesOptions {
-  ownerId?: number;
   ownerSubject?: Subject;
   runtimeId?: string;
   status?: InstanceStatus;
@@ -336,10 +309,10 @@ function parseAllowEntry(s: string): Subject | null {
  * (Drizzle `$type` is a compile-time cast only — there is no runtime
  * check), so any garbage that lands in the column would otherwise flow
  * straight into `subjectCanAccess`. A `null`/missing JSONB returns
- * `null` (the "no owner asserted" case, which is then backfilled from
- * the legacy `ownerId` by `resolveOwnerSubject`). Anything that
- * doesn't match the discriminated union returns `null` as well — the
- * safe "ignore" default, not the raw garbage.
+ * `null` (the "no owner asserted" case, which makes the row
+ * ownerless per `resolveOwnerSubject`). Anything that doesn't match
+ * the discriminated union returns `null` as well — the safe "ignore"
+ * default, not the raw garbage.
  *
  * Exported for unit tests.
  */
@@ -380,29 +353,18 @@ export class InstanceService {
   // ── CRUD ───────────────────────────────────────────────────────────────────
 
   async create(input: CreateInstanceInput): Promise<InstanceRecord> {
-    // Resolve ownerSubject: prefer the input, otherwise backfill from
-    // the legacy ownerId.
-    const ownerSubject =
-      input.ownerSubject !== undefined
-        ? input.ownerSubject
-        : input.ownerId
-          ? { kind: "user" as const, id: String(input.ownerId) }
-          : null;
-
     const [row] = await db
       .insert(instances)
       .values({
         id: input.id,
         type: input.type,
         name: input.name,
-        ownerId: input.ownerId,
-        ownerSubject,
+        ownerSubject: input.ownerSubject ?? null,
         runtimeId: input.runtimeId,
         runtimeDisplayName: input.runtimeDisplayName ?? null,
         bundleRef: input.bundleRef ?? null,
         status: input.status ?? "offline",
         exposure: input.exposure ?? "unexposed",
-        allowedPrincipals: input.allowedPrincipals ?? [],
         capabilities: input.capabilities ?? [],
         metadata: input.metadata ?? {},
         lastSeenAt: input.status === "online" ? new Date() : null,
@@ -436,7 +398,6 @@ export class InstanceService {
 
   async list(options: ListInstancesOptions = {}): Promise<ListInstancesResult> {
     const {
-      ownerId,
       ownerSubject,
       runtimeId,
       status,
@@ -447,12 +408,11 @@ export class InstanceService {
     } = options;
 
     const conditions: SQL[] = [];
-    if (ownerId !== undefined) conditions.push(eq(instances.ownerId, ownerId));
     if (ownerSubject !== undefined) {
-      // JSONB equality is exact-match. For "list my instances as user X"
-      // we use the legacy `ownerId` column (numeric FK). The principal
-      // filter is for the typed case (e.g. list all Principal-owned
-      // instances for a given principal id).
+      // JSONB equality is exact-match — same kind + same id matches a
+      // single owner. Post-H1 the typed `owner_subject` column is the
+      // only owner source, so "list my instances as user X" filters
+      // through here too.
       conditions.push(sql`${instances.ownerSubject} = ${JSON.stringify(ownerSubject)}::jsonb`);
     }
     if (runtimeId !== undefined)
@@ -508,8 +468,6 @@ export class InstanceService {
       }
     }
     if (input.exposure !== undefined) values.exposure = input.exposure;
-    if (input.allowedPrincipals !== undefined)
-      values.allowedPrincipals = input.allowedPrincipals;
     if (input.capabilities !== undefined)
       values.capabilities = input.capabilities;
     if (input.metadata !== undefined) values.metadata = input.metadata;
@@ -593,9 +551,19 @@ export class InstanceService {
     });
     if (!ownerRow) return null;
 
+    // Post-H1 the legacy `instances.owner_id` integer FK is gone; the
+    // typed `owner_subject` JSONB is the source of truth. We match
+    // exact JSONB equality using a string literal that mirrors the
+    // runtime's `instance_announce` shape. Post-H3, `users.id` is a
+    // UUID string but the `id` field in `owner_subject` is JSON-text
+    // either way — `String(user.id)` covers both.
+    const ownerSubjectLiteral = JSON.stringify({
+      kind: "user",
+      id: String(ownerRow.id),
+    });
     const row = await db.query.instances.findFirst({
       where: and(
-        eq(instances.ownerId, ownerRow.id),
+        sql`${instances.ownerSubject} = ${ownerSubjectLiteral}::jsonb`,
         eq(instances.name, principalName),
       ),
     });
@@ -688,7 +656,6 @@ export class InstanceService {
         runtimeDisplayName: input.runtimeDisplayName,
         status: input.status,
         exposure: input.exposure,
-        allowedPrincipals: input.allowedPrincipals,
         capabilities: input.capabilities,
         metadata: input.metadata,
       };
@@ -738,13 +705,15 @@ export class InstanceService {
    * 1. Public exposure → world-readable.
    * 2. Null caller → denied (public is the only anonymous-friendly path).
    * 3. Resolved owner === caller → allowed (owner can always see).
-   * 4. Caller on the allow-list (`allowedPrincipals` or legacy
-   *    `allowedPrincipals`) → allowed.
-   * 5. Otherwise → denied.
+   * 4. Otherwise → denied.
+   *
+   * Post-H4: the typed `allowedPrincipals` allow-list is gone. The
+   * runtime's `PrincipalConfig.permissions` is the only ACL surface
+   * (R4); pekohub only knows the public-vs-private exposure switch.
    */
   async canAccess(
     instance: InstanceRecord,
-    caller: CallerSubject | number | null,
+    caller: CallerSubject | string | null,
   ): Promise<boolean> {
     if (instance.exposure === "public") return true;
 
@@ -754,7 +723,7 @@ export class InstanceService {
     const owner = resolveOwnerSubject(instance);
     if (owner && (await subjectCanAccess(owner, c))) return true;
 
-    return principalInAllowList(instance, c);
+    return false;
   }
 
   /**
@@ -764,10 +733,13 @@ export class InstanceService {
    * `canAccess` + the same offline / unexposed / public gates.
    * Unexposed and offline instances deny even owners; public allows
    * anonymous.
+   *
+   * Post-H4: see canAccess — the runtime owns the allow-list
+   * (`PrincipalConfig.permissions`), not pekohub.
    */
   async canChat(
     instance: InstanceRecord,
-    caller: CallerSubject | number | null,
+    caller: CallerSubject | string | null,
   ): Promise<boolean> {
     if (instance.status === "offline" || instance.exposure === "unexposed") {
       return false;
@@ -780,19 +752,18 @@ export class InstanceService {
     const owner = resolveOwnerSubject(instance);
     if (owner && (await subjectCanAccess(owner, c))) return true;
 
-    return principalInAllowList(instance, c);
+    return false;
   }
 
   /**
    * True if `caller` is the resolved owner of `instance`. This is the
-   * issue #11 replacement for the legacy
-   * `instance.ownerId !== user.id` check at the ~9 owner-check sites
-   * in `routes/api/instances.ts`. Returns `false` if the instance has
-   * no resolvable owner.
+   * issue #11 replacement for the legacy `owner_id !== user.id` check
+   * at the owner-check sites in `routes/api/instances.ts`. Returns
+   * `false` if the instance has no resolvable owner.
    */
   async isOwner(
     instance: InstanceRecord,
-    caller: CallerSubject | number | null,
+    caller: CallerSubject | string | null,
   ): Promise<boolean> {
     const owner = resolveOwnerSubject(instance);
     if (owner === null) return false;
@@ -817,23 +788,22 @@ export class InstanceService {
       id: row.id,
       type: row.type as InstanceType,
       name: row.name,
-      ownerId: row.ownerId,
       // Issue #11 review #12 P1: validate the JSONB columns through
       // Zod so a malformed row (e.g. `{"kind": "user", "id": null}`
       // from a future migration bug, a manual psql edit, or a backfill
       // that goes wrong) cannot flow through unchecked into
       // `subjectCanAccess` — where `null === null` would silently
-      // grant access. A malformed owner drops to `null` (which makes
-      // the row ownerless and triggers the legacy `ownerId`
-      // backfill in `resolveOwnerSubject`). A malformed allow-list
-      // entry is filtered out of `allowedPrincipals`.
+      // grant access. A malformed owner drops to `null`, leaving the
+      // row ownerless (per `resolveOwnerSubject`).
       ownerSubject: parseSubjectJsonb(row.ownerSubject),
       runtimeId: row.runtimeId,
       runtimeDisplayName: row.runtimeDisplayName,
       bundleRef: row.bundleRef,
       status: row.status as InstanceStatus,
       exposure: row.exposure as InstanceExposure,
-      allowedPrincipals: parseSubjectArrayJsonb(row.allowedPrincipals),
+      // Post-H4: allowedPrincipals is gone. The runtime owns the
+      // ACL surface (R4); pekohub only knows public-vs-private
+      // exposure.
       lastSeenAt: row.lastSeenAt,
       createdAt: row.createdAt,
       capabilities: (row.capabilities as string[]) ?? [],
@@ -875,16 +845,19 @@ export class InstanceService {
  * `CallerSubject`. Accepts:
  *
  * - `null` → null (unauthenticated)
- * - `number` → `Principal::User(String(n))` (the legacy `userId: number`
- *   shape from the auth plugin)
- * - `Principal` → as-is
+ * - `string` → `Subject::User(s)` (the post-H3 UUID `userId` shape
+ *   from the auth plugin)
+ * - `Subject` → as-is
+ *
+ * The legacy `number` shape is gone post-H3 — `users.id` is a UUID
+ * string on both sides.
  */
 function normalizeCaller(
-  caller: CallerSubject | number | null,
+  caller: CallerSubject | string | null,
 ): CallerSubject {
   if (caller === null || caller === undefined) return null;
-  if (typeof caller === "number") {
-    return { kind: "user", id: String(caller) };
+  if (typeof caller === "string") {
+    return { kind: "user", id: caller };
   }
   return caller;
 }
