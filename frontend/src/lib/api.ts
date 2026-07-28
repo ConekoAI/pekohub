@@ -326,7 +326,84 @@ export const api = {
       }
       return r.json();
     }),
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Discovery (PR #8) — public principal browse + curated feeds.
+  // Anonymous endpoints (no JWT). Results are a flattened
+  // `DiscoveryHit` shape — no runtime metadata, no ownerSubject,
+  // just the public profile the /p/$owner/$name landing page shows.
+  // The `ownerName` field is the human-readable namespace the
+  // share-link path uses; we surface it directly so the card can
+  // build the deep-link URL without a second round-trip.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Public search. `q` is a free-text query against public_name +
+   * description + tags; `category` filters by the public category
+   * enum; `sort` is one of `trending` (createdAt desc), `new`
+   * (publishedAt desc), `featured` (featured + createdAt desc),
+   * or default (createdAt desc).
+   */
+  discoverySearch: (opts?: { q?: string; category?: string; sort?: string; page?: number; perPage?: number }) => {
+    const params = new URLSearchParams();
+    if (opts?.q) params.set('q', opts.q);
+    if (opts?.category) params.set('category', opts.category);
+    if (opts?.sort) params.set('sort', opts.sort);
+    params.set('page', String(opts?.page ?? 1));
+    params.set('per_page', String(opts?.perPage ?? 24));
+    return fetchJson<{
+      hits: DiscoveryHit[];
+      total: number;
+      page: number;
+    }>(`/v1/discovery/search?${params}`);
+  },
+
+  /**
+   * Curated feed. `name` is one of `trending` / `new` / `featured`.
+   * Returns the same hit shape as `discoverySearch`, with `feed`
+   * echoed back so the SPA can label the section header.
+   */
+  discoveryFeed: (name: 'trending' | 'new' | 'featured', opts?: { page?: number; perPage?: number }) => {
+    const params = new URLSearchParams();
+    params.set('page', String(opts?.page ?? 1));
+    params.set('per_page', String(opts?.perPage ?? 24));
+    return fetchJson<{
+      hits: DiscoveryHit[];
+      total: number;
+      page: number;
+      feed: string;
+    }>(`/v1/discovery/feed/${name}?${params}`);
+  },
 };
+
+/**
+ * Shape returned by `GET /v1/discovery/search` and
+ * `GET /v1/discovery/feed/:feed`. Mirrors the backend response in
+ * `backend/src/routes/api/instances.ts:898-911`. No `runtimeId` /
+ * `ownerSubject` is leaked — discovery is strictly public.
+ */
+export interface DiscoveryHit {
+  id: string;
+  publicName: string;
+  description: string | null;
+  /** Human-readable owner name (users.namespace or users.displayName). */
+  ownerName: string;
+  category: string | null;
+  tags: string[];
+  status: 'online' | 'offline' | 'busy' | 'error';
+  publishedAt: string | null;
+  featured: boolean;
+}
+
+/**
+ * Build the canonical share URL for a discovery hit. The frontend
+ * uses this for both "Open in browser" links and the deep-link
+ * `peko://add-principal?url=${shareUrl}` form (PR #6).
+ */
+export function shareUrlFor(hit: { ownerName: string; publicName: string }, origin?: string): string {
+  const base = origin ?? (typeof window !== 'undefined' ? window.location.origin : '');
+  return `${base}/p/${encodeURIComponent(hit.ownerName)}/${encodeURIComponent(hit.publicName)}`;
+}
 
 // Shape returned by GET /v1/instances for the owner. Mirrors
 // `InstanceRecord` in `backend/src/services/instances.ts:106-155`.
