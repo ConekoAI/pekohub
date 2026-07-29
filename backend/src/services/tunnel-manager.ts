@@ -495,6 +495,19 @@ export class TunnelManager {
         break;
       }
 
+      case "invite_minted": {
+        // PR #11: the runtime replied to an `invite_mint` request
+        // with a signed token. Forward verbatim to the route handler
+        // that is awaiting this requestId.
+        this.handleInviteMinted(msg.requestId, msg);
+        break;
+      }
+
+      case "invite_revoked": {
+        this.handleInviteRevoked(msg.requestId, msg.jti);
+        break;
+      }
+
       case "instance_announce": {
         await this.handleInstanceAnnounce(conn.runtimeId, msg.payload);
         break;
@@ -540,7 +553,10 @@ export class TunnelManager {
       case "tunnel_ready":
       case "heartbeat_ack":
       case "proxied_request":
-      case "exposure_update": {
+      case "exposure_update":
+      case "status_update":
+      case "invite_mint":
+      case "invite_revoke": {
         // Server-originated only — the runtime should not be sending
         // these. The list above is the *exhaustive* set of server-only
         // types (per the `TunnelMessage` union); if a new
@@ -1300,6 +1316,178 @@ export class TunnelManager {
   isRuntimeConnected(runtimeId: string): boolean {
     const conn = this.connections.get(runtimeId);
     return !!conn && conn.socket.readyState === conn.socket.OPEN;
+  }
+
+  /**
+   * PR #11: ask the runtime to mint a signed invite token. Returns
+   * the runtime's `invite_minted` payload verbatim. Throws if the
+   * runtime is unreachable or doesn't respond within `timeoutMs`.
+   */
+  async requestInviteMint(
+    runtimeId: string,
+    principal: string,
+    scope: string[],
+    ttlSecs: number,
+    timeoutMs: number = 15_000,
+  ): Promise<{
+    token: string;
+    url: string;
+    claims: {
+      principalDid: string;
+      principalName: string;
+      ownerSubject: string;
+      scope: string[];
+      exp: number;
+      jti: string;
+    };
+  }> {
+    const conn = this.connections.get(runtimeId);
+    if (!conn || conn.socket.readyState !== conn.socket.OPEN) {
+      throw new Error("Runtime not connected");
+    }
+
+    const requestId = crypto.randomUUID();
+
+    return new Promise((resolve, reject) => {
+      const pending: PendingRequest = {
+        resolve: (result) => {
+          const body = result.body as {
+            token?: string;
+            url?: string;
+            claims?: {
+              principalDid: string;
+              principalName: string;
+              ownerSubject: string;
+              scope: string[];
+              exp: number;
+              jti: string;
+            };
+          } | null;
+          if (
+            !body ||
+            typeof body.token !== "string" ||
+            typeof body.url !== "string" ||
+            !body.claims
+          ) {
+            reject(
+              new Error(
+                `Runtime returned malformed invite_minted payload: ${JSON.stringify(body)}`,
+              ),
+            );
+            return;
+          }
+          resolve({
+            token: body.token,
+            url: body.url,
+            claims: body.claims,
+          });
+        },
+        reject,
+        receivedStreamInit: false,
+        chunks: [],
+      };
+      this.pendingRequests.set(requestId, pending);
+      conn.pendingRequestIds.add(requestId);
+
+      const timer = setTimeout(() => {
+        if (this.pendingRequests.has(requestId)) {
+          this.pendingRequests.delete(requestId);
+          conn.pendingRequestIds.delete(requestId);
+          reject(new Error("Invite mint request timeout"));
+        }
+      }, timeoutMs);
+      timer.unref?.();
+      pending.timer = timer;
+
+      this.sendMessage(conn.socket, {
+        type: "invite_mint",
+        requestId,
+        principal,
+        scope,
+        ttlSecs,
+      });
+    });
+  }
+
+  /**
+   * PR #11: ask the runtime to burn a `jti`. The runtime's
+   * in-memory `InviteRevocationSet` is the source of truth — once
+   * it acks, every subsequent request presenting that token is
+   * rejected. Throws on runtime unreachable / timeout.
+   */
+  async requestInviteRevoke(
+    runtimeId: string,
+    principal: string,
+    jti: string,
+    timeoutMs: number = 15_000,
+  ): Promise<void> {
+    const conn = this.connections.get(runtimeId);
+    if (!conn || conn.socket.readyState !== conn.socket.OPEN) {
+      throw new Error("Runtime not connected");
+    }
+
+    const requestId = crypto.randomUUID();
+
+    return new Promise<void>((resolve, reject) => {
+      const pending: PendingRequest = {
+        resolve: () => resolve(),
+        reject,
+        receivedStreamInit: false,
+        chunks: [],
+      };
+      this.pendingRequests.set(requestId, pending);
+      conn.pendingRequestIds.add(requestId);
+
+      const timer = setTimeout(() => {
+        if (this.pendingRequests.has(requestId)) {
+          this.pendingRequests.delete(requestId);
+          conn.pendingRequestIds.delete(requestId);
+          reject(new Error("Invite revoke request timeout"));
+        }
+      }, timeoutMs);
+      timer.unref?.();
+      pending.timer = timer;
+
+      this.sendMessage(conn.socket, {
+        type: "invite_revoke",
+        requestId,
+        principal,
+        jti,
+      });
+    });
+  }
+
+  private handleInviteMinted(
+    requestId: string,
+    msg: Extract<TunnelMessage, { type: "invite_minted" }>,
+  ): void {
+    const pending = this.pendingRequests.get(requestId);
+    if (!pending) return;
+    this.pendingRequests.delete(requestId);
+    const conn = connForRequestId(this.connections, requestId);
+    conn?.pendingRequestIds.delete(requestId);
+    if (pending.timer) clearTimeout(pending.timer);
+    pending.resolve({
+      status: 200,
+      body: {
+        token: msg.token,
+        url: msg.url,
+        claims: msg.claims,
+      },
+    });
+  }
+
+  private handleInviteRevoked(requestId: string, jti: string): void {
+    const pending = this.pendingRequests.get(requestId);
+    if (!pending) return;
+    this.pendingRequests.delete(requestId);
+    const conn = connForRequestId(this.connections, requestId);
+    conn?.pendingRequestIds.delete(requestId);
+    if (pending.timer) clearTimeout(pending.timer);
+    pending.resolve({
+      status: 200,
+      body: { jti },
+    });
   }
 
   private sendMessage(socket: WebSocket, msg: TunnelMessage): void {

@@ -199,6 +199,21 @@ const ChatBodySchema = z.object({
   tos_acknowledged: z.boolean().optional(),
 });
 
+// PR #11: invite-token mint body. Scope is a free-form string
+// array (the runtime's `parse_permission` resolves each to a
+// `peko_auth::Permission`). The runtime hard-caps `ttl_secs` at
+// 30 days; we accept anything but a 30d max on the hub side as
+// well so a misbehaving caller can't blow past it.
+const MintInviteBodySchema = z.object({
+  scope: z.array(z.string()).default(["chat"]),
+  ttl_secs: z
+    .number()
+    .int()
+    .positive()
+    .max(30 * 24 * 60 * 60)
+    .default(7 * 24 * 60 * 60),
+});
+
 /**
  * Instance management API routes.
  */
@@ -1152,6 +1167,109 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         visitorId,
         { daily: instance.dailyQuota, weekly: instance.weeklyQuota },
       );
+    },
+  );
+
+  // ── Mint invite token (PR #11) ────────────────────────────────────────────
+  // Owner-only. The hub is a thin proxy: it relays the request
+  // through the runtime's tunnel and surfaces the signed token +
+  // share URL in the response. The hub does NOT persist the
+  // token — the runtime's in-memory `InviteRevocationSet` is the
+  // source of truth for "is this jti burned?".
+  fastify.post(
+    "/instances/:id/invites",
+    { preHandler: [authenticateOrDevBypass] },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const user = request.user;
+
+      const instance = await instanceService.getById(id);
+      if (!instance) {
+        return reply.status(404).send({ error: "Instance not found" });
+      }
+      if (!(await instanceService.isOwner(instance, user.id))) {
+        return reply.status(403).send({ error: "Forbidden" });
+      }
+
+      const body = MintInviteBodySchema.safeParse(request.body);
+      if (!body.success) {
+        return reply
+          .status(400)
+          .send({ error: "Invalid request body", details: body.error.format() });
+      }
+
+      if (!fastify.tunnelManager.isRuntimeConnected(instance.runtimeId)) {
+        return reply.status(502).send({ error: "Runtime not connected" });
+      }
+
+      try {
+        const minted = await fastify.tunnelManager.requestInviteMint(
+          instance.runtimeId,
+          instance.name,
+          body.data.scope,
+          body.data.ttl_secs,
+        );
+        return reply.status(200).send(minted);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Mint failed";
+        fastify.log.warn(
+          { err, instanceId: id, principal: instance.name },
+          "Invite mint failed",
+        );
+        return reply.status(502).send({ error: message });
+      }
+    },
+  );
+
+  // ── Revoke invite token (PR #11) ─────────────────────────────────────────
+  // Owner-only. Adds the `jti` to the runtime's in-memory
+  // revocation set; the next inbound request presenting that
+  // token is rejected.
+  fastify.delete(
+    "/instances/:id/invites/:jti",
+    { preHandler: [authenticateOrDevBypass] },
+    async (request, reply) => {
+      const { id, jti } = request.params as { id: string; jti: string };
+      const user = request.user;
+
+      // Reject obviously-bad JTIs client-side so a typo doesn't
+      // round-trip the runtime and spam the revocation set.
+      // UUIDv4 is the only shape the runtime mints.
+      if (
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          jti,
+        )
+      ) {
+        return reply.status(400).send({ error: "Invalid jti" });
+      }
+
+      const instance = await instanceService.getById(id);
+      if (!instance) {
+        return reply.status(404).send({ error: "Instance not found" });
+      }
+      if (!(await instanceService.isOwner(instance, user.id))) {
+        return reply.status(403).send({ error: "Forbidden" });
+      }
+
+      if (!fastify.tunnelManager.isRuntimeConnected(instance.runtimeId)) {
+        return reply.status(502).send({ error: "Runtime not connected" });
+      }
+
+      try {
+        await fastify.tunnelManager.requestInviteRevoke(
+          instance.runtimeId,
+          instance.name,
+          jti,
+        );
+        return reply.status(200).send({ jti });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Revoke failed";
+        fastify.log.warn(
+          { err, instanceId: id, principal: instance.name, jti },
+          "Invite revoke failed",
+        );
+        return reply.status(502).send({ error: message });
+      }
     },
   );
 }

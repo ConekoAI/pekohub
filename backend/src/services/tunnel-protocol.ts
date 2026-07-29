@@ -78,7 +78,7 @@ export interface StreamIterationPayload {
 // --- Instance lifecycle extensions (ADR-004, ADR-041) ---
 
 export type InstanceStatus = "online" | "offline" | "busy" | "error";
-export type InstanceExposure = "private" | "public" | "unexposed";
+export type InstanceExposure = "private" | "public" | "unexposed" | "unlisted";
 export type InstanceType = "principal";
 export type TransportPreference = "auto" | "tunnel" | "direct";
 
@@ -217,7 +217,39 @@ export type TunnelMessage =
       type: "principal_to_principal_response";
       requestId: string;
       payload: string;
-    };
+    }
+  // PR #11: invite-token mint / revoke. The hub does not understand
+  // the token shape — it just forwards the request to the runtime
+  // and surfaces the response. The runtime's InviteRevocationSet
+  // (in-memory) is the source of truth for "is this jti burned?".
+  | {
+      type: "invite_mint";
+      requestId: string;
+      principal: string;
+      scope: string[];
+      ttlSecs: number;
+    }
+  | {
+      type: "invite_minted";
+      requestId: string;
+      token: string;
+      url: string;
+      claims: {
+        principalDid: string;
+        principalName: string;
+        ownerSubject: string;
+        scope: string[];
+        exp: number;
+        jti: string;
+      };
+    }
+  | {
+      type: "invite_revoke";
+      requestId: string;
+      principal: string;
+      jti: string;
+    }
+  | { type: "invite_revoked"; requestId: string; jti: string };
 
 export function encodeTunnelMessage(msg: TunnelMessage): Buffer {
   return Buffer.from(JSON.stringify(msg), "utf-8");
