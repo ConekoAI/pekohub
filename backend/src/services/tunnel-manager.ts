@@ -538,6 +538,18 @@ export class TunnelManager {
         break;
       }
 
+      case "tunnel_channel_event": {
+        // peko-channel cross-runtime PR-C: forward channel events
+        // (Posted / MemberJoined / MemberLeft / Created) from one
+        // runtime to another. The hub is pure relay — it reads only
+        // `sourceRuntimeId` (source allowlist) and
+        // `recipientRuntimeId` (routing). The `event` payload +
+        // signature are forwarded verbatim so the recipient
+        // verifies end-to-end.
+        await this.handleChannelEventForward(conn, msg);
+        break;
+      }
+
       case "disconnect": {
         this.fastify.log.info(
           { runtimeId: conn.runtimeId, reason: msg.reason },
@@ -1021,6 +1033,75 @@ export class TunnelManager {
     clearTimeout(entry.timer);
     this.a2aInFlight.delete(resp.requestId);
     this.sendMessage(entry.callerSocket, resp);
+  }
+
+  // ── Cross-runtime channel event forwarding (peko-channel PR-C) ──────────
+  //
+  // Mirrors `handlePrincipalToPrincipalRequest` in shape: source
+  // allowlist + recipient lookup + forward verbatim. Channel events
+  // are push-only (no request/response), so this method has no
+  // in-flight registry, no response correlation, no synthesized
+  // error envelopes. The recipient runtime either is connected
+  // (forward) or isn't (drop + count + log).
+  //
+  // Hub is pure relay: no channel-membership state consulted.
+  // The runtime-side `fanout_event` emits one envelope per
+  // unique recipient runtime; the hub routes each to its
+  // corresponding `connections.get(recipientRuntimeId)`.
+
+  private async handleChannelEventForward(
+    conn: RuntimeConnection,
+    msg: Extract<TunnelMessage, { type: "tunnel_channel_event" }>,
+  ): Promise<void> {
+    // 1. Source allowlist. Same defense-in-depth as the DM path:
+    //    the receiving tunnel's authenticated `runtimeId` must match
+    //    the envelope's claim, otherwise a runtime is impersonating
+    //    another. Close + log; no error reply is sent (channel
+    //    events have no response channel).
+    if (conn.runtimeId !== msg.sourceRuntimeId) {
+      metrics.inc(CounterName.HubChannelEventRejectedSourceAllowlist);
+      this.fastify.log.warn(
+        {
+          connRuntime: conn.runtimeId,
+          claim: msg.sourceRuntimeId,
+          requestId: msg.requestId,
+          channelId: msg.channelId,
+        },
+        "channel event source allowlist mismatch — closing tunnel (impersonation)",
+      );
+      this.closeConnection(conn, "source allowlist mismatch");
+      this.handleDisconnect(conn);
+      return;
+    }
+
+    // 2. Recipient lookup. `connections.get(recipientRuntimeId)`
+    //    returns `undefined` if the runtime isn't currently
+    //    connected (and `getConnection` also filters out sockets
+    //    that are no longer OPEN). Drop + count + log; the source
+    //    runtime will retry on the next event or a tunnel
+    //    reconnect — channel events are push-only and there is no
+    //    no-response-to-send path.
+    const targetConn = this.getConnection(msg.recipientRuntimeId);
+    if (!targetConn) {
+      metrics.inc(CounterName.HubChannelEventRecipientOffline);
+      this.fastify.log.warn(
+        {
+          sourceRuntime: conn.runtimeId,
+          recipientRuntime: msg.recipientRuntimeId,
+          channelId: msg.channelId,
+          requestId: msg.requestId,
+        },
+        "channel event recipient runtime offline — dropping",
+      );
+      return;
+    }
+
+    // 3. Forward — relay the envelope verbatim, including
+    //    `signature` and `event`. The recipient verifies
+    //    end-to-end against the source runtime's `source_runtime_id`
+    //    derived verifying key. Hub does NOT re-encode or re-sign.
+    metrics.inc(CounterName.HubChannelEventForwarded);
+    this.sendMessage(targetConn.socket, msg);
   }
 
   /**

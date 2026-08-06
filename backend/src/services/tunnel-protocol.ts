@@ -210,6 +210,12 @@ export interface TunnelChannelEventPayload {
    * `conn.runtimeId === msg.sourceRuntimeId` (source allowlist). The
    * receiver derives the verifying key from this DID. */
   sourceRuntimeId: string;
+  /** The runtime the hub should forward this envelope to. The
+   * outbound `fanout_event` loop emits one envelope per unique
+   * recipient runtime, with each envelope addressed to that
+   * runtime's `did:key`. Without this field the hub has no way to
+   * route — see peko-channel cross-runtime PR-B commit 4. */
+  recipientRuntimeId: string;
   /** The local principal on the source runtime that authored the
    * event. Carried for audit only — signature is over the runtime
    * pre-image, not the principal. */
@@ -312,14 +318,15 @@ export type TunnelMessage =
     }
   | { type: "invite_revoked"; requestId: string; jti: string }
   // peko-channel cross-runtime PR-C: cross-runtime channel events.
-  // The hub is pure relay — it reads only `sourceRuntimeId` to
-  // enforce the source allowlist + looks up the recipient runtime
-  // tunnel connection via `channelId`. The `event`, `signature`,
+  // The hub is pure relay — it reads `sourceRuntimeId` to enforce
+  // the source allowlist and `recipientRuntimeId` to route to the
+  // correct recipient tunnel connection. The `event`, `signature`,
   // and `sourcePrincipalDid` fields are forwarded verbatim.
   | {
       type: "tunnel_channel_event";
       requestId: string;
       sourceRuntimeId: string;
+      recipientRuntimeId: string;
       sourcePrincipalDid: string;
       channelId: string;
       event: ChannelEvent;

@@ -49,4 +49,14 @@ export const CounterName = {
   HubA2ATargetOffline: "hub.a2a.target_offline",
   HubA2AForbidden: "hub.a2a.forbidden",
   HubA2ATimeout: "hub.a2a.timeout",
+  // peko-channel cross-runtime PR-C. Channel events are push-only
+  // (no request/response), so the counter set is smaller than a2a's:
+  // we only count successes + the two error shapes (allowlist
+  // mismatch + recipient offline). Hub is pure relay — no
+  // missing/forbidden paths because the hub has no channel
+  // membership state to consult.
+  HubChannelEventForwarded: "hub.channel_event.forwarded",
+  HubChannelEventRejectedSourceAllowlist:
+    "hub.channel_event.rejected_source_allowlist",
+  HubChannelEventRecipientOffline: "hub.channel_event.recipient_offline",
 } as const;
