@@ -59,4 +59,14 @@ export const CounterName = {
   HubChannelEventRejectedSourceAllowlist:
     "hub.channel_event.rejected_source_allowlist",
   HubChannelEventRecipientOffline: "hub.channel_event.recipient_offline",
+  // peko-channel cross-runtime PR-3a-followup: invite forwarding
+  // (TunnelChannelInvite). Hub is pure relay — same three-counter
+  // shape as the channel-event path (forwarded / rejected source
+  // allowlist / recipient offline). No missing/forbidden
+  // counters because the hub has no channel membership state to
+  // consult.
+  HubChannelInviteForwarded: "hub.channel_invite.forwarded",
+  HubChannelInviteRejectedSourceAllowlist:
+    "hub.channel_invite.rejected_source_allowlist",
+  HubChannelInviteRecipientOffline: "hub.channel_invite.recipient_offline",
 } as const;
