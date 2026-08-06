@@ -165,6 +165,67 @@ export interface PrincipalToPrincipalResponsePayload {
   payload: string;
 }
 
+// ── Cross-runtime channel events (peko-channel cross-runtime PR-C) ──────────
+//
+// Mirror of Rust `TunnelMessage::TunnelChannelEvent`
+// (`peko-runtime/peko-rs/core/src/tunnel/protocol.rs:405`). The hub is
+// pure relay: it reads only `sourceRuntimeId` (for the source allowlist
+// + recipient lookup) and forwards the envelope verbatim to every
+// connected recipient runtime. Channel events are push-only — there
+// is no request/response round-trip — so the hub does NOT carry a
+// `tunnel_channel_event_ack` variant. The runtime emits one
+// `TunnelChannelEvent` per recipient runtime (deduped on the source
+// side by `runtime_id`), so the hub handles each as a single forward.
+//
+// `event` mirrors Rust `peko_protocol::channel::ChannelEvent`'s
+// `#[serde(tag = "kind", rename_all = "snake_case")]` shape: a
+// discriminated union over `{ created, posted, member_joined,
+// member_left }`. The hub does NOT inspect the discriminant — it
+// forwards verbatim so the receiver can write the event into its
+// local mirror without round-tripping the source.
+
+export interface ChannelEvent {
+  kind: "created" | "posted" | "member_joined" | "member_left";
+  channel: string;
+  // `created`
+  creator?: string;
+  name?: string;
+  // `posted`
+  author?: string;
+  parent?: string | null;
+  text?: string;
+  // `member_joined` / `member_left`
+  member?: string;
+  // RFC3339 timestamp assigned by the source runtime. Receiver MUST
+  // NOT re-stamp on append.
+  at: string;
+}
+
+export interface TunnelChannelEventPayload {
+  /** Unique-per-fanout id (UUIDv4 from the source runtime). Not used
+   * for response correlation — exists so the hub can scope replay
+   * protection and audit logs can join outbound/inbound rows. */
+  requestId: string;
+  /** The source runtime's `did:key` form. The hub enforces
+   * `conn.runtimeId === msg.sourceRuntimeId` (source allowlist). The
+   * receiver derives the verifying key from this DID. */
+  sourceRuntimeId: string;
+  /** The local principal on the source runtime that authored the
+   * event. Carried for audit only — signature is over the runtime
+   * pre-image, not the principal. */
+  sourcePrincipalDid: string;
+  /** The channel id (`chan_<8 base36>`). The receiver looks up the
+   * local mirror directory and appends `event` to `events.jsonl`
+   * under it. */
+  channelId: string;
+  /** The full `ChannelEvent` payload. Forwarded verbatim. */
+  event: ChannelEvent;
+  /** Ed25519 signature, base64url-encoded, over the canonical
+   * pre-image described in the Rust module docs. The hub forwards
+   * this verbatim; the receiver verifies end-to-end. */
+  signature: string;
+}
+
 export type TunnelMessage =
   | {
       type: "runtime_hello";
@@ -249,7 +310,21 @@ export type TunnelMessage =
       principal: string;
       jti: string;
     }
-  | { type: "invite_revoked"; requestId: string; jti: string };
+  | { type: "invite_revoked"; requestId: string; jti: string }
+  // peko-channel cross-runtime PR-C: cross-runtime channel events.
+  // The hub is pure relay — it reads only `sourceRuntimeId` to
+  // enforce the source allowlist + looks up the recipient runtime
+  // tunnel connection via `channelId`. The `event`, `signature`,
+  // and `sourcePrincipalDid` fields are forwarded verbatim.
+  | {
+      type: "tunnel_channel_event";
+      requestId: string;
+      sourceRuntimeId: string;
+      sourcePrincipalDid: string;
+      channelId: string;
+      event: ChannelEvent;
+      signature: string;
+    };
 
 export function encodeTunnelMessage(msg: TunnelMessage): Buffer {
   return Buffer.from(JSON.stringify(msg), "utf-8");
