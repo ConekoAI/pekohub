@@ -53,4 +53,39 @@ describe("tunnel-protocol", () => {
     const decoded = decodeTunnelMessage(fragments);
     expect(decoded).toEqual(msg);
   });
+
+  /// Round-trip a `tunnel_channel_invite` envelope (peko-channel
+  /// cross-runtime PR-3a-followup). Mirrors the runtime's wire
+  /// shape: a two-member `initialMembers` snapshot — one local
+  /// (`runtimeId` omitted, since the Rust side uses
+  /// `skip_serializing_if = "Option::is_none"`) and one remote.
+  /// Pins the contract with the runtime's
+  /// `TunnelChannelInvitePayload` and the hub's pure-relay
+  /// forwarding path.
+  it("round-trips a tunnel_channel_invite message", () => {
+    const msg = {
+      type: "tunnel_channel_invite" as const,
+      requestId: "chan-invite-1",
+      sourceRuntimeId: "did:key:zRuntimeA",
+      recipientRuntimeId: "did:key:zRuntimeB",
+      sourcePrincipalDid: "prin_alice",
+      channelId: "chan_abcdefgh",
+      creator: "prin_alice",
+      name: "team-chat",
+      // Local member has no `runtimeId` (matches
+      // `#[serde(skip_serializing_if = "Option::is_none")]` on the
+      // Rust side). Remote member carries the peer runtime id.
+      initialMembers: [
+        { principalDid: "prin_alice" },
+        {
+          principalDid: "prin_bob",
+          runtimeId: "did:key:zRuntimeB",
+        },
+      ],
+      signature: "base64url-sig",
+    };
+    const encoded = encodeTunnelMessage(msg);
+    const decoded = decodeTunnelMessage(encoded);
+    expect(decoded).toEqual(msg);
+  });
 });

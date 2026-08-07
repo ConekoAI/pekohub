@@ -165,6 +165,145 @@ export interface PrincipalToPrincipalResponsePayload {
   payload: string;
 }
 
+// ── Cross-runtime channel events (peko-channel cross-runtime PR-C) ──────────
+//
+// Mirror of Rust `TunnelMessage::TunnelChannelEvent`
+// (`peko-runtime/peko-rs/core/src/tunnel/protocol.rs:405`). The hub is
+// pure relay: it reads only `sourceRuntimeId` (for the source allowlist
+// + recipient lookup) and forwards the envelope verbatim to every
+// connected recipient runtime. Channel events are push-only — there
+// is no request/response round-trip — so the hub does NOT carry a
+// `tunnel_channel_event_ack` variant. The runtime emits one
+// `TunnelChannelEvent` per recipient runtime (deduped on the source
+// side by `runtime_id`), so the hub handles each as a single forward.
+//
+// `event` mirrors Rust `peko_protocol::channel::ChannelEvent`'s
+// `#[serde(tag = "kind", rename_all = "snake_case")]` shape: a
+// discriminated union over `{ created, posted, member_joined,
+// member_left }`. The hub does NOT inspect the discriminant — it
+// forwards verbatim so the receiver can write the event into its
+// local mirror without round-tripping the source.
+
+export interface ChannelEvent {
+  kind: "created" | "posted" | "member_joined" | "member_left";
+  channel: string;
+  // `created`
+  creator?: string;
+  name?: string;
+  // `posted`
+  author?: string;
+  parent?: string | null;
+  text?: string;
+  // `member_joined` / `member_left`
+  member?: string;
+  // RFC3339 timestamp assigned by the source runtime. Receiver MUST
+  // NOT re-stamp on append.
+  at: string;
+}
+
+export interface TunnelChannelEventPayload {
+  /** Unique-per-fanout id (UUIDv4 from the source runtime). Not used
+   * for response correlation — exists so the hub can scope replay
+   * protection and audit logs can join outbound/inbound rows. */
+  requestId: string;
+  /** The source runtime's `did:key` form. The hub enforces
+   * `conn.runtimeId === msg.sourceRuntimeId` (source allowlist). The
+   * receiver derives the verifying key from this DID. */
+  sourceRuntimeId: string;
+  /** The runtime the hub should forward this envelope to. The
+   * outbound `fanout_event` loop emits one envelope per unique
+   * recipient runtime, with each envelope addressed to that
+   * runtime's `did:key`. Without this field the hub has no way to
+   * route — see peko-channel cross-runtime PR-B commit 4. */
+  recipientRuntimeId: string;
+  /** The local principal on the source runtime that authored the
+   * event. Carried for audit only — signature is over the runtime
+   * pre-image, not the principal. */
+  sourcePrincipalDid: string;
+  /** The channel id (`chan_<8 base36>`). The receiver looks up the
+   * local mirror directory and appends `event` to `events.jsonl`
+   * under it. */
+  channelId: string;
+  /** The full `ChannelEvent` payload. Forwarded verbatim. */
+  event: ChannelEvent;
+  /** Ed25519 signature, base64url-encoded, over the canonical
+   * pre-image described in the Rust module docs. The hub forwards
+   * this verbatim; the receiver verifies end-to-end. */
+  signature: string;
+}
+
+// ── Cross-runtime channel invites (peko-channel cross-runtime PR-3a-followup) ─
+//
+// Mirror of Rust `TunnelMessage::TunnelChannelInvite`
+// (`peko-runtime/peko-rs/core/src/tunnel/protocol.rs`). The hub is
+// pure relay, identical shape to the channel-event path: read
+// `sourceRuntimeId` (source allowlist) + `recipientRuntimeId`
+// (routing), forward verbatim. The `initialMembers` snapshot is
+// what the receiver uses to bootstrap its local mirror without a
+// follow-up `peek` round-trip.
+
+/** One row of the `initialMembers` list on `TunnelChannelInvite`.
+ * Mirrors Rust `peko_protocol::channel::InitialMember`:
+ * `runtime_id: None` means the principal is local to the source
+ * runtime (will land in `members.json`'s local array); `Some(id)`
+ * means the principal lives on a peer runtime and the receiver
+ * should record a `RemoteMember` row in `members.json`. */
+export interface InitialMember {
+  principalDid: string;
+  /** `undefined` (not present on JSON) when the principal is local to
+   * the source runtime. The Rust side uses
+   * `#[serde(skip_serializing_if = "Option::is_none")]`, so on the
+   * wire `runtimeId` is *omitted* (not `null`) for local members —
+   * we mirror that by typing the field as `string | undefined`. */
+  runtimeId?: string;
+}
+
+export interface TunnelChannelInvitePayload {
+  /** Unique-per-fanout id (UUIDv4 from the source runtime). Used by
+   * the audit trail to join outbound/inbound rows. Not used for
+   * response correlation — invites are push-only. */
+  requestId: string;
+  /** The source runtime's `did:key` form. The hub enforces
+   * `conn.runtimeId === msg.sourceRuntimeId` (source allowlist). The
+   * receiver derives the verifying key from this DID and rejects
+   * the envelope if `signature` does not verify. */
+  sourceRuntimeId: string;
+  /** The runtime the hub should forward this envelope to. The
+   * outbound `fanout_invite` loop emits one envelope per unique
+   * invitee runtime. Without this field the hub has no way to
+   * route — channel membership tracking is a source-runtime concern. */
+  recipientRuntimeId: string;
+  /** The local principal on the source runtime that issued the
+   * invite. Recorded for audit only — the signature is over the
+   * runtime-level pre-image. */
+  sourcePrincipalDid: string;
+  /** The channel id (`chan_<8 base36>`). The receiver looks up the
+   * local mirror directory and calls `join_remote` with the rest of
+   * the envelope to bootstrap it. */
+  channelId: string;
+  /** The creator's display name (principal DID, e.g. `prin_alice`).
+   * Snapshotted from the source runtime's `meta.json` at invite
+   * time so the receiver doesn't need a follow-up `peek` to display
+   * the channel. */
+  creator: string;
+  /** Human-readable channel name (`team`, `general`, etc.).
+   * Snapshotted from the source runtime's `meta.json` at invite
+   * time. */
+  name: string;
+  /** Initial membership snapshot: every principal that should
+   * appear in the receiver's `members.json` row table. The
+   * receiver partitions on `runtime_id` to build both the
+   * `members` and `remote_members` arrays. */
+  initialMembers: InitialMember[];
+  /** Ed25519 signature, base64url-encoded, over the canonical
+   * pre-image described in the Rust module docs (domain tag
+   * `channel-invite:v1` — distinct from the channel-event tag
+   * `channel:v1` so a signature over a channel event cannot be
+   * replayed as a channel invite or vice versa). The hub forwards
+   * this verbatim; the receiver verifies end-to-end. */
+  signature: string;
+}
+
 export type TunnelMessage =
   | {
       type: "runtime_hello";
@@ -249,7 +388,42 @@ export type TunnelMessage =
       principal: string;
       jti: string;
     }
-  | { type: "invite_revoked"; requestId: string; jti: string };
+  | { type: "invite_revoked"; requestId: string; jti: string }
+  // peko-channel cross-runtime PR-C: cross-runtime channel events.
+  // The hub is pure relay — it reads `sourceRuntimeId` to enforce
+  // the source allowlist and `recipientRuntimeId` to route to the
+  // correct recipient tunnel connection. The `event`, `signature`,
+  // and `sourcePrincipalDid` fields are forwarded verbatim.
+  | {
+      type: "tunnel_channel_event";
+      requestId: string;
+      sourceRuntimeId: string;
+      recipientRuntimeId: string;
+      sourcePrincipalDid: string;
+      channelId: string;
+      event: ChannelEvent;
+      signature: string;
+    }
+  // peko-channel cross-runtime PR-3a-followup: cross-runtime
+  // channel invites. Hub is pure relay (same shape as the
+  // channel-event path): source allowlist + recipient lookup +
+  // forward verbatim. Invites are push-only (no request/response),
+  // so the hub does NOT carry a `tunnel_channel_invite_ack`
+  // variant. The runtime emits one `TunnelChannelInvite` per
+  // unique invitee runtime (deduped on the source side by
+  // `runtime_id`).
+  | {
+      type: "tunnel_channel_invite";
+      requestId: string;
+      sourceRuntimeId: string;
+      recipientRuntimeId: string;
+      sourcePrincipalDid: string;
+      channelId: string;
+      creator: string;
+      name: string;
+      initialMembers: InitialMember[];
+      signature: string;
+    };
 
 export function encodeTunnelMessage(msg: TunnelMessage): Buffer {
   return Buffer.from(JSON.stringify(msg), "utf-8");
