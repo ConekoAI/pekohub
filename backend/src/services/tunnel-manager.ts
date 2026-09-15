@@ -796,11 +796,34 @@ export class TunnelManager {
     }
   }
 
+  /**
+   * Ownership guard for instance-tunnel messages. An authenticated
+   * tunnel connection may only touch instance rows hosted by its own
+   * runtime — without this, any connected runtime could heartbeat /
+   * re-status / delete another user's instances (the HTTP routes
+   * enforce `isOwner`; these messages had no scoping at all).
+   */
+  private async instanceOwnedByRuntime(
+    runtimeId: string,
+    instanceId: string,
+  ): Promise<boolean> {
+    const instance = await instanceService.getById(instanceId);
+    if (!instance || instance.runtimeId !== runtimeId) {
+      this.fastify.log.warn(
+        { runtimeId, instanceId },
+        "Instance-tunnel message rejected: instance not hosted by this runtime",
+      );
+      return false;
+    }
+    return true;
+  }
+
   private async handleInstanceHeartbeat(
     runtimeId: string,
     payload: InstanceHeartbeatPayload,
   ): Promise<void> {
     try {
+      if (!(await this.instanceOwnedByRuntime(runtimeId, payload.id))) return;
       await instanceService.heartbeat(
         payload.id,
         payload.status as InstanceStatus,
@@ -814,10 +837,12 @@ export class TunnelManager {
   }
 
   private async handleStatusUpdate(
-    _runtimeId: string,
+    runtimeId: string,
     payload: StatusUpdatePayload,
   ): Promise<void> {
     try {
+      if (!(await this.instanceOwnedByRuntime(runtimeId, payload.instanceId)))
+        return;
       await instanceService.update(payload.instanceId, {
         status: payload.status,
       });
@@ -830,10 +855,11 @@ export class TunnelManager {
   }
 
   private async handleInstanceDeregister(
-    _runtimeId: string,
+    runtimeId: string,
     payload: InstanceDeregisterPayload,
   ): Promise<void> {
     try {
+      if (!(await this.instanceOwnedByRuntime(runtimeId, payload.id))) return;
       await instanceService.delete(payload.id);
     } catch (err) {
       this.fastify.log.warn(
