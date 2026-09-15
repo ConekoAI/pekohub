@@ -92,7 +92,6 @@ export type InstanceExposure =
   | "private"
   | "public"
   | "unlisted";
-export type TransportPreference = "auto" | "tunnel" | "direct";
 
 export type PublicCategory =
   | "productivity"
@@ -144,7 +143,6 @@ export interface InstanceRecord {
   };
 
   // Transport preference for cross-runtime principal_send.
-  transportPreference: TransportPreference;
 
   // ADR-041: per-Principal DID, set by the runtime on
   // `instance_announce`. The by-did resolver
@@ -179,7 +177,6 @@ export interface CreateInstanceInput {
   weeklyQuota?: number;
 
   // Transport preference for cross-runtime principal_send.
-  transportPreference?: TransportPreference;
 
   // ADR-041: per-Principal DID, set on `instance_announce`. Unique
   // when present.
@@ -208,7 +205,6 @@ export interface UpdateInstanceInput {
   featured?: boolean;
 
   // Transport preference for cross-runtime principal_send.
-  transportPreference?: TransportPreference;
 
   // ADR-041: per-Principal DID. Set by the runtime on
   // `instance_announce` and re-keyed by the cross-runtime
@@ -249,8 +245,6 @@ export interface PrincipalTargetResolution {
   principalDid: string;
   ownerSubject: Subject;
   exposure: InstanceExposure;
-  transportPreference: TransportPreference;
-  directEndpoint: string | null;
 }
 
 /**
@@ -386,7 +380,6 @@ export class InstanceService {
         // include in the INSERT", so the default `null` from the
         // schema applies.
         principalDid: input.principalDid ?? undefined,
-        transportPreference: input.transportPreference ?? undefined,
       })
       .returning();
 
@@ -486,8 +479,6 @@ export class InstanceService {
     if (input.publishedAt !== undefined) values.publishedAt = input.publishedAt;
     if (input.featured !== undefined) values.featured = input.featured;
     if (input.principalDid !== undefined) values.principalDid = input.principalDid;
-    if (input.transportPreference !== undefined)
-      values.transportPreference = input.transportPreference;
 
     if (Object.keys(values).length === 0) {
       return this.getById(id);
@@ -625,10 +616,6 @@ export class InstanceService {
     }
 
     if (instance.exposure === "public" || (await subjectCanAccess(owner, caller))) {
-      const runtime = await db.query.runtimes.findFirst({
-        where: eq(runtimes.runtimeDid, instance.runtimeId),
-        columns: { directEndpoint: true },
-      });
       return {
         status: "hit",
         resolution: {
@@ -641,8 +628,6 @@ export class InstanceService {
           principalDid: instance.principalDid ?? "",
           ownerSubject: owner,
           exposure: instance.exposure,
-          transportPreference: instance.transportPreference ?? "auto",
-          directEndpoint: runtime?.directEndpoint ?? null,
         },
       };
     }
@@ -671,7 +656,6 @@ export class InstanceService {
       if (input.principalDid !== undefined) values.principalDid = input.principalDid;
       // Persist the per-Principal transport preference on re-announce.
       // Treat `undefined` as "leave the existing value alone".
-      if (input.transportPreference !== undefined) values.transportPreference = input.transportPreference;
       const updated = await this.update(input.id!, values);
       return updated!;
     }
@@ -842,8 +826,6 @@ export class InstanceService {
       },
       // ADR-041: per-Principal DID from `instance_announce`.
       principalDid: row.principalDid ?? null,
-      transportPreference:
-        (row.transportPreference as TransportPreference | null) ?? "auto",
     };
   }
 }

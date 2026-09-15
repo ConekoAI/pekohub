@@ -13,7 +13,7 @@ describe("TunnelRouter", () => {
 
   it("sendControl does not throw even when broadcastControl fails", () => {
     const manager = new TunnelManager(app);
-    const router = new TunnelRouter(manager);
+    const router = new TunnelRouter(manager, { issuer: "http://localhost:4000", jwtSecret: "test-secret-at-least-32-chars-long" });
 
     // Force broadcastControl to throw by mocking it
     manager.broadcastControl = async () => {

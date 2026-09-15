@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { bridgeJwks } from "./services/bridge-token.js";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
@@ -141,6 +142,14 @@ async function main() {
   // `fastify.authenticate` is the gate.
   await app.register(principalDirectoryRoutes, { prefix: "/v1" });
   await app.register(adminRoutes, { prefix: "/v1/admin" });
+
+  // ADR-057: bridge-token verification keys. Runtimes fetch this to
+  // validate the EdDSA tokens the hub mints when proxying chat (the
+  // runtime derives `{origin}/v1/jwks.json` from its pekohub
+  // credential); the /.well-known path is the conventional alias.
+  const jwksHandler = async () => bridgeJwks(app.config.JWT_SECRET);
+  app.get("/v1/jwks.json", jwksHandler);
+  app.get("/.well-known/jwks.json", jwksHandler);
   await app.register(oauthRoutes, { prefix: "/v1/auth" });
   await app.register(apiKeyRoutes, { prefix: "/v1/auth" });
 

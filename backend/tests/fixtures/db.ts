@@ -157,7 +157,6 @@ const DDL_STATEMENTS = [
     featured BOOLEAN DEFAULT FALSE,
     monetization JSONB DEFAULT '{"enabled":false}',
     -- Transport preference for cross-runtime principal_send.
-    transport_preference VARCHAR(20) DEFAULT 'auto' NOT NULL,
     -- Issue #14: per-agent DID, populated by the runtime's
     -- instance_announce message (peko-runtime#34) and indexed by
     -- the by-did resolver.
@@ -187,7 +186,6 @@ const DDL_STATEMENTS = [
     runtime_did VARCHAR(255) NOT NULL UNIQUE,
     owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     display_name VARCHAR(255),
-    direct_endpoint VARCHAR(512),
     last_seen_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
   );`,

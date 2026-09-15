@@ -54,6 +54,10 @@ export async function buildTunnelTestApp(testDb: TestDb) {
   const tunnelRouter = new TunnelRouter(
     tunnelManager,
     new InMemoryQuotaStore(),
+    {
+      issuer: "http://localhost:4000",
+      jwtSecret: process.env.JWT_SECRET as string,
+    },
   );
   app.decorate("tunnelManager", tunnelManager);
   app.decorate("tunnelRouter", tunnelRouter);

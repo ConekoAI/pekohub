@@ -115,6 +115,7 @@ async function buildApp(): Promise<FastifyInstance> {
     MEILISEARCH_URL: "http://localhost:7700",
     MEILISEARCH_API_KEY: "test",
     JWT_SECRET: "test-secret-must-be-at-least-32-characters-long",
+    PUBLIC_ORIGIN: "http://localhost:4000",
     REGISTRY_BASE_URL: "http://localhost:3000",
     ALLOW_DEV_AUTH_BYPASS: "true",
     RATE_LIMIT_MAX: 100,
