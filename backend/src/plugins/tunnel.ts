@@ -24,6 +24,10 @@ export default fp(async (fastify: FastifyInstance) => {
   const tunnelRouter = new TunnelRouter(
     tunnelManager,
     new InMemoryQuotaStore(),
+    {
+      issuer: fastify.config.PUBLIC_ORIGIN,
+      jwtSecret: fastify.config.JWT_SECRET,
+    },
   );
 
   fastify.decorate("tunnelManager", tunnelManager);

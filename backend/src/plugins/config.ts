@@ -17,6 +17,10 @@ const schema = z.object({
   MEILISEARCH_URL: z.string().url(),
   MEILISEARCH_API_KEY: z.string(),
   JWT_SECRET: z.string().min(32),
+  // Public origin of this hub. Must match the origin runtimes derive
+  // from their pekohub credential (tunnel URL scheme swapped to
+  // https) — it is the bridge token's `iss` and the JWKS host.
+  PUBLIC_ORIGIN: z.string().url().default("https://pekohub.org"),
   GITHUB_CLIENT_ID: z.string().optional(),
   GITHUB_CLIENT_SECRET: z.string().optional(),
   GOOGLE_CLIENT_ID: z.string().optional(),

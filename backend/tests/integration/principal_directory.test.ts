@@ -66,8 +66,6 @@ describe("Agent directory API", () => {
         principalDid: REAL_DID,
         ownerSubject: { kind: "user", id: String(owner.id) },
         exposure: "private",
-        transportPreference: "auto",
-        directEndpoint: null,
       });
     });
 
@@ -165,60 +163,6 @@ describe("Agent directory API", () => {
       expect(response.statusCode).toBe(400);
     });
 
-    it("returns the principal transport preference", async () => {
-      const app = await buildTestApp({ testDb });
-      const owner = await createUser(testDb.client, { namespace: "alice" });
-      const headers = await authHeaders(owner);
-
-      await createInstance(testDb.client, {
-        ownerSubject: { kind: "user", id: String(owner.id) },
-        name: "helper",
-        exposure: "private",
-        principalDid: REAL_DID,
-        transportPreference: "direct",
-      });
-
-      const response = await app.inject({
-        method: "GET",
-        url: `/v1/principals/by-did/${encodeURIComponent(REAL_DID)}`,
-        headers,
-      });
-
-      expect(response.statusCode).toBe(200);
-      const body = JSON.parse(response.payload);
-      expect(body.transportPreference).toBe("direct");
-    });
-
-    it("returns the runtime direct endpoint", async () => {
-      const app = await buildTestApp({ testDb });
-      const owner = await createUser(testDb.client, { namespace: "alice" });
-      const headers = await authHeaders(owner);
-
-      const runtimeDid = `did:key:z${faker.string.alphanumeric(40)}`;
-      await createRuntime(testDb.client, {
-        runtimeDid,
-        ownerId: owner.id,
-        directEndpoint: "wss://example.com:11436",
-      });
-
-      await createInstance(testDb.client, {
-        ownerSubject: { kind: "user", id: String(owner.id) },
-        name: "helper",
-        exposure: "private",
-        principalDid: REAL_DID,
-        runtimeId: runtimeDid,
-      });
-
-      const response = await app.inject({
-        method: "GET",
-        url: `/v1/principals/by-did/${encodeURIComponent(REAL_DID)}`,
-        headers,
-      });
-
-      expect(response.statusCode).toBe(200);
-      const body = JSON.parse(response.payload);
-      expect(body.directEndpoint).toBe("wss://example.com:11436");
-    });
   });
 
   describe("GET /v1/principals/by-handle/:owner/:principal_name", () => {
@@ -248,8 +192,6 @@ describe("Agent directory API", () => {
         principalDid: REAL_DID,
         ownerSubject: { kind: "user", id: String(owner.id) },
         exposure: "private",
-        transportPreference: "auto",
-        directEndpoint: null,
       });
     });
 

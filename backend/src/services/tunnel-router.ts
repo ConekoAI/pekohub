@@ -7,6 +7,7 @@ import type { TunnelManager } from "./tunnel-manager.js";
 import type { HttpProxiedRequest, TunnelMessage } from "./tunnel-protocol.js";
 import { subjectToString, type Subject } from "@pekohub/shared";
 import type { QuotaStore } from "./quotas.js";
+import { mintBridgeToken } from "./bridge-token.js";
 
 /** Quota row shape pulled from `instances`. Kept as a narrow
  *  interface so the route layer can map Drizzle rows without
@@ -71,24 +72,45 @@ function writeStreamHeaders(reply: FastifyReply): void {
  *   visitors land in two chat-log shards, and a returning
  *   visitor on the same cookie resumes its own thread.
  */
+interface BridgeConfig {
+  /** Hub public origin — becomes the bridge token's `iss`. */
+  issuer: string;
+  jwtSecret: string;
+}
+
+/**
+ * ADR-057: the caller's identity reaches the runtime ONLY as a signed
+ * EdDSA bridge token (`Authorization: Bearer <jwt>`, aud = the target
+ * runtime DID, 60s expiry). The retired `x-pekohub-user-id` /
+ * `x-pekohub-caller-principal` headers were unverified hub-asserted
+ * claims and are no longer sent.
+ */
 function bridgeHeadersFor(
   base: Record<string, string>,
   caller: Subject | null,
   visitorId: string | null,
+  runtimeId: string,
+  bridge: BridgeConfig,
 ): Record<string, string> {
-  if (caller === null) {
-    return visitorId ? { ...base, "x-pekohub-user-id": visitorId } : base;
-  }
-  if (caller.kind === "user") {
-    return { ...base, "x-pekohub-user-id": caller.id };
-  }
-  return { ...base, "x-pekohub-caller-principal": subjectToString(caller) };
+  const sub =
+    caller === null
+      ? (visitorId ?? "anonymous")
+      : caller.kind === "user"
+        ? caller.id
+        : subjectToString(caller);
+  const token = mintBridgeToken(bridge.jwtSecret, {
+    sub,
+    aud: runtimeId,
+    iss: bridge.issuer,
+  });
+  return { ...base, authorization: `Bearer ${token}` };
 }
 
 export class TunnelRouter {
   constructor(
     private tunnelManager: TunnelManager,
     private quotaStore: QuotaStore,
+    private bridge: BridgeConfig,
   ) {}
 
   /**
@@ -146,7 +168,7 @@ export class TunnelRouter {
       return reply.status(502).send({ error: "Instance unreachable" });
     }
 
-    const mergedHeaders = bridgeHeadersFor(headers, caller, visitorId);
+    const mergedHeaders = bridgeHeadersFor(headers, caller, visitorId, runtimeId, this.bridge);
 
     const request: HttpProxiedRequest = {
       requestId: crypto.randomUUID(),
@@ -216,7 +238,7 @@ export class TunnelRouter {
       return reply.status(502).send({ error: "Instance unreachable" });
     }
 
-    const mergedHeaders = bridgeHeadersFor(headers, caller, visitorId);
+    const mergedHeaders = bridgeHeadersFor(headers, caller, visitorId, runtimeId, this.bridge);
 
     const request: HttpProxiedRequest = {
       requestId: crypto.randomUUID(),

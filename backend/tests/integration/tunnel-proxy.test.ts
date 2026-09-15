@@ -228,7 +228,7 @@ describe("Tunnel Proxy Integration", () => {
       expect(events[events.length - 1]).toMatchObject({ done: true });
     });
 
-    it("includes x-pekohub-user-id in proxied request headers for private instance chat", async () => {
+    it("sends a signed bridge token (no x-pekohub-user-id) for private instance chat", async () => {
       const { app, tunnelManager } = await buildTunnelTestApp(testDb);
       const user = await createUser(testDb.client, { namespace: "alice" });
       const headers = await authHeaders(user);
@@ -275,7 +275,15 @@ describe("Tunnel Proxy Integration", () => {
         Buffer.from(proxiedRequest.payload).toString("utf8"),
       );
       expect(decoded.headers).toBeDefined();
-      expect(decoded.headers["x-pekohub-user-id"]).toBe(String(user.id));
+      // ADR-057: identity travels only as an EdDSA bridge token.
+      expect(decoded.headers["x-pekohub-user-id"]).toBeUndefined();
+      const auth = decoded.headers["authorization"] as string;
+      expect(auth).toMatch(/^Bearer /);
+      const claims = JSON.parse(
+        Buffer.from(auth.slice("Bearer ".length).split(".")[1], "base64url").toString("utf8"),
+      );
+      expect(claims.sub).toBe(String(user.id));
+      expect(claims.aud).toBe(did);
 
       // Complete the stream so the HTTP side doesn't hang
       socket.triggerMessage({
@@ -450,7 +458,7 @@ describe("Tunnel Proxy Integration", () => {
   // because no tunnel was wired. These tests wire a real tunnel manager,
   // connect a mock runtime, and assert end-to-end SSE shapes:
   //
-  //   - PR-B1: visitor cookie minted, x-pekohub-user-id set on
+  //   - PR-B1: visitor cookie minted, bridge token (ADR-057) set on
   //     proxied_request (anonymous chat no longer 403s).
   //   - PR-B2: stream_iteration tunnel frame is re-projected as
   //     `event: iteration` SSE line.
@@ -548,7 +556,7 @@ describe("Tunnel Proxy Integration", () => {
       expect(doneFrames.length).toBeGreaterThanOrEqual(1);
     });
 
-    it("mints a visitor cookie + injects x-pekohub-user-id on the proxied request", async () => {
+    it("mints a visitor cookie + sends a signed bridge token on the proxied request", async () => {
       const { app, socket, instance } = await bootPublicHarness();
 
       const chatPromise = app.inject({

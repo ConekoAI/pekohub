@@ -80,7 +80,6 @@ export interface StreamIterationPayload {
 export type InstanceStatus = "online" | "offline" | "busy" | "error";
 export type InstanceExposure = "private" | "public" | "unexposed" | "unlisted";
 export type InstanceType = "principal";
-export type TransportPreference = "auto" | "tunnel" | "direct";
 
 export interface InstanceAnnouncePayload {
   id: string;
@@ -107,11 +106,6 @@ export interface InstanceAnnouncePayload {
   // runtimes still announce cleanly. Omit to leave the existing
   // value alone in the service layer.
   principalDid?: string;
-  // Callee transport preference; optional for back-compat.
-  transportPreference?: TransportPreference;
-  // Runtime-level advertised direct endpoint for inbound direct
-  // cross-runtime connections.
-  runtimeDirectEndpoint?: string;
 }
 
 export interface InstanceHeartbeatPayload {

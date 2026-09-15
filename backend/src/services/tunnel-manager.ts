@@ -776,18 +776,7 @@ export class TunnelManager {
         // the service layer leaves the existing column alone in that
         // case (see `upsertFromAnnounce`).
         principalDid: payload.principalDid,
-        // Callee transport preference; omit to leave existing value.
-        transportPreference: payload.transportPreference,
       });
-
-      // Update the runtime-level advertised direct endpoint when the
-      // runtime includes it in the announce payload.
-      if (payload.runtimeDirectEndpoint !== undefined) {
-        await db
-          .update(runtimes)
-          .set({ directEndpoint: payload.runtimeDirectEndpoint, lastSeenAt: new Date() })
-          .where(eq(runtimes.runtimeDid, runtimeId));
-      }
     } catch (err) {
       this.fastify.log.warn(
         { err, runtimeId, instanceId: payload.id },
@@ -796,11 +785,34 @@ export class TunnelManager {
     }
   }
 
+  /**
+   * Ownership guard for instance-tunnel messages. An authenticated
+   * tunnel connection may only touch instance rows hosted by its own
+   * runtime — without this, any connected runtime could heartbeat /
+   * re-status / delete another user's instances (the HTTP routes
+   * enforce `isOwner`; these messages had no scoping at all).
+   */
+  private async instanceOwnedByRuntime(
+    runtimeId: string,
+    instanceId: string,
+  ): Promise<boolean> {
+    const instance = await instanceService.getById(instanceId);
+    if (!instance || instance.runtimeId !== runtimeId) {
+      this.fastify.log.warn(
+        { runtimeId, instanceId },
+        "Instance-tunnel message rejected: instance not hosted by this runtime",
+      );
+      return false;
+    }
+    return true;
+  }
+
   private async handleInstanceHeartbeat(
     runtimeId: string,
     payload: InstanceHeartbeatPayload,
   ): Promise<void> {
     try {
+      if (!(await this.instanceOwnedByRuntime(runtimeId, payload.id))) return;
       await instanceService.heartbeat(
         payload.id,
         payload.status as InstanceStatus,
@@ -814,10 +826,12 @@ export class TunnelManager {
   }
 
   private async handleStatusUpdate(
-    _runtimeId: string,
+    runtimeId: string,
     payload: StatusUpdatePayload,
   ): Promise<void> {
     try {
+      if (!(await this.instanceOwnedByRuntime(runtimeId, payload.instanceId)))
+        return;
       await instanceService.update(payload.instanceId, {
         status: payload.status,
       });
@@ -830,10 +844,11 @@ export class TunnelManager {
   }
 
   private async handleInstanceDeregister(
-    _runtimeId: string,
+    runtimeId: string,
     payload: InstanceDeregisterPayload,
   ): Promise<void> {
     try {
+      if (!(await this.instanceOwnedByRuntime(runtimeId, payload.id))) return;
       await instanceService.delete(payload.id);
     } catch (err) {
       this.fastify.log.warn(
