@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import { bridgeJwks } from "../../src/services/bridge-token.js";
 import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
 
@@ -162,6 +163,14 @@ async function main() {
   await app.register(runtimeApiRoutes, { prefix: "/v1" });
   await app.register(principalDirectoryRoutes, { prefix: "/v1" });
   await app.register(adminRoutes, { prefix: "/v1/admin" });
+
+  // ADR-057: bridge-token verification keys — the runtime fetches these
+  // to validate the EdDSA tokens the tunnel router mints when proxying
+  // chat. Mirrors src/index.ts; this fixture is what the integration
+  // stack actually runs (see .github/docker/pekohub-test/Dockerfile).
+  const jwksHandler = async () => bridgeJwks(app.config.JWT_SECRET);
+  app.get("/v1/jwks.json", jwksHandler);
+  app.get("/.well-known/jwks.json", jwksHandler);
   await app.register(oauthRoutes, { prefix: "/v1/auth" });
   await app.register(apiKeyRoutes, { prefix: "/v1/auth" });
 
