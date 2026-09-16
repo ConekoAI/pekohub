@@ -160,7 +160,10 @@ const DDL_STATEMENTS = [
     -- Issue #14: per-agent DID, populated by the runtime's
     -- instance_announce message (peko-runtime#34) and indexed by
     -- the by-did resolver.
-    principal_did VARCHAR(512)
+    principal_did VARCHAR(512),
+    -- ADR-058 D4: true only when the announcing runtime proved
+    -- possession of the principal DID's key via principalPop.
+    principal_did_verified BOOLEAN DEFAULT FALSE NOT NULL
   );`,
   `CREATE INDEX IF NOT EXISTS idx_instances_runtime_id ON instances(runtime_id);`,
   `CREATE INDEX IF NOT EXISTS idx_instances_exposure_status ON instances(exposure, status);`,

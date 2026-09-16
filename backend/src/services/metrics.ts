@@ -43,12 +43,6 @@ export const metrics = new CounterRegistry();
  * in one call site doesn't silently spawn a sibling counter.
  */
 export const CounterName = {
-  HubA2AForwarded: "hub.a2a.forwarded",
-  HubA2ARejectedSourceAllowlist: "hub.a2a.rejected_source_allowlist",
-  HubA2ATargetMissing: "hub.a2a.target_missing",
-  HubA2ATargetOffline: "hub.a2a.target_offline",
-  HubA2AForbidden: "hub.a2a.forbidden",
-  HubA2ATimeout: "hub.a2a.timeout",
   // peko-channel cross-runtime PR-C. Channel events are push-only
   // (no request/response), so the counter set is smaller than a2a's:
   // we only count successes + the two error shapes (allowlist

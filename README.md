@@ -110,7 +110,8 @@ All custom endpoints are mounted under `/v1`. OCI endpoints are at `/v2/...`.
 
 | Endpoint | Description |
 |----------|-------------|
-| `POST /v1/runtimes/register` | Upsert a runtime DID into the relay allowlist. Called by `peko tunnel setup`. |
+| `POST /v1/runtimes/register-challenge` | Issue a single-use registration nonce (~60s TTL) for the PoP flow below (ADR-058 D4). |
+| `POST /v1/runtimes/register` | Upsert a runtime DID into the relay allowlist. Called by `peko tunnel setup`. Requires `pop: {nonce, jws}` — a compact EdDSA JWS over canonical JSON `{"nonce","runtimeDid","owner","iat","exp"}` signed with the claimed DID's key (ADR-058 D4). |
 | `GET /v1/runtimes` | List runtimes owned by the caller. |
 | `GET /v1/runtimes/:did` | Get a runtime by DID (owner-only). |
 

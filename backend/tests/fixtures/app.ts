@@ -9,6 +9,7 @@ import { setDb } from "../../src/db/index.js";
 import searchApiRoutes from "../../src/routes/api/search.js";
 import bundleApiRoutes from "../../src/routes/api/bundles.js";
 import instanceRoutes from "../../src/routes/api/instances.js";
+import runtimeRoutes from "../../src/routes/api/runtimes.js";
 import principalDirectoryRoutes from "../../src/routes/api/principals.js";
 import adminRoutes from "../../src/routes/api/admin.js";
 import oauthRoutes from "../../src/routes/auth/oauth.js";
@@ -110,6 +111,7 @@ export async function buildTestApp(options: TestAppOptions) {
   await app.register(searchApiRoutes, { prefix: "/v1" });
   await app.register(bundleApiRoutes, { prefix: "/v1" });
   await app.register(instanceRoutes, { prefix: "/v1" });
+  await app.register(runtimeRoutes, { prefix: "/v1" });
   // Issue #14: agent directory (by-did / by-handle) for tests.
   await app.register(principalDirectoryRoutes, { prefix: "/v1" });
   await app.register(adminRoutes, { prefix: "/v1/admin" });

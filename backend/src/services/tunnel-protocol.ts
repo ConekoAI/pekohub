@@ -106,6 +106,15 @@ export interface InstanceAnnouncePayload {
   // runtimes still announce cleanly. Omit to leave the existing
   // value alone in the service layer.
   principalDid?: string;
+  // ADR-058 D4: proof of possession for `principalDid`. A compact
+  // JWS (EdDSA, embedded payload) over canonical JSON
+  // {"runtimeId","principalDid","iat","exp"} signed with the
+  // PRINCIPAL's key. REQUIRED when `principalDid` is a `did:key:...`
+  // — the hub rejects the announce otherwise (directory poisoning
+  // guard). Omitted for legacy (non-did:key) principal ids, which
+  // the hub stores as unverified. The runtime only sends this for
+  // did:key principals.
+  principalPop?: string;
 }
 
 export interface InstanceHeartbeatPayload {
@@ -128,35 +137,6 @@ export interface ExposureUpdatePayload {
 export interface StatusUpdatePayload {
   instanceId: string;
   status: InstanceStatus;
-}
-
-// ── Cross-runtime a2a (issue #16, ADR-041 P2P) ───────────────────────────────
-//
-// The hub forwards these envelopes *opaquely* between runtime tunnels.
-// It reads only the routing fields (`callerRuntimeId`, `targetPrincipalDid`,
-// `requestId`); the `signature` and `message` are relayed verbatim so the
-// target runtime can verify end-to-end. Synthesized error responses use
-// the same `principal_to_principal_response` envelope with a JSON-encoded
-// payload shaped `{ kind: "error", code, message }`.
-
-export interface PrincipalToPrincipalRequestPayload {
-  requestId: string;
-  callerRuntimeId: string;
-  callerPrincipalDid: string;
-  targetPrincipalDid: string;
-  message: string;
-  signature: string;
-}
-
-export interface PrincipalToPrincipalResponsePayload {
-  requestId: string;
-  /**
-   * Opaque to the hub — relayed verbatim. Successful responses carry
-   * the runtime's `principal_send` result string; failures
-   * (synthesized by the hub on missing target, ACL deny, etc.)
-   * carry a JSON-encoded `{ kind: "error", code, message }` object.
-   */
-  payload: string;
 }
 
 // ── Cross-runtime channel events (peko-channel cross-runtime PR-C) ──────────
@@ -220,10 +200,18 @@ export interface TunnelChannelEventPayload {
   channelId: string;
   /** The full `ChannelEvent` payload. Forwarded verbatim. */
   event: ChannelEvent;
-  /** Ed25519 signature, base64url-encoded, over the canonical
-   * pre-image described in the Rust module docs. The hub forwards
-   * this verbatim; the receiver verifies end-to-end. */
+  /** ADR-058 D3: compact JWS (EdDSA, embedded payload) by the source
+   * runtime's key. The payload carries every envelope field plus
+   * `iat`/`exp`. The hub forwards this verbatim; the receiver
+   * verifies end-to-end. */
   signature: string;
+  /** ADR-058 D2: compact JWS by the authoring principal's own key
+   * over the SAME payload segment as `signature`. Empty when the
+   * author has no vault-backed key (legacy runtime-vouched path).
+   * The hub forwards this verbatim; the receiver verifies it against
+   * the key embedded in `sourcePrincipalDid` when that is a
+   * `did:key`. */
+  authorSignature: string;
 }
 
 // ── Cross-runtime channel invites (peko-channel cross-runtime PR-3a-followup) ─
@@ -289,13 +277,17 @@ export interface TunnelChannelInvitePayload {
    * receiver partitions on `runtime_id` to build both the
    * `members` and `remote_members` arrays. */
   initialMembers: InitialMember[];
-  /** Ed25519 signature, base64url-encoded, over the canonical
-   * pre-image described in the Rust module docs (domain tag
-   * `channel-invite:v1` — distinct from the channel-event tag
-   * `channel:v1` so a signature over a channel event cannot be
-   * replayed as a channel invite or vice versa). The hub forwards
-   * this verbatim; the receiver verifies end-to-end. */
+  /** ADR-058 D3: compact JWS (EdDSA, embedded payload) by the source
+   * runtime's key. The payload carries every envelope field plus
+   * `iat`/`exp`. The hub forwards this verbatim; the receiver
+   * verifies end-to-end. */
   signature: string;
+  /** ADR-058 D2: compact JWS by the creator principal's own key over
+   * the SAME payload segment as `signature`. Empty for legacy
+   * runtime-vouched invites; required (plus
+   * `creatorDid === sourcePrincipalDid`) when `creatorDid` is a
+   * `did:key`. The hub forwards this verbatim. */
+  authorSignature: string;
 }
 
 export type TunnelMessage =
@@ -336,21 +328,6 @@ export type TunnelMessage =
   | { type: "instance_deregister"; payload: InstanceDeregisterPayload }
   | { type: "exposure_update"; payload: ExposureUpdatePayload }
   | { type: "status_update"; payload: StatusUpdatePayload }
-  // Cross-runtime P2P forwarding — see backend issue #16 + ADR-041.
-  | {
-      type: "principal_to_principal_request";
-      requestId: string;
-      callerRuntimeId: string;
-      callerPrincipalDid: string;
-      targetPrincipalDid: string;
-      message: string;
-      signature: string;
-    }
-  | {
-      type: "principal_to_principal_response";
-      requestId: string;
-      payload: string;
-    }
   // PR #11: invite-token mint / revoke. The hub does not understand
   // the token shape — it just forwards the request to the runtime
   // and surfaces the response. The runtime's InviteRevocationSet

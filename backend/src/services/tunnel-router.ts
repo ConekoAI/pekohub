@@ -5,7 +5,7 @@
 import type { FastifyReply } from "fastify";
 import type { TunnelManager } from "./tunnel-manager.js";
 import type { HttpProxiedRequest, TunnelMessage } from "./tunnel-protocol.js";
-import { subjectToString, type Subject } from "@pekohub/shared";
+import type { Subject } from "@pekohub/shared";
 import type { QuotaStore } from "./quotas.js";
 import { mintBridgeToken } from "./bridge-token.js";
 
@@ -53,24 +53,11 @@ function writeStreamHeaders(reply: FastifyReply): void {
 }
 
 /**
- * Build the bridge headers for a proxied request. Issue #11: the hub
- * now identifies callers by a `Principal`, not just a numeric user id.
- *
- * - User callers get the legacy `x-pekohub-user-id` header (preserves
- *   the pre-#11 runtime's caller-resolution path).
- * - Subject-kind callers (Principal only post-#82) get `x-pekohub-caller-principal`
- *   (the runtime-side reader is gated on peko-runtime#16). The
- *   legacy user-id header is omitted for non-User callers so the
- *   runtime's `resolve_bridge_caller` doesn't attribute an Agent
- *   request to a non-existent user.
- * - Anonymous public chat (PR-B1): when caller is null and a
- *   visitor cookie is present, fall back to `x-pekohub-user-id:
- *   <visitorId>`. The runtime's `Subject::from_bridge_user`
- *   projects the bare UUID to `Subject::User(<uuid>)`, which
- *   the chat-log store keys on (see
- *   `peko-runtime/peko-rs/chat-log/src/types.rs`) — so two
- *   visitors land in two chat-log shards, and a returning
- *   visitor on the same cookie resumes its own thread.
+ * Bridge identity is conveyed exclusively by the signed EdDSA token
+ * minted in `bridgeHeadersFor` below (ADR-057 + ADR-058 D5) — see
+ * that function's doc for the typed `kind` claim contract. The
+ * historical `x-pekohub-user-id` / `x-pekohub-caller-principal`
+ * headers are retired.
  */
 interface BridgeConfig {
   /** Hub public origin — becomes the bridge token's `iss`. */
@@ -84,6 +71,14 @@ interface BridgeConfig {
  * runtime DID, 60s expiry). The retired `x-pekohub-user-id` /
  * `x-pekohub-caller-principal` headers were unverified hub-asserted
  * claims and are no longer sent.
+ *
+ * ADR-058 D5: the token carries a typed `kind` claim —
+ *   - authenticated hub caller → `kind: "user"`, `sub` = hub user id
+ *   - anonymous public chat    → `kind: "visitor"`, `sub` = the
+ *     HMAC-verified (or freshly minted) visitor id from
+ *     `visitor-cookie.ts`
+ * There is NO `principal:<did>` sub path — the hub never signs a
+ * caller-influenced identifier into a bridge token.
  */
 function bridgeHeadersFor(
   base: Record<string, string>,
@@ -92,14 +87,25 @@ function bridgeHeadersFor(
   runtimeId: string,
   bridge: BridgeConfig,
 ): Record<string, string> {
-  const sub =
-    caller === null
-      ? (visitorId ?? "anonymous")
-      : caller.kind === "user"
-        ? caller.id
-        : subjectToString(caller);
+  let sub: string;
+  let kind: "user" | "visitor";
+  if (caller === null) {
+    sub = visitorId ?? "anonymous";
+    kind = "visitor";
+  } else if (caller.kind === "user") {
+    sub = caller.id;
+    kind = "user";
+  } else {
+    // Fail closed: a non-user Subject has no bridge representation
+    // post-ADR-058-D5. Currently unreachable — `extractCallerSubject`
+    // only ever yields user-kind callers — but if a future caller
+    // source produces a Principal subject we must refuse rather than
+    // sign an attacker-influenced `principal:<did>` into `sub`.
+    throw new Error(`Cannot mint bridge token for caller kind: ${caller.kind}`);
+  }
   const token = mintBridgeToken(bridge.jwtSecret, {
     sub,
+    kind,
     aud: runtimeId,
     iss: bridge.issuer,
   });

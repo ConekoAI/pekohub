@@ -284,6 +284,14 @@ export const instances = pgTable(
     // endpoint simply 404s when the column is null. The runtime
     // emits `did:peko:principal:<keyhash>` post-#82.
     principalDid: varchar("principal_did", { length: 512 }),
+    // ADR-058 D4: true only when the announcing runtime proved
+    // possession of the principal DID's key via `principalPop`
+    // (did:key principals). Legacy (non-did:key) ids and all rows
+    // predating this column default to false — the directory
+    // consumer can treat unverified DIDs as hints, not identity.
+    principalDidVerified: boolean("principal_did_verified")
+      .default(false)
+      .notNull(),
   },
   (table) => ({
     runtimeIdIdx: index("idx_instances_runtime_id").on(table.runtimeId),

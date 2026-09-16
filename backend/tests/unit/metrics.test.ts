@@ -44,25 +44,25 @@ describe("metrics", () => {
     expect(registry.snapshot()).toEqual({});
   });
 
-  it("CounterName exposes the canonical names from issue #16 §Telemetry", () => {
+  it("CounterName exposes canonical channel-forwarding names", () => {
     // Snapshot the keys — if a name changes, callers depending on the
     // JSON `/metrics` output break. Lock the public surface here.
-    expect(CounterName.HubA2AForwarded).toBe("hub.a2a.forwarded");
-    expect(CounterName.HubA2ARejectedSourceAllowlist).toBe(
-      "hub.a2a.rejected_source_allowlist",
+    // (The retired a2a counters were removed with the p2p relay —
+    // ADR-058 post-review cleanup.)
+    expect(CounterName.HubChannelEventForwarded).toBe(
+      "hub.channel_event.forwarded",
     );
-    expect(CounterName.HubA2ATargetMissing).toBe("hub.a2a.target_missing");
-    expect(CounterName.HubA2ATargetOffline).toBe("hub.a2a.target_offline");
-    expect(CounterName.HubA2AForbidden).toBe("hub.a2a.forbidden");
-    expect(CounterName.HubA2ATimeout).toBe("hub.a2a.timeout");
+    expect(CounterName.HubChannelInviteForwarded).toBe(
+      "hub.channel_invite.forwarded",
+    );
   });
 
   it("default singleton is shared across imports (process-global state)", () => {
     // Two writes from different module references hit the same
     // counter — this is the contract tunnel-manager.ts relies on.
     defaultRegistry.reset();
-    defaultRegistry.inc(CounterName.HubA2AForwarded);
-    expect(defaultRegistry.snapshot()[CounterName.HubA2AForwarded]).toBe(1);
+    defaultRegistry.inc(CounterName.HubChannelEventForwarded);
+    expect(defaultRegistry.snapshot()[CounterName.HubChannelEventForwarded]).toBe(1);
     defaultRegistry.reset();
   });
 });

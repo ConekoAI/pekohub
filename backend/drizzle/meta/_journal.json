@@ -92,6 +92,13 @@
       "when": 1783053317711,
       "tag": "0009_add_transport_preference_and_direct_endpoint",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1789535640718,
+      "tag": "0014_add_principal_did_verified",
+      "breakpoints": true
     }
   ]
 }
