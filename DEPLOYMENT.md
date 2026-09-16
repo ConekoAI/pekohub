@@ -49,6 +49,58 @@ AWS Lightsail ($5-10/mo)
 
 ---
 
+## Runtime-Facing Hostnames (dual-hostname requirement)
+
+The peko runtime hard-codes **two** hub hostnames, and both must
+route to the same backend service:
+
+| Hostname | Used for |
+|----------|----------|
+| `pekohub.ai` | Registry pushes/pulls (`/v2/...`), search + bundle detail (`/api/v1/...`), OAuth (`/api/v1/auth/...`) |
+| `pekohub.org` | Runtime tunnel (`wss://pekohub.org/v1/tunnel`), instance API (`/v1/instances/...`), JWKS (`/v1/jwks.json`) |
+
+- Point **both** A records at the Lightsail static IP (Step 4) and
+  proxy both through Cloudflare. The backend serves all of these
+  paths on the same port — there is nothing extra to deploy.
+- `PUBLIC_ORIGIN` (backend env) must be the origin the runtimes
+  build their bridge-token JWKS validator from — they derive
+  `{origin}/v1/jwks.json` from their pekohub credential (tunnel URL
+  with the scheme swapped to `https`). With the tunnel at
+  `wss://pekohub.org/v1/tunnel`, set `PUBLIC_ORIGIN=https://pekohub.org`.
+  A mismatch means every hub-proxied chat request fails signature
+  validation at the runtime.
+- `REGISTRY_BASE_URL` should be `https://pekohub.ai` — it is used to
+  render the `peko pull <host>/<repo>:<tag>` install command in
+  bundle detail responses.
+
+### The `/api/v1/*` surface
+
+The runtime CLI hard-codes the `/api/v1` prefix for its HTTP calls
+(`peko search`, bundle detail, `peko auth login`). The backend
+mounts the search, bundles, and auth route plugins under **both**
+`/v1` (canonical, used by the web SPA) and `/api/v1` (CLI):
+
+- `GET /api/v1/search?q=...`
+- `GET /api/v1/bundles/<namespace>/<name>` (namespace may be
+  multi-segment, e.g. `peko/principals`)
+- `GET /api/v1/auth/<provider>/authorize` + callback
+
+No separate deployment is needed; just make sure your Cloudflare
+page rule bypasses caching for `pekohub.ai/api/*` as well as
+`/v2/*`.
+
+### Blob uploads require auth (breaking change)
+
+`POST /v2/<repo>/blobs/uploads/` and
+`PUT /v2/<repo>/blobs/uploads/<uuid>` previously accepted anonymous
+requests. They now require the same JWT or `pkr_` API key as the
+manifest PUT (the runtime already sends
+`Authorization: Bearer <key>` on every push request, so no CLI
+change is needed). Anonymous `HEAD`/`GET` on blobs and manifests
+stays public so unauthenticated `peko pull` keeps working.
+
+---
+
 ## Prerequisites
 
 - [AWS account](https://aws.amazon.com)
@@ -181,6 +233,7 @@ cd pekohub
 1. Go to [Cloudflare Dashboard](https://dash.cloudflare.com) → your domain
 2. **DNS → Records**
    - **A record**: `pekohub.org` → `YOUR_LIGHTSAIL_STATIC_IP`
+   - **A record**: `pekohub.ai` → `YOUR_LIGHTSAIL_STATIC_IP` (runtime registry/search host — see *Runtime-Facing Hostnames* above)
    - **A record**: `www` → `YOUR_LIGHTSAIL_STATIC_IP` (optional)
    - **CNAME**: `app` → `pekohub.pages.dev` (if using Pages custom domain)
 3. **Proxy status**: Toggle to 🟠 **Proxied** (orange cloud)
@@ -346,6 +399,62 @@ curl "https://pekohub.org/api/v1/search?q=test"
 Visit your frontend URL:
 - `https://pekohub.pages.dev` (default)
 - or `https://app.pekohub.org` (if custom domain configured)
+
+---
+
+## One-Time Production Step: Migration Baseline (2026-09)
+
+The Drizzle migration journal was **re-baselined** in the 2026-09
+backend overhaul: the old chain (`0000`–`0014`, partially applied via
+`drizzle-kit push`) was replaced by two migrations:
+
+- `0000_baseline` — full current schema, for fresh databases
+- `0001_bundle_publisher` — adds `bundles.publisher_id` + backfill
+
+A **fresh** database (new staging environment, rebuilt volume) needs
+nothing — `drizzle-kit migrate` applies both from scratch.
+
+An **existing** production database already has the baseline schema,
+so `drizzle-kit migrate` would fail trying to re-create tables. Mark
+the baseline as applied **once**, before the first deploy of this
+change:
+
+```bash
+# 1. Compute the baseline hash exactly the way drizzle-kit's migrator
+#    does (sha256 of the raw SQL file), and read the journal timestamp.
+cd ~/pekohub/backend
+BASELINE_HASH=$(node -e "console.log(require('crypto').createHash('sha256').update(require('fs').readFileSync('drizzle/0000_baseline.sql','utf8')).digest('hex'))")
+BASELINE_WHEN=$(node -e "console.log(JSON.parse(require('fs').readFileSync('drizzle/meta/_journal.json','utf8')).entries[0].when)")
+echo "$BASELINE_HASH $BASELINE_WHEN"
+
+# 2. Insert the bookkeeping row into the production DB.
+docker compose -f docker-compose.lightsail.yml exec db \
+  psql -U pekohub -d pekohub -c "
+CREATE SCHEMA IF NOT EXISTS drizzle;
+CREATE TABLE IF NOT EXISTS drizzle.__drizzle_migrations (
+  id SERIAL PRIMARY KEY,
+  hash text NOT NULL,
+  created_at bigint
+);
+INSERT INTO drizzle.__drizzle_migrations (hash, created_at)
+VALUES ('$BASELINE_HASH', $BASELINE_WHEN);
+"
+
+# 3. Deploy as usual — `drizzle-kit migrate` now applies only
+#    0001_bundle_publisher (publisher_id column + namespace backfill).
+```
+
+Reference values for this release (verify against the files — they
+change if the baseline is ever regenerated):
+
+- `0000_baseline` hash `be46056b4f706c6b1d1ffb8c61a2af4a8cb022ec80320d5e54621f347d9499cc`, `when` `1789561390317`
+- `0001_bundle_publisher` hash `f65b69a999f35ec9846a73dad4d18414222befce814915328704677af3ad5aff`, `when` `1789561400241`
+
+If the production DB already has a `drizzle.__drizzle_migrations`
+table with rows from the old journal, clear it first
+(`TRUNCATE drizzle.__drizzle_migrations;`) before inserting the
+baseline row — the old hashes no longer correspond to any migration
+file in the repo.
 
 ---
 

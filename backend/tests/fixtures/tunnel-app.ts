@@ -9,6 +9,7 @@ import { TunnelManager } from "../../src/services/tunnel-manager.js";
 import { TunnelRouter } from "../../src/services/tunnel-router.js";
 import { InMemoryQuotaStore } from "../../src/services/quotas.js";
 import instanceRoutes from "../../src/routes/api/instances.js";
+import publicPekoRoutes from "../../src/routes/api/public-pekos.js";
 import principalDirectoryRoutes from "../../src/routes/api/principals.js";
 
 import type { TestDb } from "./db.js";
@@ -95,6 +96,7 @@ export async function buildTunnelTestApp(testDb: TestDb) {
   });
 
   await app.register(instanceRoutes, { prefix: "/v1" });
+  await app.register(publicPekoRoutes, { prefix: "/v1" });
   // Issue #14: directory API is what integration tests assert against
   // after an instance_announce.
   await app.register(principalDirectoryRoutes, { prefix: "/v1" });

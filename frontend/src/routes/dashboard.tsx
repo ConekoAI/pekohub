@@ -101,7 +101,7 @@ function DashboardPage() {
           <Users className="mx-auto h-8 w-8 text-gray-400" />
           <h1 className="mt-3 text-xl font-semibold text-gray-900">Sign in required</h1>
           <p className="mt-2 text-gray-600">
-            Sign in with your PekoHub account to manage your shared principals.
+            Sign in with your PekoHub account to manage your shared pekos.
           </p>
           <button onClick={() => setSignInOpen(true)} className="btn-primary mt-4 inline-flex">
             Sign In
@@ -118,7 +118,7 @@ function DashboardPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
           <p className="mt-1 text-sm text-gray-600">
-            Manage principals shared from your connected runtimes.
+            Manage pekos shared from your connected runtimes.
           </p>
         </div>
         <button
@@ -138,7 +138,7 @@ function DashboardPage() {
       {owned.isLoading ? (
         <div className="mt-12 text-center text-gray-500">
           <Loader2 className="mx-auto h-6 w-6 animate-spin" />
-          <p className="mt-2">Loading your principals...</p>
+          <p className="mt-2">Loading your pekos...</p>
         </div>
       ) : owned.error ? (
         <div className="mt-12 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
@@ -146,12 +146,12 @@ function DashboardPage() {
         </div>
       ) : !owned.data || owned.data.data.length === 0 ? (
         <div className="mt-12 rounded-lg border border-dashed border-gray-300 bg-white p-12 text-center">
-          <h2 className="text-lg font-semibold text-gray-900">No principals yet</h2>
+          <h2 className="text-lg font-semibold text-gray-900">No pekos yet</h2>
           <p className="mt-2 text-sm text-gray-600">
-            Connect a PekoHub-aware runtime and expose one of its principals to see it here.
+            Set exposure on your runtime, then it appears here.
           </p>
           <p className="mt-4 text-xs text-gray-500">
-            <code className="rounded bg-gray-100 px-2 py-1">peko principal expose &lt;name&gt; public</code>
+            <code className="rounded bg-gray-100 px-2 py-1">{'exposure = "public"  # in the peko\'s principal.toml'}</code>
           </p>
         </div>
       ) : (
@@ -189,7 +189,7 @@ function InstanceCard({
   const lastSeen = instance.lastSeenAt ? new Date(instance.lastSeenAt) : null;
   const shareUrl =
     instance.exposure !== 'unexposed'
-      ? `${typeof window !== 'undefined' ? window.location.origin : ''}/p/${namespaceFor(instance)}/${instance.name}`
+      ? `${typeof window !== 'undefined' ? window.location.origin : ''}/peko/${namespaceFor(instance)}/${instance.name}`
       : null;
 
   return (
@@ -229,8 +229,8 @@ function InstanceCard({
         <div className="flex items-center gap-1">
           {shareUrl && (
             <Link
-              to="/p/$owner/$principalName"
-              params={{ owner: namespaceFor(instance), principalName: instance.name }}
+              to="/peko/$owner/$pekoName"
+              params={{ owner: namespaceFor(instance), pekoName: instance.name }}
               target="_blank"
               className="text-xs text-peko-600 hover:underline inline-flex items-center gap-1"
             >
@@ -396,7 +396,7 @@ function EditInstanceModal({
             className="inline-flex items-center gap-1 text-xs font-medium text-red-600 hover:text-red-700 disabled:opacity-50"
           >
             {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
-            Delete instance
+            Delete peko
           </button>
           <button onClick={onClose} className="btn-secondary text-xs py-1.5">
             Close
@@ -422,7 +422,7 @@ function namespaceFor(instance: OwnedInstanceRecord): string {
   // path requires `${owner}/${name}`. Best-effort: prefer the
   // owner's `id` (always present), fall back to a slug from the
   // runtime id. The share URL is purely cosmetic here; the real
-  // resolving authority is `/v1/public/principals/:owner/:name`
+  // resolving authority is `/v1/public/pekos/:owner/:pekoName`
   // which 404s gracefully on a miss.
   return (
     (instance.ownerSubject && instance.ownerSubject.id) ||

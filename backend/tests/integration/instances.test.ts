@@ -603,7 +603,7 @@ describe("Instance API", () => {
     });
   });
 
-  describe("GET /v1/me/accessible-principals", () => {
+  describe("GET /v1/me/accessible-pekos", () => {
     // Post-H4: ownership is the only signal — the runtime owns the
     // ACL surface (R4). The endpoint returns the viewer's own
     // private principals by matching `ownerSubject` JSONB equality.
@@ -621,15 +621,15 @@ describe("Instance API", () => {
 
       const response = await app.inject({
         method: "GET",
-        url: "/v1/me/accessible-principals",
+        url: "/v1/me/accessible-pekos",
         headers,
       });
 
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
-      expect(body.principals).toHaveLength(1);
-      expect(body.principals[0].principalName).toBe("my-private-principal");
-      expect(body.principals[0].status).toBe("online");
+      expect(body.pekos).toHaveLength(1);
+      expect(body.pekos[0].pekoName).toBe("my-private-principal");
+      expect(body.pekos[0].status).toBe("online");
     });
 
     it("should not list principals owned by a different user", async () => {
@@ -647,26 +647,26 @@ describe("Instance API", () => {
 
       const response = await app.inject({
         method: "GET",
-        url: "/v1/me/accessible-principals",
+        url: "/v1/me/accessible-pekos",
         headers,
       });
 
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
-      expect(body.principals).toHaveLength(0);
+      expect(body.pekos).toHaveLength(0);
     });
 
     it("should return 401 when not authenticated", async () => {
       const app = await buildTestApp({ testDb });
       const response = await app.inject({
         method: "GET",
-        url: "/v1/me/accessible-principals",
+        url: "/v1/me/accessible-pekos",
       });
       expect(response.statusCode).toBe(401);
     });
   });
 
-  describe("GET /v1/public/principals/:owner/:principalName", () => {
+  describe("GET /v1/public/pekos/:owner/:principalName", () => {
     it("should return public instance page data", async () => {
       const app = await buildTestApp({ testDb });
       const user = await createUser(testDb.client, {
@@ -685,7 +685,7 @@ describe("Instance API", () => {
 
       const response = await app.inject({
         method: "GET",
-        url: "/v1/public/principals/alice/public-principal",
+        url: "/v1/public/pekos/alice/public-principal",
       });
 
       expect(response.statusCode).toBe(200);
@@ -707,7 +707,7 @@ describe("Instance API", () => {
 
       const response = await app.inject({
         method: "GET",
-        url: "/v1/public/principals/alice/private-principal",
+        url: "/v1/public/pekos/alice/private-principal",
       });
 
       expect(response.statusCode).toBe(404);
@@ -732,7 +732,7 @@ describe("Instance API", () => {
 
       const response = await app.inject({
         method: "GET",
-        url: "/v1/public/principals/alice/unlisted-principal",
+        url: "/v1/public/pekos/alice/unlisted-principal",
       });
 
       expect(response.statusCode).toBe(200);
@@ -752,14 +752,14 @@ describe("Instance API", () => {
 
       const response = await app.inject({
         method: "GET",
-        url: "/v1/public/principals/alice/hidden-principal",
+        url: "/v1/public/pekos/alice/hidden-principal",
       });
 
       expect(response.statusCode).toBe(404);
     });
   });
 
-  describe("POST /v1/public/principals/:owner/:principalName/chat", () => {
+  describe("POST /v1/public/pekos/:owner/:principalName/chat", () => {
     it("should proxy chat for public principal", async () => {
       const app = await buildTestApp({ testDb });
       const user = await createUser(testDb.client, { namespace: "alice" });
@@ -772,7 +772,7 @@ describe("Instance API", () => {
 
       const response = await app.inject({
         method: "POST",
-        url: "/v1/public/principals/alice/public-principal/chat",
+        url: "/v1/public/pekos/alice/public-principal/chat",
         payload: { message: "hello" },
       });
 
@@ -794,7 +794,7 @@ describe("Instance API", () => {
 
       const response = await app.inject({
         method: "POST",
-        url: "/v1/public/principals/alice/tos-principal/chat",
+        url: "/v1/public/pekos/alice/tos-principal/chat",
         payload: { message: "hello" },
       });
 
@@ -808,7 +808,7 @@ describe("Instance API", () => {
       const app = await buildTestApp({ testDb });
       const response = await app.inject({
         method: "POST",
-        url: "/v1/public/principals/alice/missing/chat",
+        url: "/v1/public/pekos/alice/missing/chat",
         payload: { message: "hello" },
       });
       expect(response.statusCode).toBe(404);

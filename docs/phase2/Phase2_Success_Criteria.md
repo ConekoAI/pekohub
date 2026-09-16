@@ -14,6 +14,16 @@
 > [ADR-042](../architecture/adr/ADR-042-principal-as-container-v2.md)). Team
 > orchestration remains deferred. Retained as the original Phase 2 planning record.
 
+> **Amendment (2026-09-16, [ADR-005](../architecture/adr/ADR-005-peko-realignment.md)):**
+> CLI commands below that read `peko agent …` or `peko principal …` are superseded by
+> the flattened verbs — `peko push`, `peko pull`, `peko create`, `peko export`, etc.
+> (`peko principal <sub>` survives only as a hidden alias). Registry references are now
+> multi-segment: `<host>/peko/principals/<name>:<version>`. The package format is
+> `.peko` (`.principal` retired); registry push distributes a **template** (stripped
+> `principal.toml`), never a full existence. The `pekohub_session` cookie fallback was
+> removed — auth is 15-min access JWT + rotating refresh cookie only (ADR-001,
+> implemented).
+
 ---
 
 ## 1. Overview
@@ -48,7 +58,7 @@ Phase 2 depends on the following Phase 1 outputs being production-stable:
 | IPC Layer (ADR-021) | v0.1.0+ | UDP/Unix socket CLI↔daemon communication |
 | A2A Event Bus | v0.1.0+ | In-memory bus with Direct, Task, TaskResult, Broadcast, Subscribe message types |
 
-> **Note**: Base image inheritance was removed per ADR-027. The canonical workflow is `peko principal create` → `peko principal export`.
+> **Note**: Base image inheritance was removed per ADR-027. The canonical workflow is `peko create` → `peko export`.
 
 ---
 
@@ -57,7 +67,7 @@ Phase 2 depends on the following Phase 1 outputs being production-stable:
 | Milestone | Status | Notes |
 |-----------|--------|-------|
 | **Milestone 1: Registry Foundation** | 🟢 Mostly Complete | OCI push/pull working, PostgreSQL + MinIO storage, Meilisearch search index. GC service + daily cron. All OCI routes tested (59 tests passing). Audit logging wired. Fork + delete bundle/version APIs implemented. |
-| **Milestone 2: Auth, Search, Web UI** | 🟢 Mostly Complete | OAuth (GitHub/Google) + API key auth + cookie fallback. Auth state fully wired (useAuth hook, /me, /logout, /auth/callback). Web UI: homepage, search (with pagination), bundle detail (markdown README, fork/delete/deprecate UI), profile (API keys, user bundles), auth-aware Layout. Mobile responsive. |
+| **Milestone 2: Auth, Search, Web UI** | 🟢 Mostly Complete | OAuth (GitHub/Google) + API key auth. ~~cookie fallback~~ *(removed 2026-09-16 — Bearer access JWT + refresh cookie only, ADR-001)*. Auth state fully wired (useAuth hook, /me, /logout, /auth/callback). Web UI: homepage, search (with pagination), bundle detail (markdown README, fork/delete/deprecate UI), profile (API keys, user bundles), auth-aware Layout. Mobile responsive. |
 
 ### Recent Fixes & Additions (2026-05-15 / 2026-05-16)
 - ✅ Fixed Meilisearch search returning empty `items` array — root cause was `page`/`hitsPerPage` conflicting with `offset`/`limit` in Meilisearch v1.9
@@ -76,8 +86,8 @@ Phase 2 depends on the following Phase 1 outputs being production-stable:
 - ✅ **Scheduled garbage collection** via `Scheduler` service — runs daily with configurable retention/batch size
 - ✅ **Bundle forking API** (`POST /api/v1/bundles/:namespace/:name/fork`) — copies metadata + versions, preserves provenance via `forkedFrom`
 - ✅ **Delete bundle/version APIs** — `DELETE /api/v1/bundles/:namespace/:name` (cascade) + `DELETE /api/v1/bundles/:namespace/:name/versions/:version`, owner-only, audit logged
-- ✅ **Cookie-based JWT auth fallback** — `fastify.authenticate` reads `pekohub_session` cookie when no Bearer header present
-- ✅ **Auth `/me` endpoint** (`GET /api/v1/auth/me`) — returns user profile from JWT cookie or Bearer token
+- ~~✅ **Cookie-based JWT auth fallback** — `fastify.authenticate` reads `pekohub_session` cookie when no Bearer header present~~ *(removed 2026-09-16: `authenticate()` accepts Bearer access JWT only; the `pekohub_session` cookie is no longer issued — see ADR-001)*
+- ✅ **Auth `/me` endpoint** (`GET /api/v1/auth/me`) — returns user profile from Bearer token (JWT or `pkr_` API key). *(Amended 2026-09-16: cookie-based auth was removed with refresh-token rotation; `/me` is Bearer-only. The `/api/v1` prefix is served as an alias of `/v1`.)*
 - ✅ **Auth `/logout` endpoint** (`POST /api/v1/auth/logout`) — clears session cookie
 - ✅ **Frontend auth context** (`useAuth` hook) — queries `/me`, manages token in localStorage, provides logout
 - ✅ **OAuth callback page** (`/auth/callback`) — stores token from query param, redirects to home; proper error handling with "Go Home" fallback
@@ -90,8 +100,8 @@ Phase 2 depends on the following Phase 1 outputs being production-stable:
 - ✅ **Markdown rendering** — bundle README rendered via react-markdown + remark-gfm (tables, code blocks, blockquotes, GFM)
 - ✅ **`peko search`** — REG-027: `peko search <query>` with pagination and type filtering; also `peko search info <bundle>` for detailed metadata
 - ✅ **`peko auth login/logout/status --registry`** — registry token management via `CredentialsService` (API key auth)
-- ✅ **`peko agent push` → PekoHub** — REG-028: registry token injected into `RegistrySource`, `resolve_auth` prioritizes source token
-- ✅ **`peko agent pull` → PekoHub** — REG-029: same token injection pattern as push
+- ✅ **`peko push` → PekoHub** — REG-028: registry token injected into `RegistrySource`, `resolve_auth` prioritizes source token *(command renamed from `peko agent push`, 2026-09-16)*
+- ✅ **`peko pull` → PekoHub** — REG-029: same token injection pattern as push *(renamed from `peko agent pull`, 2026-09-16)*
 
 ---
 
@@ -117,7 +127,7 @@ The Public Registry is the discovery and distribution layer for Principal Bundle
   - `GET /api/v1/search?q={query}` — Full-text search across bundles — ✅ implemented
   - `GET /api/v1/bundles/{namespace}/{name}` — Bundle metadata and README — ✅ implemented
   - `GET /api/v1/bundles/{namespace}/{name}/versions` — Version history — ✅ implemented
-- [x] **REG-007**: Registry MUST authenticate users via OAuth 2.0 (GitHub, Google, or equivalent) and support organization/team namespaces — ✅ OAuth + API key + cookie fallback; `GET /api/v1/auth/me` and `POST /api/v1/auth/logout` implemented
+- [x] **REG-007**: Registry MUST authenticate users via OAuth 2.0 (GitHub, Google, or equivalent) and support organization/team namespaces — ✅ OAuth + API key; `GET /api/v1/auth/me` and `POST /api/v1/auth/logout` implemented *(cookie fallback removed 2026-09-16)*
 - [x] **REG-008**: Registry MUST enforce namespace ownership — only authenticated owners of a namespace can push or delete bundles within it — ✅ Enforced in deprecate and delete endpoints; dev-mode bypass available
 
 #### 3.2.2 Bundle Discovery & Search
@@ -142,10 +152,10 @@ The Public Registry is the discovery and distribution layer for Principal Bundle
 
 #### 3.2.5 CLI Integration
 - [x] **REG-027**: CLI MUST implement `peko search <query>` command that queries the Registry search API and displays results with metadata in a terminal-friendly table — ✅ `src/commands/search.rs` — `peko search <query>` with `--page`, `--per-page`, `--type` filters; also includes `peko search info <bundle>` subcommand for detailed bundle metadata
-- [x] **REG-028**: CLI `peko agent push` MUST integrate with the Public Registry as the default endpoint, requiring only `peko auth login` for authentication — ✅ `handle_agent_push` reads registry token from `CredentialsService`, injects into `RegistrySource.token`; `resolve_auth` in `client.rs` prioritizes source token over env-based auth
-- [x] **REG-029**: CLI `peko agent pull` MUST resolve bundle references from the Public Registry (e.g. `peko agent pull pekohub.org/user/researcher:v1.0`) — ✅ `handle_agent_pull` same pattern as push; registry token wired via `CredentialsService`
+- [x] **REG-028**: CLI `peko push` MUST integrate with the Public Registry as the default endpoint, requiring only `peko auth login` for authentication — ✅ push reads the registry token from `CredentialsService`, injects into `RegistrySource.token`; `resolve_auth` in `client.rs` prioritizes source token over env-based auth *(renamed from `peko agent push`, 2026-09-16)*
+- [x] **REG-029**: CLI `peko pull` MUST resolve bundle references from the Public Registry (e.g. `peko pull pekohub.org/peko/principals/researcher:v1.0`) — ✅ same pattern as push; registry token wired via `CredentialsService` *(renamed from `peko agent pull`; reference form is now multi-segment, 2026-09-16)*
 
-> **CLI Naming Note**: The CLI uses `peko` as the binary name (not `agent`). Commands are `peko agent push`, `peko agent pull`, `peko search`, etc. See `Phase2_Roadmap.md` §3.3 for the full CLI command reference.
+> **CLI Naming Note**: The CLI uses `peko` as the binary name. Current commands are the flattened verbs — `peko push`, `peko pull`, `peko search`, `peko create`, etc.; `peko principal <sub>` remains a hidden alias (ADR-005 / runtime ADR-059). See `Phase2_Roadmap.md` §3.3 for the full CLI command reference.
 
 ### 3.3 P1 — Should Have
 
@@ -200,7 +210,7 @@ All extension runtime features are deferred to Phase 3. See "Phase 3 Preview" be
 ### 6.1 P0 — Must Have
 
 - [x] **SEC-001**: Registry MUST enforce HTTPS-only communication with TLS 1.3 — ✅ Cloudflare **Always Use HTTPS** enabled; all HTTP requests receive 301 redirect to HTTPS. TLS 1.3 terminated at Cloudflare edge. WAF currently set to block non-dev traffic (intentional pre-production restriction).
-- [x] **SEC-002**: Registry access tokens MUST expire within 24 hours and support revocation — *ADR-001 defines refresh token rotation approach: 15-min access JWT + 30-day HTTP-only refresh cookie with rotation; implementation pending*
+- [x] **SEC-002**: Registry access tokens MUST expire within 24 hours and support revocation — ✅ implemented per ADR-001: 15-min access JWT + 30-day HTTP-only refresh cookie with rotation and reuse detection (the original 24h single-JWT design is superseded)
 - [ ] **SEC-003**: All audit logs MUST be append-only with tamper-evident hashing (Merkle tree or equivalent)
 - [ ] **SEC-004**: Bundle vulnerability scans MUST complete within 5 minutes of push and block pull of critical-severity bundles until acknowledged
 
@@ -313,7 +323,7 @@ The following workstreams were originally scoped for Phase 2 but have been **def
                            │ HTTPS / OCI
 ┌──────────────────────────┴──────────────────────────────────┐
 │                    CLI (peko)                                 │
-│  push │ pull │ search │ auth login │ agent install           │
+│  push │ pull │ search │ auth login                         │
 └─────────────────────────────────────────────────────────────┘
 ```
 

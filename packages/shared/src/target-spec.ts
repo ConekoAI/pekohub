@@ -2,25 +2,28 @@ import { z } from 'zod';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TargetSpec — the cross-runtime address the runtime hands PekoHub to
-// resolve into a host. Mirrors peko-runtime's
-// `principal_send::TargetSpec` ([peko-runtime#29]).
+// resolve into a host.
 //
 // Two flavours:
-//   * RemoteByDID — `did:peko:principal:<keyhash>`. The runtime's
-//     preferred primary key post-#82 (ADR-041 elevates the runtime
-//     entity from Agent to Principal); resolution is a single
-//     indexed DB lookup.
+//   * RemoteByDID — a principal DID. Since peko-runtime ADR-058 D1 the
+//     principal DID is a self-certifying `did:key` of the principal's
+//     ed25519 identity key; legacy `did:peko:public:*` DIDs still exist
+//     in the wild and are treated as *unverified* (no PoP possible).
+//     Resolution is a single indexed DB lookup.
 //   * RemoteByHandle — `{ owner_namespace, principal_name }`. The
 //     human-readable form. Resolves to the same payload but joins
-//     through `users.namespace` → `instances.owner_id`.
+//     through `users.namespace`.
 //
 // Both come from a wire format. The default parse is a URL-style path
-// segment: `did:peko:principal:<keyhash>` or
-// `<owner_namespace>/<principal_name>`. Parsing is permissive on the
-// DID shape (just non-empty) so future DID method additions don't
-// break the resolver; the authoritative validation lives in the
-// storage layer (`instances.principal_did` unique index) and the
-// runtime-side signer.
+// segment: `<did>` or `<owner_namespace>/<principal_name>`. Parsing is
+// permissive on the DID shape (just non-empty) so future DID method
+// additions don't break the resolver; the authoritative validation
+// lives in the storage layer (`instances.principal_did` unique index)
+// and the runtime-side signer.
+//
+// Naming note (peko-runtime ADR-059): wire/machine names keep the
+// `principal` vocabulary (`principalName`, `principal_did`); "peko"
+// is the user-facing term only.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const TargetSpecKind = ['by-did', 'by-handle'] as const;
@@ -30,7 +33,7 @@ const PrincipalDID = z
   .string()
   .min(1)
   .max(512)
-  .describe('A `did:peko:principal:<keyhash>` value.');
+  .describe('A principal DID — `did:key:z6Mk…` post ADR-058 (legacy `did:peko:*` tolerated, unverified).');
 
 const Namespace = z
   .string()
@@ -94,7 +97,7 @@ export type TargetSpec = z.infer<typeof TargetSpec>;
  * Encode a `TargetSpec` to a stable, URL-safe path segment. Inverse of
  * `parseTargetSpecPath`.
  *
- *   by-did:    `<did>`                              (e.g. `did:peko:principal:abc123`)
+ *   by-did:    `<did>`                              (e.g. `did:key:z6Mk…`)
  *   by-handle: `<owner>/<principal_name>`           (e.g. `alice/helper`)
  *
  * The leading `kind` tag is omitted — the by-did branch is identifiable

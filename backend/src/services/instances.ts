@@ -1,6 +1,6 @@
 import { db } from "../db/index.js";
 import { instances, runtimes, users } from "../db/schema.js";
-import { eq, and, sql, desc, count, gte, lt } from "drizzle-orm";
+import { eq, and, sql, desc, count, gte, lt, ne, inArray } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import {
   Subject,
@@ -527,16 +527,45 @@ export class InstanceService {
    * `principal_send` resolver uses it as its primary key
    * ([peko-runtime#29](https://github.com/ConekoAI/peko-runtime/issues/29)).
    *
-   * Hits the `idx_instances_principal_did` unique index — single
-   * row, regardless of how many instances exist. Returns `null`
-   * when the row exists but the DID is null (shouldn't happen with
-   * the unique index, but the type system is permissive), and
-   * `null` when no row matches. Caller distinguishes via the helper
-   * {@link resolvePrincipalTarget} when it also needs the access check.
+   * Post-ADR-056-D7 the DID index is not unique (a transported
+   * principal re-lands with the same DID under a new instance id);
+   * `findFirst` returns the most recently announced match, which is
+   * the row the exposure-layer singularity rule keeps publicly
+   * unambiguous. Returns `null` when no row matches. Caller
+   * distinguishes via the helper {@link resolvePrincipalTarget} when
+   * it also needs the access check.
    */
   async getByDid(did: string): Promise<InstanceRecord | null> {
     const row = await db.query.instances.findFirst({
       where: eq(instances.principalDid, did),
+    });
+    return row ? this.toRecord(row) : null;
+  }
+
+  /**
+   * ADR-056 D7: at most ONE publicly exposed (`public`/`unlisted`)
+   * instance per principal DID network-wide. Returns the conflicting
+   * instance when another row already holds the same `principal_did`
+   * at a publicly reachable exposure, `null` when the transition is
+   * free to proceed.
+   *
+   * `excludeId` is the instance requesting the transition (re-publication
+   * of the already-public instance is idempotent, not a conflict).
+   * The check is deliberately exposure-only: two runtimes may host
+   * the same DID privately (e.g. a migration window), but only one
+   * may serve it to the world.
+   */
+  async findPublicExposureConflict(
+    principalDid: string,
+    excludeId?: string,
+  ): Promise<InstanceRecord | null> {
+    const conditions = [
+      eq(instances.principalDid, principalDid),
+      inArray(instances.exposure, ["public", "unlisted"]),
+    ];
+    if (excludeId) conditions.push(ne(instances.id, excludeId));
+    const row = await db.query.instances.findFirst({
+      where: and(...conditions),
     });
     return row ? this.toRecord(row) : null;
   }
@@ -612,9 +641,9 @@ export class InstanceService {
       return { status: "miss" };
     }
     if (!instance.principalDid) {
-      // The unique index treats nulls as distinct, so a row with a
-      // null principal_did shouldn't be reachable through the by-did
-      // resolver — but the by-handle path can land here (e.g. a
+      // A null principal_did shouldn't be reachable through the
+      // by-did resolver (the lookup is an equality match on a
+      // non-null DID) — but the by-handle path can land here (e.g. a
       // pre-#34 runtime that announces without a principal_did). Treat
       // as miss for the by-did path; the by-handle caller still gets
       // a meaningful hit (the by-handle wire format doesn't promise

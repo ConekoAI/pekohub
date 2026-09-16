@@ -14,9 +14,10 @@ import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as DiscoverRouteImport } from './routes/discover'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as BundlesSplatRouteImport } from './routes/bundles/$'
 import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
+import { Route as PekoOwnerPekoNameRouteImport } from './routes/peko.$owner.$pekoName'
 import { Route as POwnerPrincipalNameRouteImport } from './routes/p.$owner.$principalName'
-import { Route as BundlesNamespaceNameRouteImport } from './routes/bundles/$namespace.$name'
 
 const SearchRoute = SearchRouteImport.update({
   id: '/search',
@@ -43,19 +44,24 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BundlesSplatRoute = BundlesSplatRouteImport.update({
+  id: '/bundles/$',
+  path: '/bundles/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthCallbackRoute = AuthCallbackRouteImport.update({
   id: '/auth/callback',
   path: '/auth/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PekoOwnerPekoNameRoute = PekoOwnerPekoNameRouteImport.update({
+  id: '/peko/$owner/$pekoName',
+  path: '/peko/$owner/$pekoName',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const POwnerPrincipalNameRoute = POwnerPrincipalNameRouteImport.update({
   id: '/p/$owner/$principalName',
   path: '/p/$owner/$principalName',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const BundlesNamespaceNameRoute = BundlesNamespaceNameRouteImport.update({
-  id: '/bundles/$namespace/$name',
-  path: '/bundles/$namespace/$name',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -66,8 +72,9 @@ export interface FileRoutesByFullPath {
   '/profile': typeof ProfileRoute
   '/search': typeof SearchRoute
   '/auth/callback': typeof AuthCallbackRoute
-  '/bundles/$namespace/$name': typeof BundlesNamespaceNameRoute
+  '/bundles/$': typeof BundlesSplatRoute
   '/p/$owner/$principalName': typeof POwnerPrincipalNameRoute
+  '/peko/$owner/$pekoName': typeof PekoOwnerPekoNameRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -76,8 +83,9 @@ export interface FileRoutesByTo {
   '/profile': typeof ProfileRoute
   '/search': typeof SearchRoute
   '/auth/callback': typeof AuthCallbackRoute
-  '/bundles/$namespace/$name': typeof BundlesNamespaceNameRoute
+  '/bundles/$': typeof BundlesSplatRoute
   '/p/$owner/$principalName': typeof POwnerPrincipalNameRoute
+  '/peko/$owner/$pekoName': typeof PekoOwnerPekoNameRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -87,8 +95,9 @@ export interface FileRoutesById {
   '/profile': typeof ProfileRoute
   '/search': typeof SearchRoute
   '/auth/callback': typeof AuthCallbackRoute
-  '/bundles/$namespace/$name': typeof BundlesNamespaceNameRoute
+  '/bundles/$': typeof BundlesSplatRoute
   '/p/$owner/$principalName': typeof POwnerPrincipalNameRoute
+  '/peko/$owner/$pekoName': typeof PekoOwnerPekoNameRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -99,8 +108,9 @@ export interface FileRouteTypes {
     | '/profile'
     | '/search'
     | '/auth/callback'
-    | '/bundles/$namespace/$name'
+    | '/bundles/$'
     | '/p/$owner/$principalName'
+    | '/peko/$owner/$pekoName'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -109,8 +119,9 @@ export interface FileRouteTypes {
     | '/profile'
     | '/search'
     | '/auth/callback'
-    | '/bundles/$namespace/$name'
+    | '/bundles/$'
     | '/p/$owner/$principalName'
+    | '/peko/$owner/$pekoName'
   id:
     | '__root__'
     | '/'
@@ -119,8 +130,9 @@ export interface FileRouteTypes {
     | '/profile'
     | '/search'
     | '/auth/callback'
-    | '/bundles/$namespace/$name'
+    | '/bundles/$'
     | '/p/$owner/$principalName'
+    | '/peko/$owner/$pekoName'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -130,8 +142,9 @@ export interface RootRouteChildren {
   ProfileRoute: typeof ProfileRoute
   SearchRoute: typeof SearchRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
-  BundlesNamespaceNameRoute: typeof BundlesNamespaceNameRoute
+  BundlesSplatRoute: typeof BundlesSplatRoute
   POwnerPrincipalNameRoute: typeof POwnerPrincipalNameRoute
+  PekoOwnerPekoNameRoute: typeof PekoOwnerPekoNameRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -171,6 +184,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/bundles/$': {
+      id: '/bundles/$'
+      path: '/bundles/$'
+      fullPath: '/bundles/$'
+      preLoaderRoute: typeof BundlesSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth/callback': {
       id: '/auth/callback'
       path: '/auth/callback'
@@ -178,18 +198,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/peko/$owner/$pekoName': {
+      id: '/peko/$owner/$pekoName'
+      path: '/peko/$owner/$pekoName'
+      fullPath: '/peko/$owner/$pekoName'
+      preLoaderRoute: typeof PekoOwnerPekoNameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/p/$owner/$principalName': {
       id: '/p/$owner/$principalName'
       path: '/p/$owner/$principalName'
       fullPath: '/p/$owner/$principalName'
       preLoaderRoute: typeof POwnerPrincipalNameRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/bundles/$namespace/$name': {
-      id: '/bundles/$namespace/$name'
-      path: '/bundles/$namespace/$name'
-      fullPath: '/bundles/$namespace/$name'
-      preLoaderRoute: typeof BundlesNamespaceNameRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -202,8 +222,9 @@ const rootRouteChildren: RootRouteChildren = {
   ProfileRoute: ProfileRoute,
   SearchRoute: SearchRoute,
   AuthCallbackRoute: AuthCallbackRoute,
-  BundlesNamespaceNameRoute: BundlesNamespaceNameRoute,
+  BundlesSplatRoute: BundlesSplatRoute,
   POwnerPrincipalNameRoute: POwnerPrincipalNameRoute,
+  PekoOwnerPekoNameRoute: PekoOwnerPekoNameRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

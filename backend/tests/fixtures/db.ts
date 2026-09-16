@@ -40,6 +40,10 @@ const DDL_STATEMENTS = [
     namespace VARCHAR(128) NOT NULL,
     name VARCHAR(128) NOT NULL,
     bundle_type VARCHAR(32) NOT NULL,
+    -- ADR-056: publisher ownership. Nullable — legacy rows have no
+    -- recorded publisher and stay claimable by the namespace-matching
+    -- pusher (mirrors migration 0001_bundle_publisher).
+    publisher_id UUID REFERENCES users(id) ON DELETE SET NULL,
     extension_type VARCHAR(32),
     description TEXT,
     author VARCHAR(256),
@@ -176,12 +180,13 @@ const DDL_STATEMENTS = [
   // scans instances and filters by `owner_subject->>'id'`, which is
   // O(n) for the public-discovery path.
   `CREATE INDEX IF NOT EXISTS idx_instances_owner_subject_id ON instances ((owner_subject->>'id'));`,
-  // Issue #14: unique B-tree on `principal_did` so the by-did resolver
-  // (GET /v1/principals/by-did/:did) is a single indexed lookup. We
-  // mirror the production migration (0007_add_principal_did.sql) — NULLs
-  // are distinct in unique indexes, so pre-upgrade rows (all NULL)
-  // don't conflict with each other.
-  `CREATE UNIQUE INDEX IF NOT EXISTS idx_instances_principal_did ON instances(principal_did);`,
+  // Issue #14: B-tree on `principal_did` so the by-did resolver
+  // (GET /v1/principals/by-did/:did) is an indexed lookup.
+  // Post-ADR-056-D7 this is deliberately NOT unique: a transported
+  // principal re-lands with the same DID under a new instance id;
+  // singularity is enforced at the exposure layer
+  // (`findPublicExposureConflict`).
+  `CREATE INDEX IF NOT EXISTS idx_instances_principal_did ON instances(principal_did);`,
 
   // Runtimes table (for tunnel owner resolution)
   `CREATE TABLE IF NOT EXISTS runtimes (

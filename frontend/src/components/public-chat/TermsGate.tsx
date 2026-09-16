@@ -2,8 +2,8 @@
  * Terms-of-service gate (PR-C4).
  *
  * Renders a blocking modal before exposing the chat input when the
- * principal requires a ToS acknowledgment. The acknowledgment is
- * persisted to `localStorage` keyed by `${owner}/${principalName}`
+ * peko requires a ToS acknowledgment. The acknowledgment is
+ * persisted to `localStorage` keyed by `${owner}/${pekoName}`
  * so repeat visitors skip the gate; on submit the next message
  * carries `tos_acknowledged: true` so the server-side 428 path
  * (`backend/src/routes/api/instances.ts:1075`) doesn't trip.
@@ -14,36 +14,36 @@ import { ShieldCheck } from "lucide-react";
 
 interface TermsGateProps {
   owner: string;
-  principalName: string;
+  pekoName: string;
   tosText: string;
   onAccept: () => void;
 }
 
 const STORAGE_PREFIX = "pekohub:tos_acked:";
 
-export function storageKey(owner: string, principalName: string): string {
-  return `${STORAGE_PREFIX}${owner}/${principalName}`;
+export function storageKey(owner: string, pekoName: string): string {
+  return `${STORAGE_PREFIX}${owner}/${pekoName}`;
 }
 
-export function hasAcknowledged(owner: string, principalName: string): boolean {
+export function hasAcknowledged(owner: string, pekoName: string): boolean {
   if (typeof window === "undefined") return false;
-  return localStorage.getItem(storageKey(owner, principalName)) === "true";
+  return localStorage.getItem(storageKey(owner, pekoName)) === "true";
 }
 
 export function TermsGate({
   owner,
-  principalName,
+  pekoName,
   tosText,
   onAccept,
 }: TermsGateProps) {
   const [accepted, setAccepted] = useState(false);
 
   useEffect(() => {
-    setAccepted(hasAcknowledged(owner, principalName));
-  }, [owner, principalName]);
+    setAccepted(hasAcknowledged(owner, pekoName));
+  }, [owner, pekoName]);
 
   const handleAccept = () => {
-    localStorage.setItem(storageKey(owner, principalName), "true");
+    localStorage.setItem(storageKey(owner, pekoName), "true");
     setAccepted(true);
     onAccept();
   };

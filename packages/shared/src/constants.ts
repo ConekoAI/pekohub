@@ -9,35 +9,55 @@ export const MediaTypes = {
   // Manifests
   OCI_MANIFEST: 'application/vnd.oci.image.manifest.v1+json',
   OCI_INDEX: 'application/vnd.oci.image.index.v1+json',
-  // Pekohub-specific
-  //
-  // ADR-041 collapses agent + team into the Principal packaging
-  // surface; `.principal` is the only top-level bundle format
-  // (extensions remain a separate kind for compatibility).
+  // Pekohub-specific (legacy hub media types — the runtime pushes
+  // plain OCI manifests today; keep accepting these for older CLI
+  // builds).
   PEKO_PRINCIPAL_MANIFEST: 'application/vnd.pekohub.principal.manifest.v1+json',
   PEKO_EXTENSION_MANIFEST: 'application/vnd.pekohub.extension.manifest.v1+json',
   // Config + layers
+  //
+  // ADR-056 (peko-runtime): a pushed principal is a *template* — a
+  // zero-layer OCI manifest whose config blob is a stripped
+  // `principal.toml` carried under PEKO_CONFIG (the runtime's
+  // `PEKO_CONFIG_MEDIA_TYPE`). Full-existence `.peko` snapshots never
+  // transit the hub.
   OCI_CONFIG: 'application/vnd.oci.image.config.v1+json',
+  PEKO_CONFIG: 'application/vnd.peko.config.v1+json',
   PEKO_LAYER_TAR: 'application/vnd.pekohub.layer.v1.tar+gzip',
+} as const;
+
+// OCI manifest annotation keys emitted by the runtime
+// (peko-runtime peko-rs/core/src/registry/manifest.rs).
+export const OCIAnnotations = {
+  ORG_PEKO_NAME: 'org.peko.name',
+  ORG_PEKO_VERSION: 'org.peko.version',
+  // 'principal' | 'extension' | 'agent' — alias source for bundleType
+  // when `dev.pekohub.bundleType` is absent.
+  ORG_PEKO_KIND: 'org.peko.kind',
+  DEV_PEKOHUB_BUNDLE_TYPE: 'dev.pekohub.bundleType',
+  DEV_PEKOHUB_PRINCIPAL_NAME: 'dev.pekohub.principalName',
+  DEV_PEKOHUB_EXTENSION_ID: 'dev.pekohub.extensionId',
 } as const;
 
 // Bundle kinds (ADR-041 clean break). 'agent' and 'team' are
 // intentionally absent — the runtime ships them as `Principal`
 // packages now, and the OCI annotation `dev.pekohub.bundleType`
-// rejects `agent`/`team` with `410 Gone` on PUT.
+// rejects `agent`/`team` with `410 Gone` on PUT. Per ADR-059 the
+// machine value stays `principal` even though UX says "peko".
 export const BundleTypes = ['principal', 'extension'] as const;
 export type BundleType = (typeof BundleTypes)[number];
 
-// Standard extension types — mirror peko-runtime/src/extensions/mod.rs
-// `extension_types::*`. `builtin` is intentionally absent: built-in
-// tools are framework-internal, not manifest-declarable.
+// Standard extension types — mirror peko-runtime
+// `peko-rs/core/src/extensions/mod.rs extension_types::*`
+// (`standard_types()`). `builtin` is intentionally absent: built-in
+// tools are framework-internal, not manifest-declarable. `gateway`
+// (sprint 9) and `slash` are retired runtime-side and are rejected
+// here too.
 export const ExtensionTypes = [
   'skill',
   'agent',
-  'slash',
   'mcp',
   'universal-tool',
-  'gateway',
   'general',
 ] as const;
 export type ExtensionStandardType = (typeof ExtensionTypes)[number];

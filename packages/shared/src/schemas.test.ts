@@ -273,17 +273,15 @@ describe("HookPoint (runtime-aligned)", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ExtensionType — all 7 standard peko-runtime types + custom:<id>
+// ExtensionType — the 5 standard peko-runtime types + custom:<id>
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("ExtensionType (runtime-aligned)", () => {
   it.each([
     "skill",
     "agent",
-    "slash",
     "mcp",
     "universal-tool",
-    "gateway",
     "general",
   ])("accepts standard type %s", (extType) => {
     const result = BundleMetadata.safeParse({
@@ -317,6 +315,8 @@ describe("ExtensionType (runtime-aligned)", () => {
     "builtin", // intentionally absent — runtime mod.rs:145-146
     "universal", // renamed to universal-tool in runtime
     "agent-team", // not a valid type
+    "gateway", // retired runtime-side (sprint 9)
+    "slash", // retired runtime-side
     "custom:", // empty id
     "custom:MyOrg/Skill", // uppercase not allowed
     "custom:foo bar", // space not allowed

@@ -339,28 +339,32 @@ describe("Bundle API Routes", () => {
         id: 1,
         namespace: "acme",
         name: "alpha",
+        // ADR-056: the mocked caller (`authenticate` above) is the
+        // publisher, so the ownership check passes.
+        publisherId: 42,
       };
 
       const digest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
       const storageKey = `blobs/${digest}`;
 
       mockDbQueries.bundles.findFirst.mockResolvedValue(bundle);
-      mockDbQueries.bundleVersions.findMany.mockResolvedValue([
-        {
-          id: 10,
-          bundleId: 1,
-          version: "v1.0.0",
-          digest,
-          manifestJson: {
-            layers: [{ digest }],
-            config: { digest },
+      mockDbQueries.bundleVersions.findMany
+        // First call: the bundle's own versions (digest collection)
+        .mockResolvedValueOnce([
+          {
+            id: 10,
+            bundleId: 1,
+            version: "v1.0.0",
+            digest,
+            manifestJson: {
+              layers: [{ digest }],
+              config: { digest },
+            },
+            size: 100,
           },
-          size: 100,
-        },
-      ]);
-
-      // No other versions reference this digest → blob is orphaned
-      mockDbQueries.bundleVersions.findMany.mockResolvedValue([]);
+        ])
+        // Later calls: other bundles' versions — none reference the digest
+        .mockResolvedValue([]);
       mockDbQueries.blobs.findFirst.mockResolvedValue({
         digest,
         storageKey,

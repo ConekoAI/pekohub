@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { db } from "../../db/index.js";
 import { bundles, bundleVersions, pullStats, blobs } from "../../db/schema.js";
 import { eq, and, sql, inArray } from "drizzle-orm";
@@ -6,19 +6,146 @@ import { BundleDetail } from "@pekohub/shared";
 import { auditService } from "../../services/audit.js";
 
 /**
- * Custom API: Bundle metadata and detail pages
- * GET /api/v1/bundles/:namespace/:name
- * GET /api/v1/bundles/:namespace/:name/versions
- * POST /api/v1/bundles/:namespace/:name/versions/:version/deprecate
- * POST /api/v1/bundles/:namespace/:name/fork
+ * Custom API: Bundle metadata and detail pages.
+ *
+ * Namespaces may be multi-segment (`peko/principals`), which Fastify
+ * params cannot express, so every route here is a `/bundles/*`
+ * wildcard and the path is parsed by the helpers below: name = last
+ * repo segment, namespace = the middle, with the operation suffix
+ * (`/versions`, `/fork`, `/versions/:v/deprecate`) stripped first.
+ * Legacy `GET /v1/bundles/alice/foo` keeps working unchanged.
+ *
+ * Mounted under both `/v1` and `/api/v1` (the runtime CLI calls the
+ * `/api/v1` surface — see peko-rs/cli/src/commands/search.rs).
  */
+
+interface RepoPath {
+  namespace: string;
+  name: string;
+}
+
+/** Split `ns[/ns...]/name` into namespace + name (last segment). */
+function splitRepoPath(repo: string): RepoPath | null {
+  const idx = repo.lastIndexOf("/");
+  if (idx <= 0 || idx === repo.length - 1) return null;
+  return { namespace: repo.slice(0, idx), name: repo.slice(idx + 1) };
+}
+
+/** Parse `<repo>/versions` → repo, or null. */
+function stripSuffix(wildcard: string, suffix: string): string | null {
+  return wildcard.endsWith(suffix)
+    ? wildcard.slice(0, -suffix.length) || null
+    : null;
+}
+
+const DEPRECATE_RE = /^(.*)\/versions\/([^/]+)\/deprecate$/;
+const VERSION_DELETE_RE = /^(.*)\/versions\/([^/]+)$/;
+
+type Caller = { id?: string; namespace: string };
+
+/**
+ * Publisher ownership check (ADR-056). The bundle's `publisher_id`
+ * is authoritative; legacy rows with NULL publisher_id fall back to
+ * the pre-publisher rule (caller's namespace == bundle namespace).
+ * Dev-bypass callers (no id) pass on the namespace fallback only.
+ */
+function callerOwnsBundle(
+  bundle: { publisherId: string | null; namespace: string },
+  user: Caller,
+): boolean {
+  if (bundle.publisherId) return user.id === bundle.publisherId;
+  return user.namespace === bundle.namespace;
+}
+
+/** Authenticate with the same dev-bypass fallback as the OCI routes. */
+async function authenticateBundleWrite(
+  fastify: FastifyInstance,
+  request: FastifyRequest,
+  bypassNamespace: string,
+): Promise<Caller | null> {
+  try {
+    return await fastify.authenticate(request);
+  } catch {
+    if (
+      fastify.config.NODE_ENV === "development" &&
+      fastify.config.ALLOW_DEV_AUTH_BYPASS === "true"
+    ) {
+      return { namespace: bypassNamespace };
+    }
+    return null;
+  }
+}
+
+/** Registry host for the install command (scheme stripped). */
+function registryHost(fastify: FastifyInstance): string {
+  return fastify.config.REGISTRY_BASE_URL.replace(/^https?:\/\//, "").replace(
+    /\/$/,
+    "",
+  );
+}
+
 export default async function bundleRoutes(fastify: FastifyInstance) {
-  // GET bundle detail
-  fastify.get("/bundles/:namespace/:name", async (request, reply) => {
-    const { namespace, name } = request.params as {
-      namespace: string;
-      name: string;
-    };
+  // ── GET /bundles/* — bundle detail, or <repo>/versions ────────────────────
+  fastify.get("/bundles/*", async (request, reply) => {
+    const wildcard = (request.params as { "*": string })["*"];
+
+    const versionsRepo = stripSuffix(wildcard, "/versions");
+    if (versionsRepo !== null) {
+      const repo = splitRepoPath(versionsRepo);
+      if (!repo) return reply.status(404).send({ error: "Bundle not found" });
+      return versionHistory(reply, repo);
+    }
+
+    const repo = splitRepoPath(wildcard);
+    if (!repo) return reply.status(404).send({ error: "Bundle not found" });
+    return bundleDetail(fastify, reply, repo);
+  });
+
+  // ── POST /bundles/* — <repo>/versions/:v/deprecate, <repo>/fork ───────────
+  fastify.post("/bundles/*", async (request, reply) => {
+    const wildcard = (request.params as { "*": string })["*"];
+
+    const deprecateMatch = DEPRECATE_RE.exec(wildcard);
+    if (deprecateMatch) {
+      const repo = splitRepoPath(deprecateMatch[1]);
+      if (!repo) return reply.status(404).send({ error: "Bundle not found" });
+      return deprecateVersion(fastify, request, reply, repo, deprecateMatch[2]);
+    }
+
+    const forkRepo = stripSuffix(wildcard, "/fork");
+    if (forkRepo !== null) {
+      const repo = splitRepoPath(forkRepo);
+      if (!repo) return reply.status(404).send({ error: "Bundle not found" });
+      return forkBundle(fastify, request, reply, repo);
+    }
+
+    return reply.status(404).send({ error: "Not found" });
+  });
+
+  // ── DELETE /bundles/* — whole bundle, or <repo>/versions/:v ───────────────
+  fastify.delete("/bundles/*", async (request, reply) => {
+    const wildcard = (request.params as { "*": string })["*"];
+
+    const versionMatch = VERSION_DELETE_RE.exec(wildcard);
+    if (versionMatch) {
+      const repo = splitRepoPath(versionMatch[1]);
+      if (!repo) return reply.status(404).send({ error: "Bundle not found" });
+      return deleteVersion(fastify, request, reply, repo, versionMatch[2]);
+    }
+
+    const repo = splitRepoPath(wildcard);
+    if (!repo) return reply.status(404).send({ error: "Bundle not found" });
+    return deleteBundle(fastify, request, reply, repo);
+  });
+
+  // ── Handlers ───────────────────────────────────────────────────────────────
+
+  async function bundleDetail(
+    fastify: FastifyInstance,
+    reply: FastifyReply,
+    repo: RepoPath,
+  ) {
+    const { namespace, name } = repo;
 
     const bundle = await db.query.bundles.findFirst({
       where: and(eq(bundles.namespace, namespace), eq(bundles.name, name)),
@@ -67,8 +194,11 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
       })),
       metadata: {
         name: bundle.name,
-        description: bundle.description,
-        author: bundle.author,
+        // Template pushes (ADR-056) carry no author/description
+        // annotations — coalesce so the detail payload stays valid
+        // for the CLI (`peko search` bundle detail flow).
+        description: bundle.description ?? undefined,
+        author: bundle.author ?? "unknown",
         license: bundle.license,
         tags: bundle.tags ?? [],
         categories: bundle.categories ?? [],
@@ -92,18 +222,17 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
         monthly: Number(pullCounts.monthly),
         allTime: Number(pullCounts.allTime),
       },
-      installCommand: `peko principal pull ${namespace}/${name}:${latestVersion?.version ?? "latest"}`,
+      // `peko pull` resolves `<host>/<repo>:<tag>` against the OCI
+      // endpoints above; bare `name:tag` only works against a
+      // configured default registry (peko-rs registry client).
+      installCommand: `peko pull ${registryHost(fastify)}/${namespace}/${name}:${latestVersion?.version ?? "latest"}`,
     });
 
     return detail;
-  });
+  }
 
-  // GET version history
-  fastify.get("/bundles/:namespace/:name/versions", async (request, reply) => {
-    const { namespace, name } = request.params as {
-      namespace: string;
-      name: string;
-    };
+  async function versionHistory(reply: FastifyReply, repo: RepoPath) {
+    const { namespace, name } = repo;
 
     const bundle = await db.query.bundles.findFirst({
       where: and(eq(bundles.namespace, namespace), eq(bundles.name, name)),
@@ -130,113 +259,20 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
         deprecatedMessage: v.deprecatedMessage,
       })),
     };
-  });
+  }
 
-  // POST deprecate / undeprecate a specific version
-  fastify.post<{
-    Body: { deprecated: boolean; message?: string };
-  }>(
-    "/bundles/:namespace/:name/versions/:version/deprecate",
-    async (request, reply) => {
-      const { namespace, name, version } = request.params as {
-        namespace: string;
-        name: string;
-        version: string;
-      };
+  async function deprecateVersion(
+    fastify: FastifyInstance,
+    request: FastifyRequest,
+    reply: FastifyReply,
+    repo: RepoPath,
+    version: string,
+  ) {
+    const { namespace, name } = repo;
 
-      let user: { namespace: string };
-      try {
-        user = await fastify.authenticate(request);
-      } catch {
-        if (
-          fastify.config.NODE_ENV === "development" &&
-          fastify.config.ALLOW_DEV_AUTH_BYPASS === "true"
-        ) {
-          user = { namespace };
-        } else {
-          return reply.status(401).send({ error: "Authentication required" });
-        }
-      }
-
-      if (user.namespace !== namespace) {
-        return reply
-          .status(403)
-          .send({ error: "Namespace ownership mismatch" });
-      }
-
-      const bundle = await db.query.bundles.findFirst({
-        where: and(eq(bundles.namespace, namespace), eq(bundles.name, name)),
-      });
-
-      if (!bundle) {
-        return reply.status(404).send({ error: "Bundle not found" });
-      }
-
-      const { deprecated, message } = request.body;
-
-      const [updated] = await db
-        .update(bundleVersions)
-        .set({
-          deprecated,
-          deprecatedMessage: deprecated ? (message ?? null) : null,
-        })
-        .where(
-          and(
-            eq(bundleVersions.bundleId, bundle.id),
-            eq(bundleVersions.version, version),
-          ),
-        )
-        .returning();
-
-      if (!updated) {
-        return reply.status(404).send({ error: "Version not found" });
-      }
-
-      // Fire-and-forget audit log (must not throw)
-      const userId = (user as { id?: string }).id;
-      await auditService.logPermissionChange(
-        namespace,
-        userId,
-        `${namespace}/${name}:${version}`,
-        {
-          action: deprecated ? "deprecate" : "undeprecate",
-          message: deprecated ? (message ?? null) : null,
-        },
-      );
-
-      return {
-        namespace,
-        name,
-        version: updated.version,
-        deprecated: updated.deprecated,
-        deprecatedMessage: updated.deprecatedMessage,
-      };
-    },
-  );
-
-  // DELETE a bundle and all its versions (owner only)
-  fastify.delete("/bundles/:namespace/:name", async (request, reply) => {
-    const { namespace, name } = request.params as {
-      namespace: string;
-      name: string;
-    };
-
-    let user: { namespace: string };
-    try {
-      user = await fastify.authenticate(request);
-    } catch {
-      if (
-        fastify.config.NODE_ENV === "development" &&
-        fastify.config.ALLOW_DEV_AUTH_BYPASS === "true"
-      ) {
-        user = { namespace };
-      } else {
-        return reply.status(401).send({ error: "Authentication required" });
-      }
-    }
-
-    if (user.namespace !== namespace) {
-      return reply.status(403).send({ error: "Namespace ownership mismatch" });
+    const user = await authenticateBundleWrite(fastify, request, namespace);
+    if (!user) {
+      return reply.status(401).send({ error: "Authentication required" });
     }
 
     const bundle = await db.query.bundles.findFirst({
@@ -245,6 +281,78 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
 
     if (!bundle) {
       return reply.status(404).send({ error: "Bundle not found" });
+    }
+
+    if (!callerOwnsBundle(bundle, user)) {
+      return reply.status(403).send({ error: "Not the bundle publisher" });
+    }
+
+    const { deprecated, message } = request.body as {
+      deprecated: boolean;
+      message?: string;
+    };
+
+    const [updated] = await db
+      .update(bundleVersions)
+      .set({
+        deprecated,
+        deprecatedMessage: deprecated ? (message ?? null) : null,
+      })
+      .where(
+        and(
+          eq(bundleVersions.bundleId, bundle.id),
+          eq(bundleVersions.version, version),
+        ),
+      )
+      .returning();
+
+    if (!updated) {
+      return reply.status(404).send({ error: "Version not found" });
+    }
+
+    // Fire-and-forget audit log (must not throw)
+    await auditService.logPermissionChange(
+      namespace,
+      user.id,
+      `${namespace}/${name}:${version}`,
+      {
+        action: deprecated ? "deprecate" : "undeprecate",
+        message: deprecated ? (message ?? null) : null,
+      },
+    );
+
+    return {
+      namespace,
+      name,
+      version: updated.version,
+      deprecated: updated.deprecated,
+      deprecatedMessage: updated.deprecatedMessage,
+    };
+  }
+
+  async function deleteBundle(
+    fastify: FastifyInstance,
+    request: FastifyRequest,
+    reply: FastifyReply,
+    repo: RepoPath,
+  ) {
+    const { namespace, name } = repo;
+
+    const user = await authenticateBundleWrite(fastify, request, namespace);
+    if (!user) {
+      return reply.status(401).send({ error: "Authentication required" });
+    }
+
+    const bundle = await db.query.bundles.findFirst({
+      where: and(eq(bundles.namespace, namespace), eq(bundles.name, name)),
+    });
+
+    if (!bundle) {
+      return reply.status(404).send({ error: "Bundle not found" });
+    }
+
+    if (!callerOwnsBundle(bundle, user)) {
+      return reply.status(403).send({ error: "Not the bundle publisher" });
     }
 
     // Collect all digests referenced by this bundle's versions to check for orphaned blobs
@@ -321,91 +429,78 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
     }
 
     // Fire-and-forget audit log
-    const userId = (user as { id?: string }).id;
-    await auditService.logDelete(namespace, userId, `${namespace}/${name}`, {
+    await auditService.logDelete(namespace, user.id, `${namespace}/${name}`, {
       versionsDeleted: versions.length,
       digestsReferenced: Array.from(referencedDigests),
     });
 
     return reply.status(204).send();
-  });
+  }
 
-  // DELETE a specific version (owner only)
-  fastify.delete(
-    "/bundles/:namespace/:name/versions/:version",
-    async (request, reply) => {
-      const { namespace, name, version } = request.params as {
-        namespace: string;
-        name: string;
-        version: string;
-      };
+  async function deleteVersion(
+    fastify: FastifyInstance,
+    request: FastifyRequest,
+    reply: FastifyReply,
+    repo: RepoPath,
+    version: string,
+  ) {
+    const { namespace, name } = repo;
 
-      let user: { namespace: string };
-      try {
-        user = await fastify.authenticate(request);
-      } catch {
-        if (
-          fastify.config.NODE_ENV === "development" &&
-          fastify.config.ALLOW_DEV_AUTH_BYPASS === "true"
-        ) {
-          user = { namespace };
-        } else {
-          return reply.status(401).send({ error: "Authentication required" });
-        }
-      }
+    const user = await authenticateBundleWrite(fastify, request, namespace);
+    if (!user) {
+      return reply.status(401).send({ error: "Authentication required" });
+    }
 
-      if (user.namespace !== namespace) {
-        return reply
-          .status(403)
-          .send({ error: "Namespace ownership mismatch" });
-      }
+    const bundle = await db.query.bundles.findFirst({
+      where: and(eq(bundles.namespace, namespace), eq(bundles.name, name)),
+    });
 
-      const bundle = await db.query.bundles.findFirst({
-        where: and(eq(bundles.namespace, namespace), eq(bundles.name, name)),
-      });
+    if (!bundle) {
+      return reply.status(404).send({ error: "Bundle not found" });
+    }
 
-      if (!bundle) {
-        return reply.status(404).send({ error: "Bundle not found" });
-      }
+    if (!callerOwnsBundle(bundle, user)) {
+      return reply.status(403).send({ error: "Not the bundle publisher" });
+    }
 
-      const [deleted] = await db
-        .delete(bundleVersions)
-        .where(
-          and(
-            eq(bundleVersions.bundleId, bundle.id),
-            eq(bundleVersions.version, version),
-          ),
-        )
-        .returning();
+    const [deleted] = await db
+      .delete(bundleVersions)
+      .where(
+        and(
+          eq(bundleVersions.bundleId, bundle.id),
+          eq(bundleVersions.version, version),
+        ),
+      )
+      .returning();
 
-      if (!deleted) {
-        return reply.status(404).send({ error: "Version not found" });
-      }
+    if (!deleted) {
+      return reply.status(404).send({ error: "Version not found" });
+    }
 
-      // Fire-and-forget audit log
-      const userId = (user as { id?: string }).id;
-      await auditService.logDelete(
-        namespace,
-        userId,
-        `${namespace}/${name}:${version}`,
-        {
-          digest: deleted.digest,
-        },
-      );
+    // Fire-and-forget audit log
+    await auditService.logDelete(
+      namespace,
+      user.id,
+      `${namespace}/${name}:${version}`,
+      {
+        digest: deleted.digest,
+      },
+    );
 
-      return reply.status(204).send();
-    },
-  );
+    return reply.status(204).send();
+  }
 
-  // POST fork a bundle to the authenticated user's namespace
-  fastify.post<{
-    Querystring: { targetName?: string };
-  }>("/bundles/:namespace/:name/fork", async (request, reply) => {
-    const { namespace, name } = request.params as {
-      namespace: string;
-      name: string;
-    };
-    const { targetName } = request.query;
+  // Fork a bundle into the authenticated user's namespace. Forking is
+  // intentionally NOT publisher-gated on the source (public bundles
+  // are forkable by anyone); the new bundle's publisher is the forker.
+  async function forkBundle(
+    fastify: FastifyInstance,
+    request: FastifyRequest,
+    reply: FastifyReply,
+    repo: RepoPath,
+  ) {
+    const { namespace, name } = repo;
+    const { targetName } = request.query as { targetName?: string };
 
     let user: { id: string; namespace: string };
     try {
@@ -455,6 +550,7 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
         namespace: user.namespace,
         name: newName,
         bundleType: sourceBundle.bundleType,
+        publisherId: user.id,
         extensionType: sourceBundle.extensionType,
         description: sourceBundle.description,
         author: sourceBundle.author,
@@ -520,5 +616,5 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
       forkedFrom: newBundle.forkedFrom,
       versionsCopied: sourceVersions.length,
     });
-  });
+  }
 }

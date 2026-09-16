@@ -1,7 +1,7 @@
 /**
  * Profile header card (PR-C3).
  *
- * Renders the principal's display name + owner avatar + description +
+ * Renders the peko's display name + owner avatar + description +
  * status pill. Mirrors the desktop profile-modal style (rounded-xl
  * card, peko-50 owner-avatar tint).
  */

@@ -24,12 +24,12 @@ export const handlers = [
       hits: [
         {
           namespace: 'acme',
-          name: 'my-principal',
+          name: 'my-peko',
           version: 'v1.0.0',
-          description: 'A test principal bundle',
+          description: 'A test peko bundle',
           author: 'Test Author',
           bundleType: 'principal',
-          tags: ['test', 'principal'],
+          tags: ['test', 'peko'],
           pullCount: 42,
           starCount: 10,
           updatedAt: new Date().toISOString(),
@@ -81,7 +81,7 @@ export const handlers = [
         monthly: 100,
         allTime: 500,
       },
-      installCommand: `peko principal install ${params.namespace}/${params.name}:v1.0.0`,
+      installCommand: `peko pull pekohub.ai/peko/principals/${params.name}:1.0.0`,
     });
   }),
 

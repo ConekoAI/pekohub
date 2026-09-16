@@ -502,7 +502,7 @@ describe("Tunnel Proxy Integration", () => {
 
       const chatPromise = app.inject({
         method: "POST",
-        url: `/v1/public/principals/alice/${instance.name}/chat`,
+        url: `/v1/public/pekos/alice/${instance.name}/chat`,
         payload: { message: "hello" },
       });
 
@@ -561,7 +561,7 @@ describe("Tunnel Proxy Integration", () => {
 
       const chatPromise = app.inject({
         method: "POST",
-        url: `/v1/public/principals/alice/${instance.name}/chat`,
+        url: `/v1/public/pekos/alice/${instance.name}/chat`,
         payload: { message: "first-ever" },
       });
 
@@ -597,7 +597,7 @@ describe("Tunnel Proxy Integration", () => {
 
       const chatPromise = app.inject({
         method: "POST",
-        url: `/v1/public/principals/alice/${instance.name}/chat`,
+        url: `/v1/public/pekos/alice/${instance.name}/chat`,
         payload: { message: "trigger iteration break" },
       });
 
@@ -654,7 +654,7 @@ describe("Tunnel Proxy Integration", () => {
       // First message: allowed (consumes the 1-message budget).
       const firstPromise = app.inject({
         method: "POST",
-        url: `/v1/public/principals/alice/${instance.name}/chat`,
+        url: `/v1/public/pekos/alice/${instance.name}/chat`,
         payload: { message: "first" },
       });
       await new Promise((r) => setTimeout(r, 50));
@@ -675,7 +675,7 @@ describe("Tunnel Proxy Integration", () => {
       const sentBefore = socket.sent.length;
       const secondResponse = await app.inject({
         method: "POST",
-        url: `/v1/public/principals/alice/${instance.name}/chat`,
+        url: `/v1/public/pekos/alice/${instance.name}/chat`,
         payload: { message: "second" },
       });
       const sentAfter = socket.sent.length;

@@ -14,6 +14,15 @@ See `Phase2_Success_Criteria.md` for the complete, detailed success criteria. Th
 > [ADR-042](../architecture/adr/ADR-042-principal-as-container-v2.md)). Team
 > orchestration remains deferred. Retained as the original Phase 2 planning record.
 
+> **Amendment (2026-09-16, [ADR-005](../architecture/adr/ADR-005-peko-realignment.md)):**
+> CLI commands below that read `peko agent …` or `peko principal …` are superseded by
+> the flattened verbs — `peko push`, `peko pull`, `peko create`, `peko export`, etc.
+> (`peko principal <sub>` survives only as a hidden alias). Registry references are now
+> multi-segment: `<host>/peko/principals/<name>:<version>`. The package format is
+> `.peko` (`.principal` retired); registry push distributes a **template** (stripped
+> `principal.toml`), never a full existence. The `pekohub_session` cookie fallback was
+> removed — auth is 15-min access JWT + rotating refresh cookie only (ADR-001).
+
 ---
 
 ## 1. Overview
@@ -48,7 +57,7 @@ We recommend building Phase 2 in two milestones, each delivering user-visible va
 - SHA-256 verification on upload
 - Garbage collection of unreferenced blobs
 
-**User outcome:** `peko principal push` and `peko principal pull` work against the public registry.
+**User outcome:** `peko push` and `peko pull` work against the public registry.
 
 **Success criteria:** REG-001 through REG-006
 
@@ -86,7 +95,7 @@ We recommend building Phase 2 in two milestones, each delivering user-visible va
                            │ HTTPS / OCI
 ┌──────────────────────────┴──────────────────────────────────┐
 │                    CLI (peko)                                 │
-│  push │ pull │ search │ auth login │ principal install       │
+│  push │ pull │ search │ auth login                         │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -111,11 +120,11 @@ peko auth status                   # Show logged-in user
 
 # Discovery
 peko search "github assistant"     # Search registry
-peko principal info user/agent:1.0     # Show bundle metadata
+peko show <name>                   # Show local peko metadata
 
-# Publishing (aliases for push/pull)
-peko principal publish my-agent        # Push to public registry
-peko principal install user/agent:1.0  # Pull + import in one step
+# Publishing
+peko push                          # Push template to public registry
+peko pull pekohub.org/peko/principals/researcher:v1.0  # Pull + import a template
 ```
 
 > **Note on Extensions**: `peko ext publish` and `peko ext install <registry-ref>` are deferred to Phase 3. The registry accepts `.ext` packages (they are OCI artifacts like any other), but the CLI does not yet resolve or install them from remote sources.

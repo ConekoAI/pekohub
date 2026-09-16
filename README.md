@@ -1,14 +1,16 @@
 # PekoHub
 
-Public registry, relay, and discovery hub for [peko-runtime](https://github.com/ConekoAI/peko-runtime) principals.
+Public registry, relay, and discovery hub for [peko-runtime](https://github.com/ConekoAI/peko-runtime) pekos.
 
 PekoHub is three things in one server:
 
-1. **OCI Distribution Spec v1.1 registry** for `peko` bundles (extensions).
-2. **Tunnel relay** that proxies chat traffic from public callers to runtime-owned principals.
-3. **Discovery + share directory** so users can find and chat with exposed principals — anonymously in the browser, or via `peko-desktop` after a share link.
+1. **OCI Distribution Spec v1.1 registry** for peko templates and extensions (multi-segment repo paths like `peko/principals/<name>`; pushes are zero-layer template manifests — see ADR-005).
+2. **Tunnel relay** that proxies chat traffic from public callers to runtime-owned pekos.
+3. **Discovery + share directory** so users can find and chat with exposed pekos — anonymously in the browser, or via `peko-desktop` after a share link.
 
-The hub is intentionally a thin router. Per-peer access decisions live in the runtime's `PrincipalConfig.permissions` (the authoritative inbound ACL). The hub only mirrors `exposure`, `status`, and forwards identity headers.
+The hub is intentionally a thin router. Per-peer access decisions live in the runtime's `PrincipalConfig.permissions` (the authoritative inbound ACL). The hub only mirrors `exposure` / `status`, and forwards identity as short-lived EdDSA bridge tokens (ADR-057/058).
+
+> **Terminology (runtime ADR-059 / hub ADR-005):** "peko" is the user-facing term; wire and machine names keep the `principal` vocabulary (`principal_did`, `/v1/principals/*`, `bundleType: "principal"`).
 
 ## Architecture
 
@@ -65,8 +67,10 @@ cp backend/.env.example backend/.env
 
 ```bash
 cd backend
-pnpm db:push
+pnpm db:migrate
 ```
+
+(The migration chain was squashed to a fresh baseline in ADR-005 — `db:migrate` works from an empty database. For the one-time step on a pre-baseline production DB, see `DEPLOYMENT.md`.)
 
 ### 5. Start dev servers
 
@@ -86,19 +90,21 @@ pnpm dev
 
 ## API Overview
 
-All custom endpoints are mounted under `/v1`. OCI endpoints are at `/v2/...`.
+All custom endpoints are mounted under `/v1`. OCI endpoints are at `/v2/...`. The runtime CLI's hard-coded `/api/v1` prefix (search, bundle detail, OAuth) is served as an alias of the same handlers.
 
 ### OCI Distribution Spec v1.1
 
+`{repo}` is a multi-segment repository path (e.g. `peko/principals/my-peko` or `alice/my-extension`). Write endpoints require a JWT or `pkr_` API key; the first push claims the repo for its publisher (`bundles.publisher_id`).
+
 | Endpoint | Description |
 |----------|-------------|
-| `GET /v2/_catalog` | List all bundle namespaces |
-| `GET /v2/{ns}/{name}/tags/list` | List tags |
-| `GET /v2/{ns}/{name}/manifests/{ref}` | Pull manifest |
-| `PUT /v2/{ns}/{name}/manifests/{ref}` | Push manifest |
-| `GET /v2/{ns}/{name}/blobs/{digest}` | Pull blob |
-| `POST /v2/{ns}/{name}/blobs/uploads/` | Initiate blob upload |
-| `PUT /v2/{ns}/{name}/blobs/uploads/{uuid}` | Complete blob upload |
+| `GET /v2/_catalog` | List all bundle repos |
+| `GET /v2/{repo}/tags/list` | List tags |
+| `GET /v2/{repo}/manifests/{ref}` | Pull manifest |
+| `PUT /v2/{repo}/manifests/{ref}` | Push manifest (publisher-only on existing repos) |
+| `GET /v2/{repo}/blobs/{digest}` | Pull blob |
+| `POST /v2/{repo}/blobs/uploads/` | Initiate blob upload (auth required) |
+| `PUT /v2/{repo}/blobs/uploads/{uuid}` | Complete blob upload (auth required) |
 
 ### Tunnel relay
 
@@ -115,9 +121,9 @@ All custom endpoints are mounted under `/v1`. OCI endpoints are at `/v2/...`.
 | `GET /v1/runtimes` | List runtimes owned by the caller. |
 | `GET /v1/runtimes/:did` | Get a runtime by DID (owner-only). |
 
-### Principal exposure & chat
+### Peko exposure & chat
 
-A "principal" is a runtime-owned agent (`did:key:...`). Owners expose their principals via the runtime's IPC (`PrincipalSetExposure`). The hub mirrors the `exposure` field and proxies chat traffic.
+A "peko" is a runtime-owned AI actor (`did:key:...`; wire field `principal_did`). Owners expose their pekos via the runtime (`exposure` in `principal.toml`) or this API. The hub mirrors the `exposure` field and proxies chat traffic.
 
 `exposure` is one of:
 - `unexposed` — not visible to anyone; not chat-able.
@@ -125,37 +131,41 @@ A "principal" is a runtime-owned agent (`did:key:...`). Owners expose their prin
 - `public` — chat-able by anyone; indexed in `/v1/discovery/*`.
 - `unlisted` — chat-able by anyone with the URL; **not** indexed in discovery. The default for share-link use cases.
 
+Per runtime ADR-056 D7, at most one instance per `principal_did` may be `public` or `unlisted` at a time — conflicting announces/exposure changes are rejected (409).
+
 | Endpoint | Description |
 |----------|-------------|
-| `GET /v1/public/principals/:owner/:name` | Public profile for any `public` or `unlisted` principal. |
-| `POST /v1/public/principals/:owner/:name/chat` | Anonymous chat via SSE. Visitor cookie (UUID, 365-day HttpOnly/SameSite=Lax) identifies the caller to the runtime. 20 req/60s/IP rate limit; per-instance `dailyQuota`/`weeklyQuota`; optional ToS gate (returns 428). |
-| `GET /v1/instances/public` | List public principals (paginated). |
-| `GET /v1/instances/public/search` | Full-text search over public principals. |
+| `GET /v1/public/pekos/:owner/:pekoName` | Public profile for any `public` or `unlisted` peko. |
+| `POST /v1/public/pekos/:owner/:pekoName/chat` | Anonymous chat via SSE. A signed visitor cookie (HMAC, 365-day HttpOnly/SameSite=Lax) identifies the caller to the runtime. 20 req/60s/IP rate limit; per-instance `dailyQuota`/`weeklyQuota`; optional ToS gate (returns 428). |
+| `GET /v1/instances/public` | List public pekos (paginated). |
+| `GET /v1/instances/public/search` | Full-text search over public pekos. |
 | `GET /v1/discovery/search` | Faceted search: `q`, `category`, `sort` (`relevance` / `recent` / `popular`). Returns only `exposure = public`. |
 | `GET /v1/discovery/feed/:feed` | Curated feed (`trending` / `new` / `featured`). |
+
+The SPA's canonical share URL is `/peko/:owner/:name` (`/p/:owner/:name` redirects).
 
 ### Authenticated instance management
 
 | Endpoint | Description |
 |----------|-------------|
 | `GET /v1/instances` | List instances owned by the caller (any exposure). |
-| `GET /v1/me/accessible-principals` | Same, with rich per-instance metadata. |
+| `GET /v1/me/accessible-pekos` | Same, with rich per-instance metadata. |
 | `POST /v1/instances` | Create a new instance. |
 | `GET /v1/instances/:id` | Read instance metadata. |
 | `PATCH /v1/instances/:id` | Update name / description / tags / category / `tosRequired` / `tosText`. |
-| `PATCH /v1/instances/:id/exposure` | Body `{ exposure }`. Pushes `exposure_update` down the tunnel; runtime persists to `principal.toml`. |
+| `PATCH /v1/instances/:id/exposure` | Body `{ exposure }`. Pushes `exposure_update` down the tunnel; runtime persists to `principal.toml`. 409 on an ADR-056 D7 conflict (another instance with the same DID already public/unlisted). |
 | `PATCH /v1/instances/:id/status` | Body `{ status }` (`online` / `offline` / `busy` / `error`). Pushes `status_update` down the tunnel. |
 | `DELETE /v1/instances/:id` | Revoke exposure and delete the row. |
 | `POST /v1/instances/:id/chat` | Authenticated chat (SSE) for owners and permitted callers. |
 
-### Principal directory (cross-runtime `principal_send`)
+### Principal directory (cross-runtime channel addressing)
 
 | Endpoint | Description |
 |----------|-------------|
 | `GET /v1/principals/by-did/:did` | Resolve a principal by DID. Requires auth. |
 | `GET /v1/principals/by-handle/:owner/:name` | Resolve a principal by handle. Requires auth. |
 
-Both endpoints return `PrincipalTargetResolution { status: "hit" | "miss" | "denied", target?: ... }`. Used by the `principal_send` tool on the runtime side to dial peers.
+Both endpoints return `PrincipalTargetResolution { status: "hit" | "miss" | "denied", target?: ... }`. Used by the runtime's directory client to dial peers (channel-native `ChannelSend` flows). These are machine-facing wire paths and keep the `principal` vocabulary per ADR-059.
 
 ### OAuth & API keys
 
@@ -176,17 +186,18 @@ Both endpoints return `PrincipalTargetResolution { status: "hit" | "miss" | "den
 
 ## Data model
 
-The `instances` table is the only one that holds principal state. Its key fields:
+The `instances` table is the only one that holds peko state. Its key fields:
 
 | Column | Type | Notes |
 |--------|------|-------|
-| `principal_did` | text, unique | `did:key:...` of the principal. |
+| `principal_did` | text, indexed (not unique) | `did:key:...` of the peko. Multiple rows per DID are allowed (transported copies); ADR-056 D7 caps public/unlisted exposure at one per DID. |
+| `principal_did_verified` | boolean | Set when the announce carried a valid `principalPop` JWS (ADR-058 D4). |
 | `owner_subject` | jsonb | `{ kind: "user", id: <uuid> }` of the owner. |
 | `exposure` | varchar(20) | `unexposed` / `private` / `public` / `unlisted`. |
 | `status` | varchar(20) | `online` / `offline` / `busy` / `error`. Heartbeat-driven; 90s timeout. |
-| `transport_preference` | varchar(20) | `auto` / `tunnel` / `direct` (mirrors runtime config). |
-| `direct_endpoint` | varchar(512) | Optional wss URL for direct peer-to-peer. |
 | `last_seen_at` | timestamptz | Updated on every heartbeat. Sweep job marks stale rows offline. |
+
+(`transport_preference` / `direct_endpoint` were dropped — tunnel is the only transport post-ADR-057.)
 
 There is no `allowed_principals` table — it was deliberately removed. The runtime's `PrincipalConfig.permissions: Vec<PermissionGrant>` is the authoritative inbound ACL.
 

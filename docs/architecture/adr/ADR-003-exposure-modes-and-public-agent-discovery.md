@@ -13,6 +13,20 @@
 > removed (see [ADR-042](./ADR-042-principal-as-container-v2.md)). Mentions of "team"
 > in the people/access sense (e.g. "the PekoHub team") are unaffected. Retained as the
 > original decision record.
+>
+> **⚠️ Amendment (2026-09-16, [ADR-005](./ADR-005-peko-realignment.md)):**
+> - There are now **four** exposure modes: `unexposed`, `private`, `unlisted`,
+>   `public` (`unlisted` was added after this ADR). Additionally, ADR-056 D7
+>   caps each principal DID at **one** public/unlisted instance (409 on conflict).
+> - The `allowed_users` private-sharing model below is **removed**: there is no
+>   allow-list column on `instances`. Private access is granted by runtime-side
+>   permissions + invite tokens (minted/revoked over the tunnel, ADR-004
+>   amendment), not by a hub-side user list.
+> - The "Shared with Me" endpoint is now **`GET /v1/me/accessible-pekos`**
+>   (owner-only post-H4); the `/v1/me/shared-instances` and
+>   `/v1/me/accessible-principals` shapes described below are gone.
+> - Public page/chat endpoints renamed to `/v1/public/pekos/:owner/:pekoName(+/chat)`;
+>   SPA share URL is `/peko/:owner/:name` (`/p/...` redirects).
 
 ---
 

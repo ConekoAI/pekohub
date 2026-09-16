@@ -22,7 +22,7 @@ export function SearchBar({ initialQuery = '', onSearch }: SearchBarProps) {
           type="text"
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder="Search principals and extensions..."
+          placeholder="Search pekos and extensions..."
           className="input pl-10 pr-4 py-3 text-base"
         />
       </div>

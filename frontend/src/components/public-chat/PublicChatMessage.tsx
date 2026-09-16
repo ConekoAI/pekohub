@@ -5,7 +5,7 @@
  * — user / assistant / error variants. Assistant bubbles render
  * markdown via `react-markdown` + `remark-gfm` (no `rehype-sanitize`
  * because the runtime's chunk payloads are server-trusted, but the
- * runtime itself runs the principal's tools and may emit arbitrary
+ * runtime itself runs the peko's tools and may emit arbitrary
  * markdown; the SPA trust boundary ends at the runtime, which is
  * already a trusted origin).
  */
@@ -18,13 +18,13 @@ import type { ChatMessage as ChatMessageT } from "~/hooks/usePublicChat";
 interface PublicChatMessageProps {
   message: ChatMessageT;
   ownerName: string;
-  principalName: string;
+  pekoName: string;
 }
 
 export function PublicChatMessage({
   message,
   ownerName,
-  principalName,
+  pekoName,
 }: PublicChatMessageProps) {
   if (message.kind === "user") {
     return (
@@ -83,7 +83,7 @@ export function PublicChatMessage({
       </div>
       <div className="max-w-[80%]">
         <div className="mb-1 text-xs text-gray-500">
-          {ownerName}/{principalName}
+          {ownerName}/{pekoName}
           {message.iteration !== undefined && (
             <span className="ml-1.5 rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] text-gray-500">
               iter {message.iteration}

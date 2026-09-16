@@ -2,9 +2,9 @@
  * Per-instance message quota store (PR-B3).
  *
  * `instances.dailyQuota` / `instances.weeklyQuota` columns exist
- * in the schema (`backend/src/db/schema.ts:266-267`) and are read
+ * in the schema (`backend/src/db/schema.ts`) and are read
  * into the service types, but no chat path enforces them today
- * — the only protection on `POST /v1/public/principals/.../chat`
+ * — the only protection on `POST /v1/public/pekos/.../chat`
  * is the in-memory 20/min/IP rate limit, which is bypassable by
  * any reasonable botnet.
  *

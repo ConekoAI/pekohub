@@ -9,8 +9,8 @@ interface BundleCardProps {
 export function BundleCard({ bundle }: BundleCardProps) {
   return (
     <Link
-      to="/bundles/$namespace/$name"
-      params={{ namespace: bundle.namespace, name: bundle.name }}
+      to="/bundles/$"
+      params={{ _splat: `${bundle.namespace}/${bundle.name}` }}
       className="card p-5 hover:shadow-md transition-shadow"
     >
       <div className="flex items-start justify-between">
@@ -27,7 +27,8 @@ export function BundleCard({ bundle }: BundleCardProps) {
             ? 'bg-purple-50 text-purple-700'
             : 'bg-peko-50 text-peko-700'
         }`}>
-          {bundle.bundleType}
+          {/* `principal` is the wire value for bundleType; the UI calls it a peko. */}
+          {bundle.bundleType === 'principal' ? 'Peko' : bundle.bundleType}
         </span>
       </div>
 

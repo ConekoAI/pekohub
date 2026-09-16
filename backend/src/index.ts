@@ -19,6 +19,7 @@ import searchApiRoutes from "./routes/api/search.js";
 import bundleApiRoutes from "./routes/api/bundles.js";
 import runtimeRoutes from "./routes/api/runtimes.js";
 import instanceRoutes from "./routes/api/instances.js";
+import publicPekoRoutes from "./routes/api/public-pekos.js";
 import principalDirectoryRoutes from "./routes/api/principals.js";
 import adminRoutes from "./routes/api/admin.js";
 import oauthRoutes from "./routes/auth/oauth.js";
@@ -136,12 +137,27 @@ async function main() {
   // the route file directly under /v1 to match the rest of the API.
   await app.register(runtimeRoutes, { prefix: "/v1" });
   await app.register(instanceRoutes, { prefix: "/v1" });
+  // ADR-059: web-facing public peko surface (page data, public chat,
+  // accessible-pekos) — renamed from the retired /v1/public/principals/*
+  // paths, which now 404 (clean rename, no aliases).
+  await app.register(publicPekoRoutes, { prefix: "/v1" });
   // Issue #14: principal directory (by-did / by-handle) for the cross-runtime
   // principal_send resolver. Mounted under /v1 to match the rest of the
   // public API; both endpoints require auth (JWT or API key) so
   // `fastify.authenticate` is the gate.
   await app.register(principalDirectoryRoutes, { prefix: "/v1" });
   await app.register(adminRoutes, { prefix: "/v1/admin" });
+
+  // `/api/v1` alias surface: the runtime CLI hard-codes this prefix
+  // (search → GET /api/v1/search, bundle detail →
+  // GET /api/v1/bundles/<ns>/<name>, OAuth → /api/v1/auth/github/authorize;
+  // see peko-rs/cli/src/commands/search.rs). The canonical `/v1`
+  // registrations above stay; these are the same plugins mounted a
+  // second time under the CLI-facing prefix.
+  await app.register(searchApiRoutes, { prefix: "/api/v1" });
+  await app.register(bundleApiRoutes, { prefix: "/api/v1" });
+  await app.register(oauthRoutes, { prefix: "/api/v1/auth" });
+  await app.register(apiKeyRoutes, { prefix: "/api/v1/auth" });
 
   // ADR-057: bridge-token verification keys. Runtimes fetch this to
   // validate the EdDSA tokens the hub mints when proxying chat (the
@@ -155,7 +171,10 @@ async function main() {
 
   // Stricter rate limits for auth endpoints
   app.addHook("onRequest", async (request, reply) => {
-    if (request.url.startsWith("/v1/auth/")) {
+    if (
+      request.url.startsWith("/v1/auth/") ||
+      request.url.startsWith("/api/v1/auth/")
+    ) {
       // Use a simple in-memory rate limiter for auth endpoints
       // @fastify/rate-limit doesn't support prefix-based scoping,
       // so we apply a custom hook here.

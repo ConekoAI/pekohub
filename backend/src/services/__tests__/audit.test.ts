@@ -45,7 +45,7 @@ describe("AuditService", () => {
       expect(valuesCall).toHaveBeenCalledWith(
         expect.objectContaining({
           namespace: "acme",
-          userId: 1,
+          userId: "00000000-0000-0000-0000-000000000001",
           action: "push",
           resource: "acme/my-bundle:1.0.0",
           details: { digest: "sha256:abc", size: 42 },
@@ -98,7 +98,7 @@ describe("AuditService", () => {
       expect(valuesCall).toHaveBeenCalledWith(
         expect.objectContaining({
           namespace: "acme",
-          userId: 2,
+          userId: "00000000-0000-0000-0000-000000000002",
           action: "pull",
           resource: "acme/my-bundle:1.0.0",
           details: { digest: "sha256:def" },
@@ -131,7 +131,7 @@ describe("AuditService", () => {
       expect(valuesCall).toHaveBeenCalledWith(
         expect.objectContaining({
           namespace: "acme",
-          userId: 3,
+          userId: "00000000-0000-0000-0000-000000000003",
           action: "delete",
           resource: "acme/my-bundle:1.0.0",
           details: { reason: "cleanup" },
@@ -164,7 +164,7 @@ describe("AuditService", () => {
       expect(valuesCall).toHaveBeenCalledWith(
         expect.objectContaining({
           namespace: "acme",
-          userId: 4,
+          userId: "00000000-0000-0000-0000-000000000004",
           action: "permission_change",
           resource: "acme/my-bundle",
           details: { role: "admin" },
@@ -189,7 +189,7 @@ describe("AuditService", () => {
         {
           id: 1,
           namespace: "acme",
-          userId: 1,
+          userId: "00000000-0000-0000-0000-000000000001",
           action: "push",
           resource: "acme/bundle:1.0.0",
           details: null,
@@ -198,7 +198,7 @@ describe("AuditService", () => {
         {
           id: 2,
           namespace: "acme",
-          userId: 2,
+          userId: "00000000-0000-0000-0000-000000000002",
           action: "pull",
           resource: "acme/bundle:1.0.0",
           details: null,
@@ -242,7 +242,7 @@ describe("AuditService", () => {
         {
           id: 1,
           namespace: "acme",
-          userId: 1,
+          userId: "00000000-0000-0000-0000-000000000001",
           action: "push",
           resource: "acme/bundle:1.0.0",
           details: null,

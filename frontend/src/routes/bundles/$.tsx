@@ -8,12 +8,22 @@ import { useQueryClient } from '@tanstack/react-query';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-export const Route = createFileRoute('/bundles/$namespace/$name')({
+/**
+ * Bundle detail page. Splat route so multi-segment namespaces
+ * (e.g. `peko/principals/foo`) resolve: the splat is split on '/',
+ * the last segment is the bundle name, everything before it is the
+ * namespace. Plain two-segment URLs (`/bundles/alice/foo`) keep
+ * working through the same component.
+ */
+export const Route = createFileRoute('/bundles/$')({
   component: BundleDetailPage,
 });
 
 function BundleDetailPage() {
-  const { namespace, name } = Route.useParams();
+  const { _splat } = Route.useParams();
+  const segments = (_splat ?? '').split('/').filter(Boolean);
+  const name = segments[segments.length - 1] ?? '';
+  const namespace = segments.slice(0, -1).join('/');
   const bundle = useBundle(namespace, name);
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -94,7 +104,7 @@ function BundleDetailPage() {
     );
   }
 
-  if (bundle.isError || !bundle.data) {
+  if (!namespace || !name || bundle.isError || !bundle.data) {
     return (
       <div className="mx-auto max-w-4xl px-4 py-12 text-center text-red-600">
         Bundle not found
@@ -119,7 +129,8 @@ function BundleDetailPage() {
             ? 'bg-purple-50 text-purple-700'
             : 'bg-peko-50 text-peko-700'
         }`}>
-          {data.metadata.bundleType}
+          {/* `principal` is the wire value for bundleType; the UI calls it a peko. */}
+          {data.metadata.bundleType === 'principal' ? 'Peko' : data.metadata.bundleType}
         </span>
       </div>
 
@@ -177,7 +188,7 @@ function BundleDetailPage() {
         <div className="mt-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
           <code className="flex-1 rounded-lg bg-gray-900 px-4 py-3 text-sm text-gray-100 font-mono break-all">
             {data.metadata.bundleType === 'extension'
-              ? `peko principal pull ${namespace}/${name}:${data.metadata.version ?? 'latest'}`
+              ? `peko pull ${namespace}/${name}:${data.metadata.version ?? 'latest'}`
               : data.installCommand}
           </code>
           <button

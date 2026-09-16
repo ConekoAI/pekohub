@@ -14,6 +14,28 @@
 > single `'principal'` type. The runtime dropped the `Team` subject variant; see
 > [ADR-042](./ADR-042-principal-as-container-v2.md). The protocol sketch below is retained
 > as the original decision record.
+>
+> **⚠️ Amendment (2026-09-16, [ADR-005](./ADR-005-peko-realignment.md)):** The tunnel
+> protocol has grown well beyond the sketch below:
+> - **Handshake hardening**: `RuntimeHello` authentication is now a
+>   challenge/ack exchange (runtime registration itself is PoP-based:
+>   `POST /v1/runtimes/register-challenge` → `POST /v1/runtimes/register` with a
+>   JWS proof-of-possession).
+> - **`principalPop`**: `instance_announce` carries a per-principal JWS PoP; the
+>   hub verifies it before accepting the announce.
+> - **Invite relay arms**: `invite_mint` / `invite_revoke` messages let the
+>   runtime mint and revoke private-access invite tokens through the hub.
+> - **Channel relay arms**: `tunnel_channel_event` / `tunnel_channel_invite`
+>   carry dual JWS signatures (origin + counterparty, ADR-058); the hub is a
+>   **pure relay** and passes both signatures through unverified.
+> - **`stream_iteration`**: streaming now relays per-iteration chunks in
+>   addition to the `stream_chunk`/`stream_end` pair below.
+> - **Auth**: web/CLI callers authenticate with short-lived **EdDSA bridge
+>   tokens** (60s) carrying a mandatory `kind:"user"|"visitor"` claim (JWKS at
+>   `/v1/jwks.json`); the `x-pekohub-*` bridge headers referenced elsewhere are
+>   retired. Visitor sessions use HMAC-signed cookies.
+> - User-facing endpoints renamed per ADR-005 (`/v1/public/pekos/...`,
+>   `/v1/me/accessible-pekos`).
 
 ---
 
