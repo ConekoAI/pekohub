@@ -20,7 +20,8 @@ import crypto from "node:crypto";
  *
  * Plus the publisher model (ADR-056): different-user overwrite → 403,
  * same publisher new version → 201, legacy NULL-publisher claim, and
- * the retired `agent` bundle type → 410.
+ * every retired artifact kind (`extension` / `agent` / `team`) → 410,
+ * and the retired `peko/{extensions,agents,teams}/` lanes → 410.
  */
 
 function sha256(buffer: Buffer | string): string {
@@ -261,16 +262,38 @@ describe("ADR-056 template push/pull (peko/principals/<name>)", () => {
     expect(res.statusCode).toBe(403);
   });
 
-  it("keeps the 410 rejection for retired 'agent' bundle identity", async () => {
+  it("rejects every artifact kind except 'principal' with 410", async () => {
     const app = await buildTestApp({ testDb });
     const alice = await createUser(testDb.client, { namespace: "alice" });
     const headers = await authHeaders(alice);
     const configDigest = await uploadBlob(app, headers, TEMPLATE_TOML);
 
-    // Explicit retired annotation
+    // The current annotation. `extension` is retired (capabilities are
+    // workspace files — ADR-047 §5 / ADR-050); `agent`/`team` went with
+    // ADR-041. All are 410, never silently re-typed as `principal`.
+    for (const kind of ["extension", "agent", "team"]) {
+      const res = await app.inject({
+        method: "PUT",
+        url: `/v2/peko/principals/kind-${kind}/manifests/1.0.0`,
+        headers: {
+          ...headers,
+          "content-type": "application/vnd.oci.image.manifest.v1+json",
+        },
+        payload: JSON.stringify({
+          ...templateManifest(configDigest, "1.0.0"),
+          annotations: { "org.peko.kind": kind },
+        }),
+      });
+      expect(res.statusCode).toBe(410);
+      expect(JSON.parse(res.body).error).toContain("template-only");
+    }
+
+    // The hub's own older annotation is still read as a rejection guard,
+    // so an old client gets an explicit error rather than a silent
+    // re-type.
     const explicit = await app.inject({
       method: "PUT",
-      url: `/v2/peko/agents/old-agent/manifests/1.0.0`,
+      url: `/v2/peko/principals/old-agent/manifests/1.0.0`,
       headers: {
         ...headers,
         "content-type": "application/vnd.oci.image.manifest.v1+json",
@@ -281,27 +304,43 @@ describe("ADR-056 template push/pull (peko/principals/<name>)", () => {
       }),
     });
     expect(explicit.statusCode).toBe(410);
+  });
 
-    // `org.peko.kind: "agent"` with no bundleType annotation — the
-    // runtime never emits kind "agent" as a principal-template alias
-    // (its only production push hard-codes kind "principal"), so the
-    // retired kind is 410, not silently re-typed.
-    const kindAgent = await app.inject({
+  it("refuses new pushes into retired repo lanes (410)", async () => {
+    const app = await buildTestApp({ testDb });
+    const alice = await createUser(testDb.client, { namespace: "alice" });
+    const headers = await authHeaders(alice);
+    const configDigest = await uploadBlob(app, headers, TEMPLATE_TOML);
+
+    // `peko/extensions/…`, `peko/agents/…` and `peko/teams/…` distributed
+    // capability packages and `.agent` bundles (ADR-037 / ADR-047 §5 /
+    // ADR-050). Existing legacy rows stay readable and deletable — only
+    // growth is refused, so residue cannot accumulate.
+    for (const lane of ["extensions", "agents", "teams"]) {
+      const res = await app.inject({
+        method: "PUT",
+        url: `/v2/peko/${lane}/legacy-thing/manifests/1.0.0`,
+        headers: {
+          ...headers,
+          "content-type": "application/vnd.oci.image.manifest.v1+json",
+        },
+        payload: JSON.stringify(templateManifest(configDigest, "1.0.0")),
+      });
+      expect(res.statusCode).toBe(410);
+      expect(JSON.parse(res.body).error).toContain("retired");
+    }
+
+    // The template lane still accepts the same push.
+    const ok = await app.inject({
       method: "PUT",
-      url: `/v2/peko/agents/older-agent/manifests/1.0.0`,
+      url: `/v2/peko/principals/legacy-thing/manifests/1.0.0`,
       headers: {
         ...headers,
         "content-type": "application/vnd.oci.image.manifest.v1+json",
       },
-      payload: JSON.stringify({
-        ...templateManifest(configDigest, "1.0.0"),
-        annotations: {
-          "org.peko.kind": "agent",
-          "dev.pekohub.principalName": "older-agent",
-        },
-      }),
+      payload: JSON.stringify(templateManifest(configDigest, "1.0.0")),
     });
-    expect(kindAgent.statusCode).toBe(410);
+    expect(ok.statusCode).toBe(201);
   });
 
   it("lets the namespace-matching pusher claim a legacy NULL-publisher bundle", async () => {

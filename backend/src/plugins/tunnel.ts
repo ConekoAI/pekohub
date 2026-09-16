@@ -17,47 +17,56 @@ declare module "fastify" {
 const TUNNEL_UPGRADE_RATE_MAX = 10;
 const TUNNEL_UPGRADE_RATE_WINDOW = "1 minute";
 
-export default fp(async (fastify: FastifyInstance) => {
-  const tunnelManager = new TunnelManager(fastify);
-  // Default to in-memory; the `quotas` plugin overwrites this
-  // reference with Redis or stays in-memory depending on REDIS_URL.
-  const tunnelRouter = new TunnelRouter(
-    tunnelManager,
-    new InMemoryQuotaStore(),
-    {
-      issuer: fastify.config.PUBLIC_ORIGIN,
-      jwtSecret: fastify.config.JWT_SECRET,
-    },
-  );
+/**
+ * Registered under an explicit `name` because `src/plugins/quotas.ts`
+ * declares `dependencies: ["tunnel"]` — fastify resolves that string
+ * against the plugin name, so an anonymous wrapper makes the dependency
+ * unresolvable and the whole server fails to boot.
+ */
+export default fp(
+  async (fastify: FastifyInstance) => {
+    const tunnelManager = new TunnelManager(fastify);
+    // Default to in-memory; the `quotas` plugin overwrites this
+    // reference with Redis or stays in-memory depending on REDIS_URL.
+    const tunnelRouter = new TunnelRouter(
+      tunnelManager,
+      new InMemoryQuotaStore(),
+      {
+        issuer: fastify.config.PUBLIC_ORIGIN,
+        jwtSecret: fastify.config.JWT_SECRET,
+      },
+    );
 
-  fastify.decorate("tunnelManager", tunnelManager);
-  fastify.decorate("tunnelRouter", tunnelRouter);
+    fastify.decorate("tunnelManager", tunnelManager);
+    fastify.decorate("tunnelRouter", tunnelRouter);
 
-  await fastify.register(fastifyWebsocket);
+    await fastify.register(fastifyWebsocket);
 
-  fastify.get(
-    "/v1/tunnel",
-    {
-      websocket: true,
-      config: {
-        // Tighter than the global API cap: a runtime that flaps
-        // re-handshakes, but it should never exceed this. Counts
-        // only the unauthenticated upgrade, not post-handshake
-        // message traffic.
-        rateLimit: {
-          max: TUNNEL_UPGRADE_RATE_MAX,
-          timeWindow: TUNNEL_UPGRADE_RATE_WINDOW,
+    fastify.get(
+      "/v1/tunnel",
+      {
+        websocket: true,
+        config: {
+          // Tighter than the global API cap: a runtime that flaps
+          // re-handshakes, but it should never exceed this. Counts
+          // only the unauthenticated upgrade, not post-handshake
+          // message traffic.
+          rateLimit: {
+            max: TUNNEL_UPGRADE_RATE_MAX,
+            timeWindow: TUNNEL_UPGRADE_RATE_WINDOW,
+          },
         },
       },
-    },
-    (connection: SocketStream) => {
-      tunnelManager.handleSocket(connection.socket);
-    },
-  );
+      (connection: SocketStream) => {
+        tunnelManager.handleSocket(connection.socket);
+      },
+    );
 
-  tunnelManager.startReaper();
+    tunnelManager.startReaper();
 
-  fastify.addHook("onClose", async () => {
-    tunnelManager.stopReaper();
-  });
-});
+    fastify.addHook("onClose", async () => {
+      tunnelManager.stopReaper();
+    });
+  },
+  { name: "tunnel" },
+);

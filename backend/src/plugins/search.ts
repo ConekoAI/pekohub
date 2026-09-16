@@ -18,14 +18,15 @@ export function sanitizeObjectID(id: string): string {
 }
 
 export interface SearchService {
+  /**
+   * Index one template version. The document is exactly
+   * `SearchResultItem` — templates carry no extension-era metadata
+   * (hook points, compatibility matrix, model/MCP requirements), so
+   * there is nothing to strip.
+   */
   indexBundle(
     doc: SearchResultItem & {
       objectID: string;
-      compatibility?: {
-        runtime?: string;
-        minVersion?: string;
-        maxVersion?: string;
-      };
     },
   ): Promise<void>;
   search(
@@ -37,7 +38,15 @@ export interface SearchService {
     page: number;
     perPage: number;
   }>;
-  deleteBundle(objectID: string): Promise<void>;
+  /**
+   * Remove template documents from the index.
+   *
+   * One document exists per pushed version (`<namespace>-<name>-<version>`),
+   * so deletion is a list, not a prefix: the previous
+   * `deleteBundle("${namespace}-${name}")` never matched a real document id
+   * and left deleted templates searchable forever.
+   */
+  deleteBundleDocuments(objectIDs: string[]): Promise<void>;
   indexInstance(doc: {
     objectID: string;
     id: string;
@@ -93,15 +102,12 @@ async function searchPlugin(fastify: FastifyInstance) {
         "tags",
         "author",
       ],
-      filterableAttributes: [
-        "bundleType",
-        "extensionType",
-        "tags",
-        "categories",
-        "modelProviders",
-        "hookPoints",
-      ],
-      sortableAttributes: ["updatedAt", "pullCount", "starCount"],
+      // Template metadata only. The extension-era facets
+      // (`extensionType`, `hookPoints`, `categories`, `modelProviders`)
+      // lost their producers when capabilities moved to workspace files
+      // (runtime ADR-047 §5 / ADR-050).
+      filterableAttributes: ["bundleType", "tags"],
+      sortableAttributes: ["updatedAt", "pullCount"],
       rankingRules: [
         "words",
         "typo",
@@ -151,23 +157,15 @@ async function searchPlugin(fastify: FastifyInstance) {
 
   const search: SearchService = {
     async indexBundle(doc) {
-      const { objectID, compatibility, hooks, ...rest } = doc;
-      const sanitizedDoc: Record<string, unknown> = {
-        ...rest,
-        id: sanitizeObjectID(objectID),
-        hookPoints: hooks?.map((h) => h.point) ?? [],
-      };
-      // Only index hooks when it is a non-null array so Meilisearch never
-      // stores `null` for this field (prevents Zod response-validation 500s).
-      if (hooks != null) {
-        sanitizedDoc.hooks = hooks;
-      }
-      if (compatibility) {
-        sanitizedDoc.compatibilityRuntime = compatibility.runtime;
-        sanitizedDoc.compatibilityMinVersion = compatibility.minVersion;
-        sanitizedDoc.compatibilityMaxVersion = compatibility.maxVersion;
-      }
-      await bundlesIndex.addDocuments([sanitizedDoc]);
+      // `objectID` must not reach the document: Meilisearch infers the
+      // primary key from the attributes, and two fields ending in `id`
+      // (`objectID` plus the canonical `id`) make that inference fail —
+      // the task dies with "found 2 fields ending with `id`" and the
+      // template silently never becomes searchable.
+      const { objectID, ...rest } = doc;
+      await bundlesIndex.addDocuments([
+        { ...rest, id: sanitizeObjectID(objectID) },
+      ]);
     },
 
     async search(query, options = {}) {
@@ -198,8 +196,9 @@ async function searchPlugin(fastify: FastifyInstance) {
       };
     },
 
-    async deleteBundle(objectID) {
-      await bundlesIndex.deleteDocument(sanitizeObjectID(objectID));
+    async deleteBundleDocuments(objectIDs) {
+      if (objectIDs.length === 0) return;
+      await bundlesIndex.deleteDocuments(objectIDs.map(sanitizeObjectID));
     },
 
     async indexInstance(doc) {

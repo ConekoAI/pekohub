@@ -1,169 +1,186 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Loader2,
-  RefreshCw,
-  ExternalLink,
-  Trash2,
-  Settings,
-  Globe,
-  EyeOff,
-  Lock,
-  LinkIcon,
+  ArrowUpRight,
   CircleDot,
+  EyeOff,
+  Globe,
+  LinkIcon,
+  Lock,
   PowerOff,
-  AlertTriangle,
-  Users,
+  RefreshCw,
+  Settings2,
+  Trash2,
+  TriangleAlert,
+  X,
 } from 'lucide-react';
 import { useAuth } from '~/hooks/useAuth';
 import { api, type OwnedInstanceRecord } from '~/lib/api';
 import { AppShell } from '~/components/AppShell';
-import { SignInModal } from '~/components/SignInModal';
+import { Badge, CopyButton, EmptyState, ErrorNote, Spinner, Stat } from '~/components/ui';
+import { relativeTime } from '~/lib/format';
 
 /**
- * PR #7: Owner dashboard. Lists every instance the signed-in user
- * owns (across all exposure levels) and lets them flip exposure,
- * status, and copy a fresh public share link.
+ * Owner dashboard.
  *
- * The route is auth-gated by AppShell / useAuth — only renders
- * cards once the JWT user is resolved. The "Sign in" CTA is
- * shown when the JWT check completes and no user is present.
+ * Lists every instance the signed-in user owns across all exposure
+ * levels and lets them change exposure, status and the public profile.
+ *
+ * Two contracts worth knowing before touching this page:
+ *  - `exposure = public` is the only arm that persists a
+ *    `public_profile` server-side, so switching to public without a
+ *    name/description would leave an unlistable instance. The publish
+ *    form exists for exactly that reason.
+ *  - ADR-056 D7 caps public/unlisted exposure at one instance per
+ *    principal DID. A conflicting switch comes back as 409 and is
+ *    surfaced inline rather than swallowed.
  */
-export const Route = createFileRoute('/dashboard')({
-  component: DashboardPage,
-});
 
 type Exposure = OwnedInstanceRecord['exposure'];
 type Status = OwnedInstanceRecord['status'];
 
 const EXPOSURE_ORDER: Exposure[] = ['public', 'unlisted', 'private', 'unexposed'];
-const EXPOSURE_LABEL: Record<Exposure, string> = {
-  public: 'Public',
-  unlisted: 'Unlisted',
-  private: 'Private',
-  unexposed: 'Unexposed',
-};
-const EXPOSURE_COLOR: Record<Exposure, string> = {
-  public: 'bg-emerald-100 text-emerald-700',
-  unlisted: 'bg-amber-100 text-amber-700',
-  private: 'bg-slate-100 text-slate-700',
-  unexposed: 'bg-red-100 text-red-700',
-};
-const EXPOSURE_ICON: Record<Exposure, typeof Globe> = {
-  public: Globe,
-  unlisted: LinkIcon,
-  private: Lock,
-  unexposed: EyeOff,
+
+const EXPOSURE_META: Record<
+  Exposure,
+  { label: string; blurb: string; icon: typeof Globe; tone: 'peko' | 'iris' | 'neutral' | 'danger' }
+> = {
+  public: {
+    label: 'Public',
+    blurb: 'Listed in the directory. Anyone can find and chat with it.',
+    icon: Globe,
+    tone: 'peko',
+  },
+  unlisted: {
+    label: 'Unlisted',
+    blurb: 'Chat-able by anyone with the link, never indexed.',
+    icon: LinkIcon,
+    tone: 'iris',
+  },
+  private: {
+    label: 'Private',
+    blurb: 'Only subjects listed in the runtime’s permissions may chat.',
+    icon: Lock,
+    tone: 'neutral',
+  },
+  unexposed: {
+    label: 'Unexposed',
+    blurb: 'Not reachable through the hub at all.',
+    icon: EyeOff,
+    tone: 'danger',
+  },
 };
 
-const STATUS_COLOR: Record<Status, string> = {
-  online: 'bg-emerald-500',
-  offline: 'bg-gray-400',
-  busy: 'bg-amber-500',
-  error: 'bg-red-500',
-};
-const STATUS_ICON: Record<Status, typeof CircleDot> = {
-  online: CircleDot,
-  offline: PowerOff,
-  busy: CircleDot,
-  error: AlertTriangle,
-};
+const STATUSES: Status[] = ['online', 'offline', 'busy', 'error'];
+
+const CATEGORIES = [
+  'productivity',
+  'coding',
+  'creative',
+  'business',
+  'entertainment',
+  'education',
+  'other',
+] as const;
+
+export const Route = createFileRoute('/dashboard')({
+  component: DashboardPage,
+});
 
 function DashboardPage() {
-  const { user, isLoading, isAuthenticated } = useAuth();
-  const [signInOpen, setSignInOpen] = useState(false);
+  const { user } = useAuth();
   const [editing, setEditing] = useState<OwnedInstanceRecord | null>(null);
 
-  // List owned instances. `enabled` guards against the JWT-only path
-  // — useAuth still calls `api.getMe` to determine auth state, so by
-  // the time this renders either we have a user or we don't.
   const owned = useQuery({
     queryKey: ['dashboard', 'owned-instances'],
     queryFn: () => api.listOwnedInstances({ page: 1, perPage: 50 }),
-    enabled: isAuthenticated,
+    enabled: Boolean(user),
   });
 
-  if (isLoading) {
-    return (
-      <AppShell>
-        <div className="flex min-h-[40vh] items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-peko-600" />
-        </div>
-      </AppShell>
-    );
-  }
+  const instances = owned.data?.data ?? [];
 
-  if (!isAuthenticated || !user) {
-    return (
-      <AppShell>
-        <div className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center">
-          <Users className="mx-auto h-8 w-8 text-gray-400" />
-          <h1 className="mt-3 text-xl font-semibold text-gray-900">Sign in required</h1>
-          <p className="mt-2 text-gray-600">
-            Sign in with your PekoHub account to manage your shared pekos.
-          </p>
-          <button onClick={() => setSignInOpen(true)} className="btn-primary mt-4 inline-flex">
-            Sign In
-          </button>
-        </div>
-        <SignInModal isOpen={signInOpen} onClose={() => setSignInOpen(false)} />
-      </AppShell>
-    );
-  }
+  const counts = useMemo(
+    () => ({
+      total: instances.length,
+      public: instances.filter((i) => i.exposure === 'public').length,
+      online: instances.filter((i) => i.status === 'online').length,
+    }),
+    [instances],
+  );
 
   return (
     <AppShell>
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-          <p className="mt-1 text-sm text-gray-600">
-            Manage pekos shared from your connected runtimes.
+      <header className="flex flex-wrap items-end justify-between gap-5">
+        <div className="min-w-0">
+          <p className="eyebrow mb-2.5">owner console</p>
+          <h1 className="display text-2xl sm:text-[28px]">Your pekos</h1>
+          <p className="lede mt-2 max-w-2xl">
+            Pekos announced by runtimes you own. Exposure and status changes are pushed down the
+            tunnel — the runtime remains the authority on its own permissions.
           </p>
         </div>
         <button
           onClick={() => void owned.refetch()}
-          className="btn-secondary inline-flex items-center gap-2 text-xs"
           disabled={owned.isFetching}
+          className="btn-secondary btn-sm"
         >
-          {owned.isFetching ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
-          ) : (
-            <RefreshCw className="h-3 w-3" />
-          )}
+          {owned.isFetching ? <Spinner className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />}
           Refresh
         </button>
       </header>
 
-      {owned.isLoading ? (
-        <div className="mt-12 text-center text-gray-500">
-          <Loader2 className="mx-auto h-6 w-6 animate-spin" />
-          <p className="mt-2">Loading your pekos...</p>
-        </div>
-      ) : owned.error ? (
-        <div className="mt-12 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          Failed to load: {owned.error instanceof Error ? owned.error.message : 'Unknown error'}
-        </div>
-      ) : !owned.data || owned.data.data.length === 0 ? (
-        <div className="mt-12 rounded-lg border border-dashed border-gray-300 bg-white p-12 text-center">
-          <h2 className="text-lg font-semibold text-gray-900">No pekos yet</h2>
-          <p className="mt-2 text-sm text-gray-600">
-            Set exposure on your runtime, then it appears here.
-          </p>
-          <p className="mt-4 text-xs text-gray-500">
-            <code className="rounded bg-gray-100 px-2 py-1">{'exposure = "public"  # in the peko\'s principal.toml'}</code>
-          </p>
-        </div>
-      ) : (
-        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {owned.data.data.map((inst) => (
-            <InstanceCard key={inst.id} instance={inst} onEdit={() => setEditing(inst)} />
-          ))}
-        </div>
+      {instances.length > 0 && (
+        <section className="mt-8 grid grid-cols-3 gap-3">
+          <Stat label="total" value={counts.total} />
+          <Stat label="public" value={counts.public} hint="indexed in the directory" />
+          <Stat label="online" value={counts.online} hint="heartbeat within 90s" />
+        </section>
       )}
 
+      <section className="mt-8">
+        {owned.isLoading ? (
+          <div className="flex items-center justify-center gap-2.5 py-24 text-sm text-slate-500">
+            <Spinner className="h-4 w-4" />
+            Loading your pekos…
+          </div>
+        ) : owned.isError ? (
+          <ErrorNote>
+            Could not load your pekos —{' '}
+            {owned.error instanceof Error ? owned.error.message : 'unknown error'}
+          </ErrorNote>
+        ) : instances.length === 0 ? (
+          <EmptyState
+            icon={<CircleDot className="h-5 w-5" />}
+            title="No pekos announced yet"
+            body={
+              <>
+                Start a runtime, create a peko, then set its exposure. It appears here as soon as the
+                runtime announces itself over the tunnel.
+              </>
+            }
+            action={
+              <code className="code-block text-xs">
+                {'exposure = "public"  # in the peko’s principal.toml'}
+              </code>
+            }
+          />
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {instances.map((instance) => (
+              <InstanceCard
+                key={instance.id}
+                instance={instance}
+                ownerHandle={user?.namespace ?? null}
+                onManage={() => setEditing(instance)}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
       {editing && (
-        <EditInstanceModal
+        <ManageInstanceModal
           instance={editing}
           onClose={() => setEditing(null)}
           onSaved={() => {
@@ -172,86 +189,117 @@ function DashboardPage() {
           }}
         />
       )}
-      <SignInModal isOpen={signInOpen} onClose={() => setSignInOpen(false)} />
     </AppShell>
   );
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+   Card
+   ───────────────────────────────────────────────────────────────────────── */
+
 function InstanceCard({
   instance,
-  onEdit,
+  ownerHandle,
+  onManage,
 }: {
   instance: OwnedInstanceRecord;
-  onEdit: () => void;
+  ownerHandle: string | null;
+  onManage: () => void;
 }) {
-  const ExposureIcon = EXPOSURE_ICON[instance.exposure];
-  const StatusIcon = STATUS_ICON[instance.status];
-  const lastSeen = instance.lastSeenAt ? new Date(instance.lastSeenAt) : null;
-  const shareUrl =
-    instance.exposure !== 'unexposed'
-      ? `${typeof window !== 'undefined' ? window.location.origin : ''}/peko/${namespaceFor(instance)}/${instance.name}`
-      : null;
+  const meta = EXPOSURE_META[instance.exposure];
+  const ExposureIcon = meta.icon;
+  const shareUrl = ownerHandle
+    ? `${window.location.origin}/peko/${ownerHandle}/${instance.name}`
+    : null;
+  const live = instance.exposure === 'public' || instance.exposure === 'unlisted';
 
   return (
-    <div className="card p-4">
-      <div className="flex items-start justify-between gap-2">
+    <article className="card card-hover flex flex-col p-5">
+      <header className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="truncate font-semibold text-gray-900">
+          <h3 className="truncate text-[15px] font-semibold tracking-tight text-slate-100">
             {instance.publicName ?? instance.name}
           </h3>
-          <p className="mt-0.5 truncate text-xs text-gray-500">
-            @{instance.name} · {instance.runtimeDisplayName ?? instance.runtimeId}
-          </p>
+          <p className="mt-1 truncate font-mono text-2xs text-slate-500">@{instance.name}</p>
         </div>
-        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${EXPOSURE_COLOR[instance.exposure]}`}>
-          <ExposureIcon className="h-3 w-3" />
-          {EXPOSURE_LABEL[instance.exposure]}
-        </span>
-      </div>
+        <Badge tone={meta.tone}>
+          <ExposureIcon className="h-2.5 w-2.5" />
+          {meta.label}
+        </Badge>
+      </header>
 
-      {instance.description && (
-        <p className="mt-2 line-clamp-2 text-sm text-gray-600">{instance.description}</p>
-      )}
+      <p className="mt-3 line-clamp-2 min-h-[2.4rem] text-[13px] leading-relaxed text-slate-400">
+        {instance.description ?? 'No public description yet.'}
+      </p>
 
-      <div className="mt-3 flex items-center gap-2 text-xs text-gray-500">
-        <span className={`inline-block h-2 w-2 rounded-full ${STATUS_COLOR[instance.status]}`} aria-hidden />
-        <StatusIcon className="h-3 w-3" />
-        <span className="capitalize">{instance.status}</span>
-        {lastSeen && (
-          <>
-            <span>·</span>
-            <span title={lastSeen.toISOString()}>last seen {relativeTime(lastSeen)}</span>
-          </>
+      <dl className="mt-4 space-y-1.5 font-mono text-2xs text-slate-600">
+        <div className="flex items-center justify-between gap-3">
+          <dt>runtime</dt>
+          <dd className="truncate text-slate-500">
+            {instance.runtimeDisplayName ?? instance.runtimeId}
+          </dd>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <dt>status</dt>
+          <dd className="flex items-center gap-1.5 text-slate-500">
+            <StatusGlyph status={instance.status} />
+            {instance.status}
+            {instance.lastSeenAt && (
+              <span className="text-slate-700">· {relativeTime(instance.lastSeenAt)}</span>
+            )}
+          </dd>
+        </div>
+        {instance.principalDid && (
+          <div className="flex items-center justify-between gap-3">
+            <dt>did</dt>
+            <dd className="truncate text-slate-500" title={instance.principalDid}>
+              {instance.principalDid}
+            </dd>
+          </div>
         )}
-      </div>
+      </dl>
 
-      <div className="mt-4 flex items-center justify-between">
-        <div className="flex items-center gap-1">
-          {shareUrl && (
-            <Link
-              to="/peko/$owner/$pekoName"
-              params={{ owner: namespaceFor(instance), pekoName: instance.name }}
-              target="_blank"
-              className="text-xs text-peko-600 hover:underline inline-flex items-center gap-1"
-            >
-              <ExternalLink className="h-3 w-3" />
-              Open
-            </Link>
+      <div className="mt-auto flex items-center justify-between gap-2 border-t border-white/[0.06] pt-4">
+        <div className="flex items-center gap-1.5">
+          {live && shareUrl && (
+            <>
+              <CopyButton value={shareUrl} label="Link" className="btn-ghost btn-sm" />
+              <Link
+                to="/peko/$owner/$pekoName"
+                params={{ owner: ownerHandle ?? '', pekoName: instance.name }}
+                className="btn-ghost btn-sm"
+              >
+                Open
+                <ArrowUpRight className="h-3 w-3" />
+              </Link>
+            </>
           )}
         </div>
-        <button
-          onClick={onEdit}
-          className="btn-secondary inline-flex items-center gap-1 text-xs py-1"
-        >
-          <Settings className="h-3 w-3" />
-          Edit
+        <button onClick={onManage} className="btn-secondary btn-sm">
+          <Settings2 className="h-3.5 w-3.5" />
+          Manage
         </button>
       </div>
-    </div>
+    </article>
   );
 }
 
-function EditInstanceModal({
+function StatusGlyph({ status }: { status: Status }) {
+  const map: Record<Status, { cls: string; Icon: typeof CircleDot }> = {
+    online: { cls: 'text-emerald-400', Icon: CircleDot },
+    busy: { cls: 'text-amber-400', Icon: CircleDot },
+    error: { cls: 'text-rose-400', Icon: TriangleAlert },
+    offline: { cls: 'text-slate-600', Icon: PowerOff },
+  };
+  const { cls, Icon } = map[status];
+  return <Icon className={`h-3 w-3 ${cls}`} />;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Manage modal
+   ───────────────────────────────────────────────────────────────────────── */
+
+function ManageInstanceModal({
   instance,
   onClose,
   onSaved,
@@ -261,183 +309,365 @@ function EditInstanceModal({
   onSaved: () => void;
 }) {
   const queryClient = useQueryClient();
-  const [exposure, setExposure] = useState<Exposure>(instance.exposure);
-  const [status, setStatus] = useState<Status>(instance.status);
-  const [savingExposure, setSavingExposure] = useState(false);
-  const [savingStatus, setSavingStatus] = useState(false);
+  const [tab, setTab] = useState<'exposure' | 'status'>('exposure');
+  const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleExposure = async () => {
-    if (exposure === instance.exposure) return;
-    setSavingExposure(true);
-    setError(null);
-    try {
-      await api.setInstanceExposure(instance.id, exposure);
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      onSaved();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to update exposure');
-    } finally {
-      setSavingExposure(false);
-    }
-  };
+  const [exposure, setExposure] = useState<Exposure>(instance.exposure);
+  const [status, setStatus] = useState<Status>(instance.status);
 
-  const handleStatus = async () => {
-    if (status === instance.status) return;
-    setSavingStatus(true);
+  // Public profile — only persisted by the backend on the `public` arm.
+  const [publicName, setPublicName] = useState(instance.publicName ?? instance.name);
+  const [description, setDescription] = useState(instance.description ?? '');
+  const [category, setCategory] = useState(instance.category ?? 'other');
+  const [tags, setTags] = useState(instance.tags.join(', '));
+  const [tosRequired, setTosRequired] = useState(instance.tosRequired);
+  const [tosText, setTosText] = useState(instance.tosText ?? '');
+  const [dailyQuota, setDailyQuota] = useState(instance.dailyQuota?.toString() ?? '');
+  const [weeklyQuota, setWeeklyQuota] = useState(instance.weeklyQuota?.toString() ?? '');
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const exposureChanged = exposure !== instance.exposure;
+  const statusChanged = status !== instance.status;
+  const publishing = exposure === 'public';
+  const publishFormValid = !publishing || (publicName.trim() && description.trim());
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+
+  const handleSave = async () => {
+    setSaving(true);
     setError(null);
     try {
-      await api.setInstanceStatus(instance.id, status);
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      if (exposureChanged) {
+        await api.setInstanceExposure(
+          instance.id,
+          exposure,
+          publishing
+            ? {
+                public_name: publicName.trim(),
+                description: description.trim(),
+                tags: tags
+                  .split(',')
+                  .map((tag) => tag.trim())
+                  .filter(Boolean),
+                category,
+                tos_required: tosRequired,
+                tos_text: tosRequired ? tosText : undefined,
+                daily_quota: dailyQuota ? Number(dailyQuota) : undefined,
+                weekly_quota: weeklyQuota ? Number(weeklyQuota) : undefined,
+              }
+            : undefined,
+        );
+      }
+      if (statusChanged) {
+        await api.setInstanceStatus(instance.id, status);
+      }
+      await invalidate();
       onSaved();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to update status');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save changes');
     } finally {
-      setSavingStatus(false);
+      setSaving(false);
     }
   };
 
   const handleDelete = async () => {
-    if (!window.confirm(`Delete "${instance.name}"? This cannot be undone.`)) return;
+    if (!window.confirm(`Revoke exposure and delete "${instance.name}"? This cannot be undone.`)) {
+      return;
+    }
     setDeleting(true);
     setError(null);
     try {
       await api.deleteInstance(instance.id);
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      await invalidate();
       onSaved();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to delete');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not delete the peko');
     } finally {
       setDeleting(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
-        <h2 className="text-lg font-semibold text-gray-900">
-          {instance.publicName ?? instance.name}
-        </h2>
-        <p className="mt-1 text-sm text-gray-500">@{instance.name}</p>
-
-        {error && (
-          <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-            {error}
+    <div
+      className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-ink-950/80 p-4 backdrop-blur-md sm:items-center"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        className="panel animate-scale-in my-8 w-full max-w-xl"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Manage ${instance.name}`}
+      >
+        <header className="flex items-start justify-between gap-4 border-b border-white/[0.06] px-6 py-5">
+          <div className="min-w-0">
+            <p className="font-mono text-2xs text-slate-500">@{instance.name}</p>
+            <h2 className="display mt-1 truncate text-lg">
+              {instance.publicName ?? instance.name}
+            </h2>
           </div>
-        )}
+          <button
+            onClick={onClose}
+            className="rounded-md p-1 text-slate-500 transition-colors hover:bg-white/[0.06] hover:text-slate-200"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </header>
 
-        <div className="mt-6 space-y-5">
-          <Field label="Exposure">
-            <div className="flex flex-wrap gap-2">
-              {EXPOSURE_ORDER.map((e) => {
-                const Icon = EXPOSURE_ICON[e];
-                const selected = e === exposure;
-                return (
-                  <button
-                    key={e}
-                    onClick={() => setExposure(e)}
-                    className={
-                      selected
-                        ? 'inline-flex items-center gap-1 rounded-full border border-peko-600 bg-peko-50 px-3 py-1 text-xs font-medium text-peko-700'
-                        : 'inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white px-3 py-1 text-xs text-gray-600 hover:border-gray-300'
-                    }
-                  >
-                    <Icon className="h-3 w-3" />
-                    {EXPOSURE_LABEL[e]}
-                  </button>
-                );
-              })}
-            </div>
-            <button
-              onClick={handleExposure}
-              disabled={savingExposure || exposure === instance.exposure}
-              className="btn-primary mt-3 text-xs py-1.5"
-            >
-              {savingExposure ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Apply exposure change'}
-            </button>
-          </Field>
-
-          <Field label="Status">
-            <div className="flex flex-wrap gap-2">
-              {(['online', 'offline', 'busy', 'error'] as Status[]).map((s) => {
-                const Icon = STATUS_ICON[s];
-                const selected = s === status;
-                return (
-                  <button
-                    key={s}
-                    onClick={() => setStatus(s)}
-                    className={
-                      selected
-                        ? 'inline-flex items-center gap-1 rounded-full border border-peko-600 bg-peko-50 px-3 py-1 text-xs font-medium text-peko-700 capitalize'
-                        : 'inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white px-3 py-1 text-xs text-gray-600 capitalize hover:border-gray-300'
-                    }
-                  >
-                    <Icon className="h-3 w-3" />
-                    {s}
-                  </button>
-                );
-              })}
-            </div>
-            <button
-              onClick={handleStatus}
-              disabled={savingStatus || status === instance.status}
-              className="btn-primary mt-3 text-xs py-1.5"
-            >
-              {savingStatus ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Apply status change'}
-            </button>
-          </Field>
+        <div className="flex items-center gap-1 border-b border-white/[0.06] px-4">
+          <button
+            onClick={() => setTab('exposure')}
+            className={`tab ${tab === 'exposure' ? 'tab-active' : ''}`}
+          >
+            <Globe className="h-3.5 w-3.5" />
+            Exposure
+          </button>
+          <button
+            onClick={() => setTab('status')}
+            className={`tab ${tab === 'status' ? 'tab-active' : ''}`}
+          >
+            <CircleDot className="h-3.5 w-3.5" />
+            Status
+          </button>
         </div>
 
-        <div className="mt-6 flex items-center justify-between border-t border-gray-100 pt-4">
+        <div className="max-h-[60vh] overflow-y-auto px-6 py-6">
+          {error && (
+            <div className="mb-5">
+              <ErrorNote>{error}</ErrorNote>
+            </div>
+          )}
+
+          {tab === 'exposure' ? (
+            <div className="space-y-6">
+              <div className="space-y-2">
+                {EXPOSURE_ORDER.map((value) => {
+                  const meta = EXPOSURE_META[value];
+                  const Icon = meta.icon;
+                  const selected = value === exposure;
+                  return (
+                    <button
+                      key={value}
+                      onClick={() => setExposure(value)}
+                      aria-pressed={selected}
+                      className={`flex w-full items-start gap-3 rounded-lg border px-3.5 py-3 text-left transition-all ${
+                        selected
+                          ? 'border-peko-400/50 bg-peko-400/[0.07]'
+                          : 'border-white/[0.07] bg-white/[0.015] hover:border-ink-500 hover:bg-white/[0.035]'
+                      }`}
+                    >
+                      <span
+                        className={`mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md border ${
+                          selected
+                            ? 'border-peko-400/40 bg-peko-400/15 text-peko-200'
+                            : 'border-white/[0.08] bg-white/[0.03] text-slate-500'
+                        }`}
+                      >
+                        <Icon className="h-3.5 w-3.5" />
+                      </span>
+                      <span className="min-w-0">
+                        <span
+                          className={`block text-sm font-medium ${
+                            selected ? 'text-peko-100' : 'text-slate-200'
+                          }`}
+                        >
+                          {meta.label}
+                        </span>
+                        <span className="mt-0.5 block text-2xs leading-relaxed text-slate-500">
+                          {meta.blurb}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {publishing && (
+                <div className="space-y-4 rounded-lg border border-white/[0.07] bg-white/[0.015] p-4">
+                  <p className="eyebrow">public profile</p>
+                  <p className="text-2xs leading-relaxed text-slate-500">
+                    Required to be listed. The hub only stores what it needs to render the directory
+                    card — never your peko&apos;s memory or keys.
+                  </p>
+
+                  <ModalField label="Display name">
+                    <input
+                      value={publicName}
+                      onChange={(event) => setPublicName(event.target.value)}
+                      className="input"
+                      placeholder="Ada"
+                    />
+                  </ModalField>
+
+                  <ModalField label="Description">
+                    <textarea
+                      value={description}
+                      onChange={(event) => setDescription(event.target.value)}
+                      rows={3}
+                      className="textarea"
+                      placeholder="What does this peko do, and what is it good at?"
+                    />
+                  </ModalField>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <ModalField label="Category">
+                      <select
+                        value={category}
+                        onChange={(event) => setCategory(event.target.value)}
+                        className="select capitalize"
+                      >
+                        {CATEGORIES.map((value) => (
+                          <option key={value} value={value} className="capitalize">
+                            {value}
+                          </option>
+                        ))}
+                      </select>
+                    </ModalField>
+                    <ModalField label="Tags" hint="comma separated">
+                      <input
+                        value={tags}
+                        onChange={(event) => setTags(event.target.value)}
+                        className="input"
+                        placeholder="research, rust"
+                      />
+                    </ModalField>
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <ModalField label="Daily quota" hint="blank = unlimited">
+                      <input
+                        value={dailyQuota}
+                        onChange={(event) => setDailyQuota(event.target.value.replace(/\D/g, ''))}
+                        inputMode="numeric"
+                        className="input"
+                        placeholder="200"
+                      />
+                    </ModalField>
+                    <ModalField label="Weekly quota" hint="blank = unlimited">
+                      <input
+                        value={weeklyQuota}
+                        onChange={(event) => setWeeklyQuota(event.target.value.replace(/\D/g, ''))}
+                        inputMode="numeric"
+                        className="input"
+                        placeholder="1000"
+                      />
+                    </ModalField>
+                  </div>
+
+                  <label className="flex items-start gap-3 rounded-lg border border-white/[0.07] bg-ink-900/60 px-3.5 py-3">
+                    <input
+                      type="checkbox"
+                      checked={tosRequired}
+                      onChange={(event) => setTosRequired(event.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded border-ink-500 bg-ink-900 text-peko-500 focus:ring-peko-400/40"
+                    />
+                    <span>
+                      <span className="block text-sm text-slate-200">
+                        Require terms of service
+                      </span>
+                      <span className="mt-0.5 block text-2xs text-slate-500">
+                        Visitors must acknowledge before their first message.
+                      </span>
+                    </span>
+                  </label>
+
+                  {tosRequired && (
+                    <ModalField label="Terms text">
+                      <textarea
+                        value={tosText}
+                        onChange={(event) => setTosText(event.target.value)}
+                        rows={4}
+                        className="textarea"
+                        placeholder="Be kind. Don't paste secrets."
+                      />
+                    </ModalField>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-2">
+                {STATUSES.map((value) => (
+                  <button
+                    key={value}
+                    onClick={() => setStatus(value)}
+                    aria-pressed={value === status}
+                    className={`flex items-center gap-2.5 rounded-lg border px-3.5 py-3 text-left transition-all ${
+                      value === status
+                        ? 'border-peko-400/50 bg-peko-400/[0.07] text-peko-100'
+                        : 'border-white/[0.07] bg-white/[0.015] text-slate-300 hover:border-ink-500 hover:bg-white/[0.035]'
+                    }`}
+                  >
+                    <StatusGlyph status={value} />
+                    <span className="text-sm font-medium capitalize">{value}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="text-2xs leading-relaxed text-slate-500">
+                Status is a hub-side mirror used for discovery badges. The runtime drives it through
+                its heartbeat — manual changes are reverted on the next beat.
+              </p>
+            </div>
+          )}
+        </div>
+
+        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.06] px-6 py-4">
           <button
-            onClick={handleDelete}
-            disabled={deleting}
-            className="inline-flex items-center gap-1 text-xs font-medium text-red-600 hover:text-red-700 disabled:opacity-50"
+            onClick={() => void handleDelete()}
+            disabled={deleting || saving}
+            className="btn-danger btn-sm"
           >
-            {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+            {deleting ? <Spinner className="h-3.5 w-3.5" /> : <Trash2 className="h-3.5 w-3.5" />}
             Delete peko
           </button>
-          <button onClick={onClose} className="btn-secondary text-xs py-1.5">
-            Close
-          </button>
-        </div>
+
+          <div className="flex items-center gap-2">
+            <button onClick={onClose} className="btn-secondary btn-sm">
+              Cancel
+            </button>
+            <button
+              onClick={() => void handleSave()}
+              disabled={saving || deleting || !publishFormValid || (!exposureChanged && !statusChanged)}
+              className="btn-primary btn-sm"
+            >
+              {saving && <Spinner className="h-3.5 w-3.5" />}
+              {exposureChanged || statusChanged ? 'Save changes' : 'No changes'}
+            </button>
+          </div>
+        </footer>
       </div>
     </div>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function ModalField({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: ReactNode;
+}) {
   return (
-    <div>
-      <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">{label}</div>
-      <div className="mt-2">{children}</div>
-    </div>
+    <label className="block">
+      <span className="mb-1.5 flex items-baseline gap-2">
+        <span className="eyebrow">{label}</span>
+        {hint && <span className="font-mono text-2xs text-slate-600">{hint}</span>}
+      </span>
+      {children}
+    </label>
   );
-}
-
-function namespaceFor(instance: OwnedInstanceRecord): string {
-  // No explicit owner namespace is stored in InstanceRecord — the
-  // dashboard's signed-in user IS the owner, but the share-link
-  // path requires `${owner}/${name}`. Best-effort: prefer the
-  // owner's `id` (always present), fall back to a slug from the
-  // runtime id. The share URL is purely cosmetic here; the real
-  // resolving authority is `/v1/public/pekos/:owner/:pekoName`
-  // which 404s gracefully on a miss.
-  return (
-    (instance.ownerSubject && instance.ownerSubject.id) ||
-    instance.runtimeId.replace(/[^a-z0-9-]/gi, '-')
-  );
-}
-
-function relativeTime(d: Date): string {
-  const diff = Date.now() - d.getTime();
-  const seconds = Math.round(diff / 1000);
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.round(hours / 24);
-  return `${days}d ago`;
 }

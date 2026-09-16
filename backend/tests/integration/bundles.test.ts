@@ -63,23 +63,13 @@ describe("Bundle API", () => {
       expect(response.statusCode).toBe(404);
     });
 
-    it("should return extension metadata including hooks and compatibility", async () => {
+    it("returns template metadata and never an extension-era field", async () => {
       const app = await buildTestApp({ testDb });
       const bundle = await createBundle(testDb.client, {
-        namespace: "acme",
-        name: "my-extension",
-        bundleType: "extension",
-        extensionType: "skill",
-        description: "A test extension",
-        hooks: [
-          { point: "tool.register", handler: "registerTools" },
-          { point: "agent.init", handler: "onInit" },
-        ],
-        compatibility: {
-          runtime: "peko",
-          minVersion: "1.0.0",
-          maxVersion: "2.0.0",
-        },
+        namespace: "peko/principals",
+        name: "my-peko",
+        description: "A template",
+        tags: ["research"],
       });
 
       const response = await app.inject({
@@ -89,18 +79,22 @@ describe("Bundle API", () => {
 
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
-      expect(body.metadata.bundleType).toBe("extension");
-      expect(body.metadata.extensionType).toBe("skill");
-      expect(body.metadata.hooks).toHaveLength(2);
-      expect(body.metadata.hooks[0]).toMatchObject({
-        point: "tool.register",
-        handler: "registerTools",
-      });
-      expect(body.metadata.compatibility).toMatchObject({
-        runtime: "peko",
-        minVersion: "1.0.0",
-        maxVersion: "2.0.0",
-      });
+      expect(body.metadata.bundleType).toBe("principal");
+      expect(body.metadata.tags).toEqual(["research"]);
+
+      // The template-only cut: none of these have a producer any more
+      // (runtime ADR-037 / ADR-047 §5 / ADR-050).
+      for (const field of [
+        "extensionType",
+        "hooks",
+        "compatibility",
+        "modelProviders",
+        "requiredMcpServers",
+        "categories",
+        "forkedFrom",
+      ]) {
+        expect(body.metadata).not.toHaveProperty(field);
+      }
     });
   });
 

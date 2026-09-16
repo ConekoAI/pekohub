@@ -877,6 +877,12 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           publicName: h.publicName ?? h.name,
           description: h.description,
           ownerName: owner?.displayName ?? owner?.namespace ?? "unknown",
+          // `ownerName` is the *display* name and is not addressable. The
+          // share URL `/peko/:owner/:pekoName` resolves `:owner` against
+          // `users.namespace`, so the SPA needs both: `ownerNamespace`
+          // for the link, `ownerName` for the label.
+          ownerNamespace: owner?.namespace ?? null,
+          ownerAvatarUrl: owner?.avatarUrl ?? null,
           category: h.category,
           tags: h.tags ?? [],
           status: h.status,
@@ -955,6 +961,12 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           publicName: h.publicName ?? h.name,
           description: h.description,
           ownerName: owner?.displayName ?? owner?.namespace ?? "unknown",
+          // `ownerName` is the *display* name and is not addressable. The
+          // share URL `/peko/:owner/:pekoName` resolves `:owner` against
+          // `users.namespace`, so the SPA needs both: `ownerNamespace`
+          // for the link, `ownerName` for the label.
+          ownerNamespace: owner?.namespace ?? null,
+          ownerAvatarUrl: owner?.avatarUrl ?? null,
           category: h.category,
           tags: h.tags ?? [],
           status: h.status,
@@ -964,6 +976,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       }),
       total: result.total,
       page: result.page,
+      feed,
     };
   });
 

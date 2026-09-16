@@ -20,24 +20,19 @@ describe("Search API", () => {
   });
 
   describe("GET /v1/search", () => {
-    it("should return 200 when a result has hooks: null in Meilisearch (issue #001)", async () => {
+    it("coerces a null tags field instead of 500ing (Zod regression)", async () => {
       const app = await buildTestApp({ testDb });
 
-      // 1. Create a bundle with hooks explicitly set to null (simulates a
-      //    push whose metadata omitted the hooks field).
       const bundle = await createBundle(testDb.client, {
-        namespace: "acme",
-        name: "searchable-agent",
-        description: "A searchable test agent",
-        hooks: null as any, // factory stores JSON null in DB
+        namespace: "peko/principals",
+        name: "searchable-peko",
+        description: "A searchable template",
       });
       await createBundleVersion(testDb.client, bundle.id, {
         version: "1.0.0",
       });
 
-      // 2. Index into the mock search service (mimics what OCI manifest push does).
-      //    The mock search stores the doc verbatim, so if hooks is null it stays null.
-      //    Note: PGlite returns snake_case column names, so we map them explicitly.
+      // A push whose metadata omitted tags leaves JSON null in the index.
       const row = bundle as any;
       await app.search.indexBundle({
         objectID: `${row.namespace}-${row.name}-1.0.0`,
@@ -48,13 +43,10 @@ describe("Search API", () => {
         author: row.author,
         bundleType: row.bundle_type,
         pullCount: row.pull_count,
-        starCount: row.star_count,
         updatedAt: new Date().toISOString(),
-        hooks: null, // simulate Meilisearch doc with null hooks
+        tags: null as any,
       });
 
-      // 3. Search — before the fix this would 500 with a Zod error:
-      //    "Expected array, received null" at items[0].hooks
       const response = await app.inject({
         method: "GET",
         url: "/v1/search?q=searchable",
@@ -63,19 +55,19 @@ describe("Search API", () => {
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
       expect(body.items).toHaveLength(1);
-      // hooks should be coerced to undefined (omitted from JSON), not null
-      expect(body.items[0].hooks).toBeUndefined();
-      expect(body.items[0].name).toBe("searchable-agent");
+      // `tags` is coerced to undefined (omitted from JSON), not null.
+      expect(body.items[0].tags).toBeUndefined();
+      expect(body.items[0].name).toBe("searchable-peko");
     });
 
-    it("should preserve non-empty hooks arrays in search results", async () => {
+    it("returns template metadata and no extension-era fields", async () => {
       const app = await buildTestApp({ testDb });
 
       const bundle = await createBundle(testDb.client, {
-        namespace: "acme",
-        name: "hooked-agent",
-        description: "An agent with hooks",
-        hooks: [{ point: "agent.init", handler: "onInit" }],
+        namespace: "peko/principals",
+        name: "tagged-peko",
+        description: "A template with tags",
+        tags: ["research", "notes"],
       });
       await createBundleVersion(testDb.client, bundle.id, {
         version: "1.0.0",
@@ -91,24 +83,31 @@ describe("Search API", () => {
         author: row.author,
         bundleType: row.bundle_type,
         pullCount: row.pull_count,
-        starCount: row.star_count,
         updatedAt: new Date().toISOString(),
-        hooks: [{ point: "agent.init", handler: "onInit" }],
+        tags: ["research", "notes"],
       });
 
       const response = await app.inject({
         method: "GET",
-        url: "/v1/search?q=hooked",
+        url: "/v1/search?q=tagged",
       });
 
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
-      expect(body.items).toHaveLength(1);
-      expect(body.items[0].hooks).toHaveLength(1);
-      expect(body.items[0].hooks[0]).toMatchObject({
-        point: "agent.init",
-        handler: "onInit",
-      });
+      expect(body.items[0].tags).toEqual(["research", "notes"]);
+      expect(body.items[0].bundleType).toBe("principal");
+      for (const field of [
+        "extensionType",
+        "hooks",
+        "compatibility",
+        "modelProviders",
+        "requiredMcpServers",
+        "categories",
+        "forkedFrom",
+        "starCount",
+      ]) {
+        expect(body.items[0]).not.toHaveProperty(field);
+      }
     });
   });
 });

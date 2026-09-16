@@ -6,17 +6,21 @@ import { BundleDetail } from "@pekohub/shared";
 import { auditService } from "../../services/audit.js";
 
 /**
- * Custom API: Bundle metadata and detail pages.
+ * Custom API: Template metadata and detail pages.
  *
  * Namespaces may be multi-segment (`peko/principals`), which Fastify
  * params cannot express, so every route here is a `/bundles/*`
  * wildcard and the path is parsed by the helpers below: name = last
  * repo segment, namespace = the middle, with the operation suffix
- * (`/versions`, `/fork`, `/versions/:v/deprecate`) stripped first.
+ * (`/versions`, `/versions/:v/deprecate`) stripped first.
  * Legacy `GET /v1/bundles/alice/foo` keeps working unchanged.
  *
  * Mounted under both `/v1` and `/api/v1` (the runtime CLI calls the
- * `/api/v1` surface — see peko-rs/cli/src/commands/search.rs).
+ * `/api/v1` surface — see peko-rs/cli/src/commands/search.rs), so the
+ * `bundles` path is a wire-compatibility name: the artifact it serves
+ * is a *template*. `fork` was the other half of the package catalog and
+ * is gone — a template is DNA, re-pushed from a workspace with
+ * `peko push`, never copied out of the registry.
  */
 
 interface RepoPath {
@@ -101,22 +105,15 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
     return bundleDetail(fastify, reply, repo);
   });
 
-  // ── POST /bundles/* — <repo>/versions/:v/deprecate, <repo>/fork ───────────
+  // ── POST /bundles/* — <repo>/versions/:v/deprecate ────────────────────────
   fastify.post("/bundles/*", async (request, reply) => {
     const wildcard = (request.params as { "*": string })["*"];
 
     const deprecateMatch = DEPRECATE_RE.exec(wildcard);
     if (deprecateMatch) {
       const repo = splitRepoPath(deprecateMatch[1]);
-      if (!repo) return reply.status(404).send({ error: "Bundle not found" });
+      if (!repo) return reply.status(404).send({ error: "Template not found" });
       return deprecateVersion(fastify, request, reply, repo, deprecateMatch[2]);
-    }
-
-    const forkRepo = stripSuffix(wildcard, "/fork");
-    if (forkRepo !== null) {
-      const repo = splitRepoPath(forkRepo);
-      if (!repo) return reply.status(404).send({ error: "Bundle not found" });
-      return forkBundle(fastify, request, reply, repo);
     }
 
     return reply.status(404).send({ error: "Not found" });
@@ -201,19 +198,12 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
         author: bundle.author ?? "unknown",
         license: bundle.license,
         tags: bundle.tags ?? [],
-        categories: bundle.categories ?? [],
         bundleType: bundle.bundleType,
-        extensionType: bundle.extensionType,
-        modelProviders: bundle.modelProviders ?? [],
-        requiredMcpServers: bundle.requiredMcpServers ?? [],
         homepage: bundle.homepage,
         repository: bundle.repository,
         readme: bundle.readme,
         version: latestVersion?.version ?? "0.0.0",
         deprecated: false,
-        forkedFrom: bundle.forkedFrom ?? undefined,
-        hooks: bundle.hooks ?? undefined,
-        compatibility: bundle.compatibility ?? undefined,
       },
       readme: bundle.readme,
       pullCount: {
@@ -376,9 +366,13 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
       .where(eq(bundleVersions.bundleId, bundle.id));
     await db.delete(bundles).where(eq(bundles.id, bundle.id));
 
-    // Remove from search index
+    // Remove every version's document from the search index. The ids are
+    // `<namespace>-<name>-<version>`, so this must enumerate the versions —
+    // a bundle-level prefix does not match any document.
     try {
-      await fastify.search.deleteBundle(`${namespace}-${name}`);
+      await fastify.search.deleteBundleDocuments(
+        versions.map((v) => `${namespace}-${name}-${v.version}`),
+      );
     } catch (err) {
       fastify.log.warn({ err }, "Failed to delete bundle from Meilisearch");
     }
@@ -477,6 +471,16 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
       return reply.status(404).send({ error: "Version not found" });
     }
 
+    // Drop this version's search document. Without this the deleted
+    // version stayed searchable and kept linking to a 404.
+    try {
+      await fastify.search.deleteBundleDocuments([
+        `${namespace}-${name}-${version}`,
+      ]);
+    } catch (err) {
+      fastify.log.warn({ err }, "Failed to delete version from Meilisearch");
+    }
+
     // Fire-and-forget audit log
     await auditService.logDelete(
       namespace,
@@ -488,133 +492,5 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
     );
 
     return reply.status(204).send();
-  }
-
-  // Fork a bundle into the authenticated user's namespace. Forking is
-  // intentionally NOT publisher-gated on the source (public bundles
-  // are forkable by anyone); the new bundle's publisher is the forker.
-  async function forkBundle(
-    fastify: FastifyInstance,
-    request: FastifyRequest,
-    reply: FastifyReply,
-    repo: RepoPath,
-  ) {
-    const { namespace, name } = repo;
-    const { targetName } = request.query as { targetName?: string };
-
-    let user: { id: string; namespace: string };
-    try {
-      user = (await fastify.authenticate(request)) as {
-        id: string;
-        namespace: string;
-      };
-    } catch {
-      if (
-        fastify.config.NODE_ENV === "development" &&
-        fastify.config.ALLOW_DEV_AUTH_BYPASS === "true"
-      ) {
-        user = { id: "00000000-0000-0000-0000-000000000000", namespace: "dev-user" };
-      } else {
-        return reply.status(401).send({ error: "Authentication required" });
-      }
-    }
-
-    const sourceBundle = await db.query.bundles.findFirst({
-      where: and(eq(bundles.namespace, namespace), eq(bundles.name, name)),
-    });
-
-    if (!sourceBundle) {
-      return reply.status(404).send({ error: "Bundle not found" });
-    }
-
-    const newName = targetName?.trim() || name;
-
-    // Check for conflict in user's namespace
-    const existing = await db.query.bundles.findFirst({
-      where: and(
-        eq(bundles.namespace, user.namespace),
-        eq(bundles.name, newName),
-      ),
-    });
-
-    if (existing) {
-      return reply
-        .status(409)
-        .send({ error: `Bundle ${user.namespace}/${newName} already exists` });
-    }
-
-    // Create the forked bundle
-    const [newBundle] = await db
-      .insert(bundles)
-      .values({
-        namespace: user.namespace,
-        name: newName,
-        bundleType: sourceBundle.bundleType,
-        publisherId: user.id,
-        extensionType: sourceBundle.extensionType,
-        description: sourceBundle.description,
-        author: sourceBundle.author,
-        license: sourceBundle.license,
-        tags: sourceBundle.tags,
-        categories: sourceBundle.categories,
-        modelProviders: sourceBundle.modelProviders,
-        requiredMcpServers: sourceBundle.requiredMcpServers,
-        homepage: sourceBundle.homepage,
-        repository: sourceBundle.repository,
-        readme: sourceBundle.readme,
-        hooks: sourceBundle.hooks,
-        compatibility: sourceBundle.compatibility,
-        forkedFrom: `${namespace}/${name}`,
-        starCount: 0,
-        pullCount: 0,
-      })
-      .returning();
-
-    // Copy all versions (blobs are content-addressable, no need to duplicate)
-    const sourceVersions = await db.query.bundleVersions.findMany({
-      where: eq(bundleVersions.bundleId, sourceBundle.id),
-    });
-
-    if (sourceVersions.length > 0) {
-      await db.insert(bundleVersions).values(
-        sourceVersions.map((v) => ({
-          bundleId: newBundle.id,
-          version: v.version,
-          digest: v.digest,
-          manifestJson: v.manifestJson,
-          size: v.size,
-          deprecated: v.deprecated,
-          deprecatedMessage: v.deprecatedMessage,
-        })),
-      );
-    }
-
-    // Index into search
-    try {
-      const latestVersion = sourceVersions[0];
-      await fastify.search.indexBundle({
-        objectID: `${user.namespace}-${newName}-${latestVersion?.version ?? "latest"}`,
-        namespace: user.namespace,
-        name: newName,
-        version: latestVersion?.version ?? "latest",
-        description: newBundle.description ?? undefined,
-        author: newBundle.author ?? "unknown",
-        bundleType: newBundle.bundleType,
-        extensionType: newBundle.extensionType ?? undefined,
-        tags: newBundle.tags ?? undefined,
-        pullCount: 0,
-        starCount: 0,
-        updatedAt: new Date().toISOString(),
-      });
-    } catch (err) {
-      fastify.log.warn({ err }, "Failed to index forked bundle in Meilisearch");
-    }
-
-    return reply.status(201).send({
-      namespace: newBundle.namespace,
-      name: newBundle.name,
-      forkedFrom: newBundle.forkedFrom,
-      versionsCopied: sourceVersions.length,
-    });
   }
 }

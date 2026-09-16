@@ -16,26 +16,15 @@ export interface TestBundle {
   id: number;
   namespace: string;
   name: string;
-  bundleType: "principal" | "extension";
+  // Template-only registry: `principal` is the sole kind (ADR-005
+  // realignment / runtime ADR-056 D6).
+  bundleType: "principal";
   // ADR-056: publisher ownership (nullable for legacy rows).
   publisherId?: string | null;
-  extensionType?:
-    | "mcp"
-    | "skill"
-    | "agent"
-    | "universal-tool"
-    | "general";
   description: string;
   author: string;
   tags: string[];
-  starCount: number;
   pullCount: number;
-  hooks?: Array<{ point: string; handler?: string; topicPattern?: string }>;
-  compatibility?: {
-    runtime?: string;
-    minVersion?: string;
-    maxVersion?: string;
-  };
 }
 
 export interface TestBundleVersion {
@@ -153,21 +142,17 @@ export async function createBundle(
   const bundleType = overrides.bundleType ?? "principal";
 
   const result = await client.query(
-    `INSERT INTO bundles (namespace, name, bundle_type, publisher_id, extension_type, description, author, tags, hooks, compatibility, star_count, pull_count)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-     RETURNING id, namespace, name, bundle_type, publisher_id, extension_type, description, author, tags, hooks, compatibility, star_count, pull_count`,
+    `INSERT INTO bundles (namespace, name, bundle_type, publisher_id, description, author, tags, pull_count)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     RETURNING id, namespace, name, bundle_type, publisher_id, description, author, tags, pull_count`,
     [
       namespace,
       name,
       bundleType,
       overrides.publisherId ?? null,
-      overrides.extensionType ?? null,
       overrides.description ?? faker.lorem.sentence(),
       overrides.author ?? faker.person.fullName(),
       JSON.stringify(overrides.tags ?? ["test"]),
-      JSON.stringify(overrides.hooks ?? null),
-      JSON.stringify(overrides.compatibility ?? null),
-      overrides.starCount ?? 0,
       overrides.pullCount ?? 0,
     ],
   );

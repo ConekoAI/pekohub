@@ -2,8 +2,15 @@ import type { FastifyInstance } from "fastify";
 import { SearchQuery, SearchResponse } from "@pekohub/shared";
 
 /**
- * Custom API: Full-text search
- * GET /api/v1/search?q=...&page=...&perPage=...&filters=...
+ * Custom API: Full-text search over templates.
+ * GET /api/v1/search?q=...&page=...&perPage=...&filters.bundleType=principal
+ *
+ * The only facet left is `bundleType`, which has exactly one legal value
+ * (`principal`). The extension-era facets — `extensionType`,
+ * `modelProvider`, `category`, `license` — are gone: their producers
+ * (the `.ext` / `.agent` package manifests) were retired by runtime
+ * ADR-037 / ADR-047 §5 / ADR-050, and `license` was never in the index
+ * to begin with (a filter on it would have 400'd Meilisearch).
  */
 export default async function searchRoutes(fastify: FastifyInstance) {
   fastify.get("/search", async (request, reply) => {
@@ -21,13 +28,6 @@ export default async function searchRoutes(fastify: FastifyInstance) {
     const meiliFilters: string[] = [];
     if (filters?.bundleType)
       meiliFilters.push(`bundleType = ${filters.bundleType}`);
-    if (filters?.extensionType)
-      meiliFilters.push(`extensionType = ${filters.extensionType}`);
-    if (filters?.modelProvider)
-      meiliFilters.push(`modelProviders = ${filters.modelProvider}`);
-    if (filters?.category)
-      meiliFilters.push(`categories = ${filters.category}`);
-    if (filters?.license) meiliFilters.push(`license = ${filters.license}`);
 
     const result = await fastify.search.search(q, {
       page: page - 1, // Meilisearch is 0-indexed

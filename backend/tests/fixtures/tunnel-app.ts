@@ -87,7 +87,7 @@ export async function buildTunnelTestApp(testDb: TestDb) {
     async search() {
       return { hits: [], total: 0, page: 1, perPage: 20 };
     },
-    async deleteBundle() {},
+    async deleteBundleDocuments() {},
     async indexInstance() {},
     async searchInstances() {
       return { hits: [], total: 0, page: 1, perPage: 20 };

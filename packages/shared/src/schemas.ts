@@ -1,53 +1,32 @@
 import { z } from 'zod';
-import {
-  BundleTypes,
-  ExtensionTypes,
-  CUSTOM_EXTENSION_PREFIX,
-  CUSTOM_EXTENSION_PATTERN,
-  ModelProviders,
-  Categories,
-} from './constants.js';
+import { BundleTypes } from './constants.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Extension-specific types (defined early for use in BundleMetadata)
+// Template registry schemas
+//
+// PekoHub's registry is **template-only** (peko-runtime ADR-056 D6): a
+// push carries a stripped `principal.toml` — DNA — and never an
+// existence, a key, or a capability package.
+//
+// Deliberately absent, and not to be reintroduced:
+//   - `extensionType` / `ExtensionManifest` / `HookPoint`: the extension
+//     framework (runtime ADR-017/024/036) was superseded by plain
+//     workspace files (ADR-047 §5) and its registry surface deleted
+//     (ADR-050). Capabilities are files; presence = visibility.
+//   - `modelProviders` / `requiredMcpServers` / `categories`: package
+//     metadata for authoring agent/extension bundles, retired with the
+//     `.agent`/`.ext` formats (ADR-037).
+//   - `hooks` / `compatibility`: an extension's hook bindings and the
+//     runtime version matrix it targeted. Templates declare neither.
+//   - `forkedFrom`: forking a template is meaningless — DNA is
+//     re-pushed from a workspace, not copied out of the registry.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const nullishToUndefined = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess((val) => (val === null ? undefined : val), schema);
 
-// Runtime-aligned hook point string. Mirrors peko-runtime's
-// `HookPoint::name()` / `HookPoint::matches()` format
-// (src/extensions/framework/core/hook_points.rs).
-//
-// Three forms are accepted:
-//   1. Base form — one of the 23 runtime hook point names
-//      (e.g. "agent.init", "tool.execute", "session.compaction")
-//   2. Parameterized form — base + concrete 3rd segment
-//      (e.g. "tool.execute.Read", "prompt.system_section.skills",
-//      "event.subscribe.instance.created", "agent.iteration.3")
-//   3. Wildcard form — base + ".*"
-//      (e.g. "tool.execute.*", "session.*", "*")
-//
-// Rejected: anything not under one of the six runtime hook categories
-// (prompt / tool / session / io / event / agent).
-export const HookPoint = z.string().regex(
-  /^(?:prompt|tool|session|io|event|agent)\.[a-z_]+(?:\.[A-Za-z0-9_*]+)?$/,
-  'Hook point must be a peko-runtime HookPoint::name() string ' +
-    '(e.g. "agent.init", "tool.execute.Read", "session.*")',
-);
-export type HookPoint = z.infer<typeof HookPoint>;
-
-// Extension type validator: any of the 7 standard peko-runtime types,
-// or a "custom:<id>" string validated against CUSTOM_EXTENSION_PATTERN.
-export const ExtensionTypeSchema = z.union([
-  z.enum(ExtensionTypes),
-  z
-    .string()
-    .regex(CUSTOM_EXTENSION_PATTERN, `Custom extension type must be "${CUSTOM_EXTENSION_PREFIX}<id>" with lowercase kebab/slash/dot/underscore id`),
-]);
-
 // ─────────────────────────────────────────────────────────────────────────────
-// Bundle Manifest (Pekohub-specific metadata embedded in OCI manifest)
+// Template metadata (Pekohub-specific metadata embedded in OCI manifest)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const BundleMetadata = z.object({
@@ -56,37 +35,26 @@ export const BundleMetadata = z.object({
   author: z.string().min(1).max(256),
   license: z.string().max(64).optional().nullable(),
   tags: nullishToUndefined(z.array(z.string().max(32)).max(20).optional()),
-  categories: nullishToUndefined(z.array(z.enum(Categories)).optional()),
+  /**
+   * Wire value for the artifact kind. `principal` is the only member of
+   * `BundleTypes` — the runtime's push path hard-codes it (peko-runtime
+   * `peko-rs/core/src/registry/client.rs`) and the UI calls the artifact
+   * a template.
+   */
   bundleType: z.enum(BundleTypes),
-  extensionType: ExtensionTypeSchema.optional().nullable(),
-  modelProviders: nullishToUndefined(z.array(z.enum(ModelProviders)).optional()),
-  requiredMcpServers: nullishToUndefined(z.array(z.string()).optional()),
   homepage: z.string().url().optional().nullable(),
   repository: z.string().url().optional().nullable(),
   readme: z.string().max(50000).optional().nullable(),
-  hooks: nullishToUndefined(
-    z.array(
-      z.object({
-        point: HookPoint,
-        handler: z.string().optional(),
-        topicPattern: z.string().optional(),
-      })
-    ).optional()
-  ),
-  compatibility: z
-    .object({
-      runtime: z.string().optional(),
-      minVersion: z.string().optional(),
-      maxVersion: z.string().optional(),
-    })
-    .optional(),
-  version: z.string().regex(
-    /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/,
-    'Invalid semantic version'
-  ).or(z.literal('latest')).or(z.literal('')),
+  version: z
+    .string()
+    .regex(
+      /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/,
+      'Invalid semantic version',
+    )
+    .or(z.literal('latest'))
+    .or(z.literal('')),
   deprecated: z.boolean().optional(),
   deprecatedMessage: z.string().optional().nullable(),
-  forkedFrom: z.string().optional(),
 });
 export type BundleMetadata = z.infer<typeof BundleMetadata>;
 
@@ -100,11 +68,10 @@ export const SearchQuery = z.object({
   perPage: z.coerce.number().int().min(1).max(100).default(20),
   filters: z
     .object({
+      // Only `principal` exists, so this filter is a guard rather than a
+      // selector: it lets the SPA assert "templates only" at the query
+      // layer even if a legacy row is still indexed.
       bundleType: z.enum(BundleTypes).optional(),
-      extensionType: ExtensionTypeSchema.optional(),
-      modelProvider: z.enum(ModelProviders).optional(),
-      category: z.enum(Categories).optional(),
-      license: z.string().optional(),
     })
     .optional(),
 });
@@ -117,20 +84,9 @@ export const SearchResultItem = z.object({
   description: z.string().optional(),
   author: z.string(),
   bundleType: z.enum(BundleTypes),
-  extensionType: ExtensionTypeSchema.optional(),
   tags: nullishToUndefined(z.array(z.string()).optional()),
   pullCount: z.number().int().nonnegative(),
-  starCount: z.number().int().nonnegative(),
   updatedAt: z.string().datetime(),
-  hooks: nullishToUndefined(
-    z.array(
-      z.object({
-        point: HookPoint,
-        handler: z.string().optional(),
-        topicPattern: z.string().optional(),
-      })
-    ).optional()
-  ),
 });
 export type SearchResultItem = z.infer<typeof SearchResultItem>;
 
@@ -164,6 +120,11 @@ export const BundleDetail = z.object({
     monthly: z.number().int(),
     allTime: z.number().int(),
   }),
+  /**
+   * `peko pull <host>/<repo>:<tag>` — the pull half of the flow. The
+   * pulled artifact is a bare `.template.toml`, so grinding it is a
+   * second step: `peko create <name> -f <file>` (ADR-056 D6).
+   */
   installCommand: z.string(),
 });
 export type BundleDetail = z.infer<typeof BundleDetail>;
@@ -206,11 +167,9 @@ export type UserProfile = z.infer<typeof UserProfile>;
 //
 // Package vs live-instance note: this endpoint surfaces a *live
 // instance* (a running actor on a specific runtime, owned by one
-// user). It is NOT a principal *package* (a reusable template that
-// can spawn many instances for many users). Future "install this
-// template" / "browse packages" features will use a sibling shape —
-// keep the `liveInstance` wrapper self-documenting so the two
-// concepts don't get conflated by callers.
+// user). It is NOT a template — a template is DNA that spawns a fresh
+// identity, never a live actor. Keep the `liveInstance` wrapper
+// self-documenting so the two concepts don't get conflated by callers.
 export const PublicProfile = z.object({
   liveInstance: z.object({
     id: z.string(),
@@ -248,42 +207,3 @@ export const ApiKey = z.object({
   lastUsedAt: z.string().datetime().optional(),
 });
 export type ApiKey = z.infer<typeof ApiKey>;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Extension Manifest Schema
-// ─────────────────────────────────────────────────────────────────────────────
-
-export const ExtensionManifest = z.object({
-  // Mirrors the runtime's `validate_agent_name` for extension ids:
-  //   1-64 lowercase chars, digits, or "-"
-  //   no leading/trailing "-" (so "--" and "-" alone are rejected)
-  // The previous `/^[a-z0-9-]+$/` accepted "-" alone and "--" — a
-  // path-traversal spelling and a Zod UX regression.
-  id: z
-    .string()
-    .min(1)
-    .max(64)
-    .regex(
-      /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/,
-      'Extension ID must be 1-64 lowercase chars, digits, or "-"; no leading/trailing "-"',
-    ),
-  name: z.string().min(1).max(128),
-  version: z.string(),
-  extensionType: ExtensionTypeSchema,
-  description: z.string().max(2000).optional(),
-  hooks: z.array(
-    z.object({
-      point: HookPoint,
-      handler: z.string().optional(),
-      topicPattern: z.string().optional(),
-    })
-  ),
-  compatibility: z
-    .object({
-      runtime: z.string().optional(),
-      minVersion: z.string().optional(),
-      maxVersion: z.string().optional(),
-    })
-    .optional(),
-});
-export type ExtensionManifest = z.infer<typeof ExtensionManifest>;

@@ -4,14 +4,13 @@ import { bundles, bundleVersions, blobs, users } from "../../db/schema.js";
 import { eq, and, desc } from "drizzle-orm";
 import {
   OCIManifest,
-  ExtensionManifest,
   PrincipalName,
   OCIAnnotations,
 } from "@pekohub/shared";
 import crypto from "node:crypto";
 import { auditService } from "../../services/audit.js";
 import { authenticateOciWrite } from "./auth-write.js";
-import type { RepoRef } from "./repo-path.js";
+import { retiredLaneOf, type RepoRef } from "./repo-path.js";
 
 /**
  * OCI Distribution Spec: Manifest operations
@@ -138,34 +137,47 @@ export async function headManifest(
 }
 
 /**
- * Derive the bundle type for a newly-pushed bundle.
+ * Derive the artifact kind for a newly-pushed artifact.
  *
- * Precedence (ADR-056 template artifacts):
- *   1. `dev.pekohub.bundleType` when present — `principal`/`extension`
- *      accepted; `agent`/`team` (and any other retired value) → 410.
- *   2. Otherwise `org.peko.kind` — `principal`/`extension` map 1:1.
- *      The runtime never emits kind `agent` as a principal-template
- *      alias (its only production push path hard-codes
- *      `.with_kind("principal")` — peko-rs/core/src/registry/client.rs),
- *      so `agent` → 410 like the retired bundleType values.
- *   3. Neither annotation → default `principal` (pre-annotation CLI
- *      builds pushed bare OCI manifests for .peko packages).
+ * The hub is a **template-only** registry (ADR-005 realignment, runtime
+ * ADR-056 D6), so exactly one kind is accepted:
+ *
+ *   1. `org.peko.kind` — the runtime's current annotation. `principal`
+ *      is accepted; `extension` is rejected like `agent`/`team` were by
+ *      ADR-041. The runtime's only production push path hard-codes
+ *      `.with_kind("principal")` (peko-rs/core/src/registry/client.rs).
+ *   2. `dev.pekohub.bundleType` — the hub's own older annotation. Checked
+ *      second so a legacy client still gets an explicit rejection for a
+ *      retired value instead of being silently re-typed as `principal`.
+ *   3. Neither annotation → `principal`. Pre-annotation CLI builds
+ *      pushed bare OCI manifests and every one of them was a principal.
  *
  * Returns null when the push must be rejected with 410 Gone.
+ *
+ * Why retired kinds are rejected rather than coerced: the extension
+ * framework's registry surface was deleted runtime-side (ADR-047 §5
+ * made capabilities plain workspace files, ADR-050 deleted the
+ * per-category management CLI). A push claiming to be an extension is a
+ * client that cannot work, so it gets an explicit error instead of a row
+ * the hub would have to explain.
  */
 function deriveBundleType(
   annotations: Record<string, string>,
-): "principal" | "extension" | null {
+): "principal" | null {
   const explicit = annotations[OCIAnnotations.DEV_PEKOHUB_BUNDLE_TYPE];
-  if (explicit !== undefined) {
-    return explicit === "principal" || explicit === "extension"
-      ? explicit
-      : null;
-  }
+  if (explicit !== undefined) return explicit === "principal" ? "principal" : null;
+
   const kind = annotations[OCIAnnotations.ORG_PEKO_KIND];
-  if (kind === "principal" || kind === "extension") return kind;
-  if (kind === "agent") return null;
-  return "principal";
+  if (kind === undefined || kind === "principal") return "principal";
+  return null;
+}
+
+/** The annotation value the caller actually sent, for the 410 message. */
+function attemptedKind(annotations: Record<string, string>): string | undefined {
+  return (
+    annotations[OCIAnnotations.DEV_PEKOHUB_BUNDLE_TYPE] ??
+    annotations[OCIAnnotations.ORG_PEKO_KIND]
+  );
 }
 
 export async function putManifest(
@@ -175,6 +187,19 @@ export async function putManifest(
   m: RepoRef & { reference: string },
 ) {
   const { namespace, name, reference } = m;
+
+  // Retired repo lanes never accept a new push (see RETIRED_REPO_LANES).
+  // Read/delete on existing rows is untouched, so legacy artifacts stay
+  // inspectable and removable — they just can't grow.
+  const retiredLane = retiredLaneOf(namespace);
+  if (retiredLane !== null) {
+    return reply.status(410).send({
+      error:
+        `The 'peko/${retiredLane}/' lane is retired and no longer accepts pushes. ` +
+        `PekoHub is a template-only registry: push DNA under 'peko/principals/<name>'. ` +
+        `Capabilities are workspace files (ADR-047 §5, ADR-050), not registry artifacts.`,
+    });
+  }
 
   const user = await authenticateOciWrite(fastify, request, namespace);
   if (!user) {
@@ -220,12 +245,12 @@ export async function putManifest(
   // PekoHub does not parse the TOML config blob (the runtime's
   // template `principal.toml` under media type
   // `application/vnd.peko.config.v1+json`), so a path-traversal
-  // spelling in the inner `principal.name` or `extension.id` would
-  // otherwise reach the DB unchecked. The runtime emits the same
-  // names in flat `dev.pekohub.*` annotations so we can validate
-  // them here against the runtime's `validate_agent_name`-equivalent
-  // Zod schemas. The runtime rejects the same set upstream, so this
-  // is a defense-in-depth check, not a primary gate.
+  // spelling in the inner `principal.name` would otherwise reach the
+  // DB unchecked. The runtime emits the same name in the flat
+  // `dev.pekohub.principalName` annotation so we can validate it here
+  // against the runtime's `validate_agent_name`-equivalent Zod schema.
+  // The runtime rejects the same set upstream, so this is a
+  // defense-in-depth check, not a primary gate.
   const annotations = (manifest.annotations ?? {}) as Record<string, string>;
   const principalName = annotations[OCIAnnotations.DEV_PEKOHUB_PRINCIPAL_NAME];
   if (principalName !== undefined) {
@@ -236,21 +261,6 @@ export async function putManifest(
           {
             code: "MANIFEST_INVALID",
             message: "Invalid dev.pekohub.principalName annotation",
-            detail: r.error.format(),
-          },
-        ],
-      });
-    }
-  }
-  const extensionId = annotations[OCIAnnotations.DEV_PEKOHUB_EXTENSION_ID];
-  if (extensionId !== undefined) {
-    const r = ExtensionManifest.shape.id.safeParse(extensionId);
-    if (!r.success) {
-      return reply.status(400).send({
-        errors: [
-          {
-            code: "MANIFEST_INVALID",
-            message: "Invalid dev.pekohub.extensionId annotation",
             detail: r.error.format(),
           },
         ],
@@ -326,12 +336,13 @@ export async function putManifest(
 
     const bundleType = deriveBundleType(annotations);
     if (bundleType === null) {
-      const attempted =
-        annotations[OCIAnnotations.DEV_PEKOHUB_BUNDLE_TYPE] ??
-        annotations[OCIAnnotations.ORG_PEKO_KIND];
-      return reply
-        .status(410)
-        .send({ error: `Bundle type '${attempted}' is no longer supported. Use 'principal' or 'extension'.` });
+      return reply.status(410).send({
+        error:
+          `Artifact kind '${attemptedKind(annotations)}' is no longer supported. ` +
+          `PekoHub is a template-only registry (ADR-056 D6) — the only ` +
+          `accepted kind is 'principal'. Capabilities are workspace files ` +
+          `(ADR-047 §5, ADR-050), not registry artifacts.`,
+      });
     }
     const [inserted] = await db
       .insert(bundles)
@@ -342,29 +353,14 @@ export async function putManifest(
         // `user.id` is undefined on the dev-auth-bypass path; the row
         // then stays claimable like a legacy NULL-publisher bundle.
         publisherId: user.id ?? null,
-        extensionType: annotations["dev.pekohub.extensionType"] as any,
         description:
           annotations["org.opencontainers.image.description"] ?? null,
         author: annotations["org.opencontainers.image.authors"] ?? null,
         license: annotations["org.opencontainers.image.licenses"] ?? null,
-        tags: parseJsonAnnotation<string[]>("dev.pekohub.tags"),
-        categories: parseJsonAnnotation<string[]>("dev.pekohub.categories"),
-        modelProviders: parseJsonAnnotation<string[]>(
-          "dev.pekohub.modelProviders",
+        tags: parseJsonAnnotation<string[]>(
+          OCIAnnotations.DEV_PEKOHUB_TAGS,
         ),
-        requiredMcpServers: parseJsonAnnotation<string[]>(
-          "dev.pekohub.requiredMcpServers",
-        ),
-        readme: annotations["dev.pekohub.readme"] ?? null,
-        hooks:
-          parseJsonAnnotation<
-            Array<{ point: string; handler?: string; topicPattern?: string }>
-          >("dev.pekohub.hooks"),
-        compatibility: parseJsonAnnotation<{
-          runtime?: string;
-          minVersion?: string;
-          maxVersion?: string;
-        }>("dev.pekohub.compatibility"),
+        readme: annotations[OCIAnnotations.DEV_PEKOHUB_README] ?? null,
       })
       .returning();
     bundle = inserted;
@@ -442,27 +438,11 @@ export async function putManifest(
         annotations["org.opencontainers.image.authors"] ?? bundle.author,
       license:
         annotations["org.opencontainers.image.licenses"] ?? bundle.license,
-      tags: parseJsonAnnotation<string[]>("dev.pekohub.tags") ?? bundle.tags,
-      categories:
-        parseJsonAnnotation<string[]>("dev.pekohub.categories") ??
-        bundle.categories,
-      modelProviders:
-        parseJsonAnnotation<string[]>("dev.pekohub.modelProviders") ??
-        bundle.modelProviders,
-      requiredMcpServers:
-        parseJsonAnnotation<string[]>("dev.pekohub.requiredMcpServers") ??
-        bundle.requiredMcpServers,
-      readme: annotations["dev.pekohub.readme"] ?? bundle.readme,
-      hooks:
-        parseJsonAnnotation<
-          Array<{ point: string; handler?: string; topicPattern?: string }>
-        >("dev.pekohub.hooks") ?? bundle.hooks,
-      compatibility:
-        parseJsonAnnotation<{
-          runtime?: string;
-          minVersion?: string;
-          maxVersion?: string;
-        }>("dev.pekohub.compatibility") ?? bundle.compatibility,
+      tags:
+        parseJsonAnnotation<string[]>(OCIAnnotations.DEV_PEKOHUB_TAGS) ??
+        bundle.tags,
+      readme:
+        annotations[OCIAnnotations.DEV_PEKOHUB_README] ?? bundle.readme,
       updatedAt: new Date(),
     })
     .where(eq(bundles.id, bundle.id));
@@ -477,27 +457,9 @@ export async function putManifest(
       description: bundle.description ?? undefined,
       author: bundle.author ?? "unknown",
       bundleType: bundle.bundleType,
-      extensionType: bundle.extensionType ?? undefined,
       tags: bundle.tags ?? undefined,
       pullCount: bundle.pullCount,
-      starCount: bundle.starCount,
       updatedAt: new Date().toISOString(),
-      hooks:
-        (bundle.hooks as
-          | Array<{
-              point: import("@pekohub/shared").HookPoint;
-              handler?: string;
-              topicPattern?: string;
-            }>
-          | undefined) ?? undefined,
-      compatibility:
-        parseJsonAnnotation<{
-          runtime?: string;
-          minVersion?: string;
-          maxVersion?: string;
-        }>("dev.pekohub.compatibility") ??
-        bundle.compatibility ??
-        undefined,
     });
   } catch (err) {
     fastify.log.warn({ err }, "Failed to index bundle in Meilisearch");

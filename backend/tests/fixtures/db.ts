@@ -44,21 +44,13 @@ const DDL_STATEMENTS = [
     -- recorded publisher and stay claimable by the namespace-matching
     -- pusher (mirrors migration 0001_bundle_publisher).
     publisher_id UUID REFERENCES users(id) ON DELETE SET NULL,
-    extension_type VARCHAR(32),
     description TEXT,
     author VARCHAR(256),
     license VARCHAR(64),
     tags JSONB DEFAULT '[]',
-    categories JSONB DEFAULT '[]',
-    model_providers JSONB DEFAULT '[]',
-    required_mcp_servers JSONB DEFAULT '[]',
     homepage TEXT,
     repository TEXT,
     readme TEXT,
-    hooks JSONB,
-    compatibility JSONB,
-    forked_from VARCHAR(256),
-    star_count INTEGER DEFAULT 0 NOT NULL,
     pull_count INTEGER DEFAULT 0 NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
