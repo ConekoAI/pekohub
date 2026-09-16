@@ -20,6 +20,31 @@ export function clearAuthToken(): void {
   localStorage.removeItem(TOKEN_KEY);
 }
 
+/**
+ * Error carrying the HTTP status.
+ *
+ * Callers routinely need to tell "this resource is gone" (404 → render
+ * not-found) apart from "the network is having a bad day" (5xx → render
+ * a retry note). The status is never in the response body, so it has to
+ * ride the error object.
+ */
+export class ApiError extends Error {
+  readonly status: number;
+  readonly body: unknown;
+
+  constructor(status: number, message: string, body?: unknown) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.body = body;
+  }
+}
+
+/** Narrow an unknown throwable to an `ApiError`. */
+export function isApiError(error: unknown): error is ApiError {
+  return error instanceof ApiError;
+}
+
 async function doRefresh(): Promise<string> {
   const res = await fetch(`${API_BASE}/v1/auth/refresh`, {
     method: 'POST',
@@ -72,20 +97,26 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
 
       if (!retryResponse.ok) {
         const error = await retryResponse.json().catch(() => ({ error: 'Unknown error' }));
-        throw new Error(error.error ?? `HTTP ${retryResponse.status}`);
+        throw new ApiError(
+          retryResponse.status,
+          error.error ?? `HTTP ${retryResponse.status}`,
+          error,
+        );
       }
 
       return retryResponse.json() as Promise<T>;
     } catch {
       clearAuthToken();
       window.location.href = '/';
-      throw new Error('Session expired');
+      throw new ApiError(401, 'Session expired');
     }
   }
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-    throw new Error(error.error ?? `HTTP ${response.status}`);
+    const error = await response.json().catch(() => null);
+    const message =
+      (error as { error?: string } | null)?.error ?? `HTTP ${response.status}`;
+    throw new ApiError(response.status, message, error);
   }
 
   return response.json() as Promise<T>;
@@ -113,8 +144,14 @@ export const api = {
       `/v1/bundles/${namespace}/${name}/versions`
     ),
 
-  getCatalog: () =>
-    fetchJson<{ repositories: string[] }>('/v2/_catalog'),
+  /**
+   * OCI catalog — every repository path the registry holds
+   * (`peko/principals/<name>` for current templates, plus any
+   * pre-ADR-005 two-segment rows). Anonymous; no JWT. The template
+   * directory uses this as its listing source because it reads the
+   * registry's real contents rather than a derived search index.
+   */
+  getCatalog: () => fetchJson<CatalogResponse>('/v2/_catalog'),
 
   deprecateVersion: (
     namespace: string,
@@ -153,16 +190,17 @@ export const api = {
   getMe: () =>
     fetchJson<UserProfile>('/v1/auth/me'),
 
+  /**
+   * Runtimes owned by the caller (ADR-032/058). Every peko is hosted by
+   * exactly one runtime, so this is the owner's "where do my pekos
+   * live" view. Requires a JWT.
+   */
+  listRuntimes: () => fetchJson<{ runtimes: RuntimeRecord[] }>('/v1/runtimes'),
+
   logout: () =>
     fetchJson<void>('/v1/auth/logout', { method: 'POST' }).finally(() => {
       clearAuthToken();
     }),
-
-  forkBundle: (namespace: string, name: string, targetName?: string) =>
-    fetchJson<{ namespace: string; name: string; forkedFrom: string | null; versionsCopied: number }>(
-      `/v1/bundles/${namespace}/${name}/fork${targetName ? `?targetName=${encodeURIComponent(targetName)}` : ''}`,
-      { method: 'POST' }
-    ),
 
   deleteBundle: (namespace: string, name: string) =>
     fetch(`${API_BASE}/v1/bundles/${namespace}/${name}`, { method: 'DELETE', credentials: 'include' }).then((r) => {
@@ -386,8 +424,15 @@ export interface DiscoveryHit {
   id: string;
   publicName: string;
   description: string | null;
-  /** Human-readable owner name (users.namespace or users.displayName). */
+  /** Human-readable label (`users.displayName`). Not addressable. */
   ownerName: string;
+  /**
+   * Addressable owner handle (`users.namespace`). `/peko/:owner` resolves
+   * against this, so share links must use it — `ownerName` is only a
+   * label and can differ from the namespace.
+   */
+  ownerNamespace: string | null;
+  ownerAvatarUrl: string | null;
   category: string | null;
   tags: string[];
   status: 'online' | 'offline' | 'busy' | 'error';
@@ -395,14 +440,56 @@ export interface DiscoveryHit {
   featured: boolean;
 }
 
+/** The handle a share link must be built from. */
+export function ownerHandle(hit: DiscoveryHit): string {
+  return hit.ownerNamespace ?? hit.ownerName;
+}
+
 /**
- * Build the canonical share URL for a discovery hit. The frontend
- * uses this for the "Open in browser" link and the copy-link action
- * on the discovery card.
+ * Build the canonical share URL for a discovery hit
+ * (`/peko/:owner/:pekoName`, ADR-005 §1).
  */
-export function shareUrlFor(hit: { ownerName: string; publicName: string }, origin?: string): string {
+export function shareUrlFor(hit: DiscoveryHit, origin?: string): string {
   const base = origin ?? (typeof window !== 'undefined' ? window.location.origin : '');
-  return `${base}/peko/${encodeURIComponent(hit.ownerName)}/${encodeURIComponent(hit.publicName)}`;
+  return `${base}/peko/${encodeURIComponent(ownerHandle(hit))}/${encodeURIComponent(hit.publicName)}`;
+}
+
+/**
+ * Shape returned by `GET /v2/_catalog` (OCI Distribution v1.1).
+ * Repository paths are multi-segment, e.g. `peko/principals/my-peko`.
+ */
+export interface CatalogResponse {
+  repositories: string[];
+}
+
+/**
+ * One row from `GET /v1/runtimes`. Mirrors the `runtimes` table — the
+ * DID is the identity, `displayName` is operator-set, `lastSeenAt` is
+ * refreshed on every tunnel heartbeat.
+ */
+export interface RuntimeRecord {
+  id: number;
+  runtimeDid: string;
+  ownerId: string;
+  displayName: string | null;
+  lastSeenAt: string | null;
+  createdAt: string;
+}
+
+/** One version row from `GET /v1/bundles/:namespace/:name/versions`. */
+export interface TemplateVersion {
+  version: string;
+  digest: string;
+  size: number;
+  createdAt: string;
+  deprecated: boolean | null;
+  deprecatedMessage: string | null;
+}
+
+export interface TemplateVersionsResponse {
+  namespace: string;
+  name: string;
+  versions: TemplateVersion[];
 }
 
 // Shape returned by GET /v1/instances for the owner. Mirrors

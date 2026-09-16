@@ -4,7 +4,7 @@ Public registry, relay, and discovery hub for [peko-runtime](https://github.com/
 
 PekoHub is three things in one server:
 
-1. **OCI Distribution Spec v1.1 registry** for peko templates and extensions (multi-segment repo paths like `peko/principals/<name>`; pushes are zero-layer template manifests — see ADR-005).
+1. **OCI Distribution Spec v1.1 template registry** (multi-segment repo paths like `peko/principals/<name>`; a push is a zero-layer manifest whose config blob is a stripped `principal.toml` — see ADR-005 and runtime ADR-056 D6). **Template-only:** the hub carries DNA, never an existence and never a capability package.
 2. **Tunnel relay** that proxies chat traffic from public callers to runtime-owned pekos.
 3. **Discovery + share directory** so users can find and chat with exposed pekos — anonymously in the browser, or via `peko-desktop` after a share link.
 
@@ -94,7 +94,9 @@ All custom endpoints are mounted under `/v1`. OCI endpoints are at `/v2/...`. Th
 
 ### OCI Distribution Spec v1.1
 
-`{repo}` is a multi-segment repository path (e.g. `peko/principals/my-peko` or `alice/my-extension`). Write endpoints require a JWT or `pkr_` API key; the first push claims the repo for its publisher (`bundles.publisher_id`).
+`{repo}` is a multi-segment repository path (e.g. `peko/principals/my-peko`; pre-ADR-005 rows use `alice/my-peko`). Write endpoints require a JWT or `pkr_` API key; the first push claims the repo for its publisher (`bundles.publisher_id`).
+
+Only `org.peko.kind: "principal"` is accepted. A push declaring `extension` (or the pre-ADR-041 `agent` / `team`) is answered with **410 Gone**, as is any push into the retired `peko/{extensions,agents,teams}/` lanes — those distributed capability packages, which now live as plain workspace files (runtime ADR-037, ADR-047 §5, ADR-050).
 
 | Endpoint | Description |
 |----------|-------------|

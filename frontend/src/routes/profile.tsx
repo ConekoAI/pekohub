@@ -1,222 +1,407 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import {
+  CalendarDays,
+  Copy,
+  Cpu,
+  KeyRound,
+  Mail,
+  Plus,
+  RefreshCw,
+  ShieldCheck,
+  Trash2,
+} from 'lucide-react';
 import { useAuth } from '~/hooks/useAuth';
-import { SignInModal } from '~/components/SignInModal';
-import { useSearch } from '~/hooks/useSearch';
-import { BundleCard } from '~/components/BundleCard';
-import { User, Key, Loader2, Package } from 'lucide-react';
 import { api } from '~/lib/api';
-import { useQueryClient } from '@tanstack/react-query';
+import { AppShell } from '~/components/AppShell';
+import { Avatar, Badge, EmptyState, ErrorNote, Spinner, StatusDot } from '~/components/ui';
+import { formatDate, relativeTime } from '~/lib/format';
 
+/**
+ * Account page.
+ *
+ * Three things an owner needs and nothing else:
+ *  - who they are (identity + handle);
+ *  - which runtimes are registered to them (where their pekos live);
+ *  - API keys for the CLI.
+ *
+ * The pre-pivot "my bundles" section is gone: bundles/packages were a
+ * pre-ADR-056 concept and registry browsing now lives under
+ * `/templates`, filtered to the template lane.
+ */
 export const Route = createFileRoute('/profile')({
   component: ProfilePage,
 });
 
 function ProfilePage() {
-  const { user, isLoading, isAuthenticated } = useAuth();
-  const [signInOpen, setSignInOpen] = useState(false);
-  const queryClient = useQueryClient();
-  const [apiKeys, setApiKeys] = useState<Array<{ id: number; name: string; prefix: string; createdAt: string }>>([]);
-  const [keysLoading, setKeysLoading] = useState(false);
-  const [newKeyName, setNewKeyName] = useState('');
-  const [generatedKey, setGeneratedKey] = useState<string | null>(null);
-
-  const search = useSearch({
-    q: user?.namespace ?? '',
-    page: 1,
-    perPage: 20,
-  });
-
-  const loadApiKeys = async () => {
-    setKeysLoading(true);
-    try {
-      const data = await api.listApiKeys();
-      setApiKeys(data.keys);
-    } catch {
-      // ignore
-    } finally {
-      setKeysLoading(false);
-    }
-  };
-
-  const handleGenerateKey = async () => {
-    if (!newKeyName.trim()) return;
-    try {
-      const data = await api.generateApiKey(newKeyName.trim());
-      setGeneratedKey(data.key);
-      setNewKeyName('');
-      loadApiKeys();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to generate key');
-    }
-  };
-
-  const handleRevokeKey = async (id: number) => {
-    if (!confirm('Are you sure you want to revoke this API key?')) return;
-    try {
-      await api.revokeApiKey(id);
-      loadApiKeys();
-      queryClient.invalidateQueries();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to revoke key');
-    }
-  };
-
-  if (isLoading) {
-    return (
-      <div className="flex min-h-[50vh] items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-peko-600" />
-      </div>
-    );
-  }
-
-  if (!isAuthenticated || !user) {
-    return (
-      <>
-        <div className="mx-auto max-w-4xl px-4 py-12 text-center">
-          <User className="mx-auto h-12 w-12 text-gray-400" />
-          <h1 className="mt-4 text-2xl font-bold text-gray-900">Sign in required</h1>
-          <p className="mt-2 text-gray-600">Please sign in to view your profile.</p>
-          <button
-            onClick={() => setSignInOpen(true)}
-            className="btn-primary mt-6 inline-flex"
-          >
-            Sign In
-          </button>
-        </div>
-        <SignInModal isOpen={signInOpen} onClose={() => setSignInOpen(false)} />
-      </>
-    );
-  }
+  const { user } = useAuth();
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
-      {/* Profile Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-        {user.avatarUrl ? (
-          <img
-            src={user.avatarUrl}
-            alt={user.displayName}
-            className="h-20 w-20 rounded-full object-cover ring-4 ring-peko-50"
-          />
-        ) : (
-          <span className="inline-flex h-20 w-20 items-center justify-center rounded-full bg-peko-100 text-2xl font-bold text-peko-700 ring-4 ring-peko-50">
-            {getInitials(user.displayName)}
-          </span>
-        )}
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">{user.displayName}</h1>
-          <p className="text-gray-500">@{user.namespace}</p>
-          {user.email && <p className="text-sm text-gray-400 mt-1">{user.email}</p>}
-        </div>
+    <AppShell>
+      <div className="mb-8">
+        <p className="eyebrow mb-2.5">account</p>
+        <h1 className="display text-2xl sm:text-[28px]">Profile</h1>
+        <p className="lede mt-2 max-w-2xl">
+          Your hub identity, the runtimes registered to it, and the keys your CLI uses to push
+          templates and announce pekos.
+        </p>
       </div>
 
-      {/* API Keys */}
-      <div className="mt-10">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
-            <Key className="h-5 w-5 text-peko-600" />
-            API Keys
-          </h2>
-          <button
-            onClick={loadApiKeys}
-            className="btn-secondary text-xs py-1.5"
-            disabled={keysLoading}
-          >
-            {keysLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Refresh'}
-          </button>
-        </div>
-
-        {generatedKey && (
-          <div className="mt-4 rounded-lg border border-green-200 bg-green-50 p-4">
-            <p className="text-sm font-medium text-green-800">Your new API key (copy it now — it won't be shown again):</p>
-            <code className="mt-2 block rounded bg-green-100 px-3 py-2 text-sm font-mono text-green-900 break-all">
-              {generatedKey}
-            </code>
-            <button
-              onClick={() => setGeneratedKey(null)}
-              className="mt-2 text-xs text-green-700 hover:underline"
-            >
-              Dismiss
-            </button>
-          </div>
-        )}
-
-        <div className="mt-4 flex flex-col sm:flex-row gap-2">
-          <input
-            type="text"
-            value={newKeyName}
-            onChange={(e) => setNewKeyName(e.target.value)}
-            placeholder="Key name (e.g. 'CLI laptop')"
-            className="input flex-1"
-          />
-          <button
-            onClick={handleGenerateKey}
-            className="btn-primary whitespace-nowrap"
-            disabled={!newKeyName.trim()}
-          >
-            Generate Key
-          </button>
-        </div>
-
-        {apiKeys.length === 0 && !keysLoading ? (
-          <p className="mt-4 text-sm text-gray-500">No API keys yet. Generate one to use with the CLI.</p>
-        ) : (
-          <div className="mt-4 divide-y divide-gray-200 border rounded-lg">
-            {apiKeys.map((key) => (
-              <div key={key.id} className="flex items-center justify-between px-4 py-3">
-                <div>
-                  <p className="text-sm font-medium text-gray-900">{key.name}</p>
-                  <p className="text-xs text-gray-500">
-                    {key.prefix}... • Created {new Date(key.createdAt).toLocaleDateString()}
-                  </p>
-                </div>
-                <button
-                  onClick={() => handleRevokeKey(key.id)}
-                  className="text-xs text-red-600 hover:text-red-700 font-medium"
-                >
-                  Revoke
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+      <div className="space-y-10">
+        <IdentityPanel
+          displayName={user?.displayName ?? ''}
+          namespace={user?.namespace ?? ''}
+          email={user?.email}
+          avatarUrl={user?.avatarUrl}
+          createdAt={user?.createdAt}
+        />
+        <RuntimesPanel />
+        <ApiKeysPanel />
       </div>
-
-      {/* My Bundles */}
-      <div className="mt-10">
-        <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
-          <Package className="h-5 w-5 text-peko-600" />
-          My Bundles
-        </h2>
-        {search.isLoading && (
-          <div className="mt-6 text-center text-gray-500">Loading...</div>
-        )}
-        {search.data && search.data.items.length > 0 && (
-          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {search.data.items.map((bundle) => (
-              <BundleCard key={`${bundle.namespace}/${bundle.name}`} bundle={bundle} />
-            ))}
-          </div>
-        )}
-        {search.data?.items.length === 0 && (
-          <p className="mt-4 text-sm text-gray-500">
-            No bundles published yet.{' '}
-            <a href="#" className="text-peko-600 hover:underline">
-              Learn how to publish
-            </a>
-          </p>
-        )}
-      </div>
-    </div>
+    </AppShell>
   );
 }
 
-function getInitials(name: string): string {
-  return name
-    .split(' ')
-    .map((n) => n[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2);
+/* ─────────────────────────────────────────────────────────────────────────
+   Identity
+   ───────────────────────────────────────────────────────────────────────── */
+
+function IdentityPanel({
+  displayName,
+  namespace,
+  email,
+  avatarUrl,
+  createdAt,
+}: {
+  displayName: string;
+  namespace: string;
+  email?: string;
+  avatarUrl?: string | null;
+  createdAt?: string;
+}) {
+  return (
+    <section className="panel p-6">
+      <div className="flex flex-wrap items-center gap-5">
+        <Avatar name={displayName} src={avatarUrl} size="xl" />
+        <div className="min-w-0">
+          <h2 className="display text-xl">{displayName}</h2>
+          <p className="mt-1 font-mono text-xs text-slate-500">@{namespace}</p>
+          <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2">
+            {email && (
+              <span className="flex items-center gap-1.5 text-xs text-slate-400">
+                <Mail className="h-3.5 w-3.5 text-slate-600" />
+                {email}
+              </span>
+            )}
+            {createdAt && (
+              <span className="flex items-center gap-1.5 text-xs text-slate-400">
+                <CalendarDays className="h-3.5 w-3.5 text-slate-600" />
+                joined {formatDate(createdAt)}
+              </span>
+            )}
+            <span className="flex items-center gap-1.5 text-xs text-emerald-300">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              OAuth verified
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="divider my-6" />
+
+      <p className="text-2xs leading-relaxed text-slate-500">
+        Your handle is what share links resolve against (
+        <code className="code-inline">/peko/{namespace}/&lt;peko&gt;</code>). The hub stores your
+        OAuth identity and nothing else about you — peko memory, sessions and keys never leave the
+        runtime that hosts them.
+      </p>
+    </section>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Runtimes
+   ───────────────────────────────────────────────────────────────────────── */
+
+function RuntimesPanel() {
+  const runtimes = useQuery({
+    queryKey: ['runtimes'],
+    queryFn: () => api.listRuntimes(),
+  });
+
+  const rows = runtimes.data?.runtimes ?? [];
+
+  return (
+    <section>
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="eyebrow mb-2">hosts</p>
+          <h2 className="display text-xl">Registered runtimes</h2>
+        </div>
+        <button
+          onClick={() => void runtimes.refetch()}
+          disabled={runtimes.isFetching}
+          className="btn-secondary btn-sm"
+        >
+          {runtimes.isFetching ? (
+            <Spinner className="h-3.5 w-3.5" />
+          ) : (
+            <RefreshCw className="h-3.5 w-3.5" />
+          )}
+          Refresh
+        </button>
+      </div>
+
+      {runtimes.isLoading ? (
+        <div className="flex items-center justify-center gap-2.5 py-12 text-sm text-slate-500">
+          <Spinner className="h-4 w-4" />
+          Loading runtimes…
+        </div>
+      ) : runtimes.isError ? (
+        <ErrorNote>
+          Could not load runtimes —{' '}
+          {runtimes.error instanceof Error ? runtimes.error.message : 'unknown error'}
+        </ErrorNote>
+      ) : rows.length === 0 ? (
+        <EmptyState
+          icon={<Cpu className="h-5 w-5" />}
+          title="No runtimes registered"
+          body={
+            <>
+              Run <code className="code-inline">peko tunnel setup</code> on the machine hosting your
+              pekos. It registers the runtime DID here with a proof-of-possession signature.
+            </>
+          }
+        />
+      ) : (
+        <ul className="divide-y divide-white/[0.06] overflow-hidden rounded-xl border border-white/[0.07] bg-ink-850/70">
+          {rows.map((runtime) => (
+            <li
+              key={runtime.id}
+              className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5"
+            >
+              <div className="flex min-w-0 items-center gap-3">
+                <StatusDot status={runtime.lastSeenAt ? 'online' : 'offline'} />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-slate-200">
+                    {runtime.displayName ?? 'Unnamed runtime'}
+                  </p>
+                  <p className="truncate font-mono text-2xs text-slate-600" title={runtime.runtimeDid}>
+                    {runtime.runtimeDid}
+                  </p>
+                </div>
+              </div>
+              <p className="font-mono text-2xs text-slate-600">
+                {runtime.lastSeenAt ? `seen ${relativeTime(runtime.lastSeenAt)}` : 'never seen'}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   API keys
+   ───────────────────────────────────────────────────────────────────────── */
+
+interface ApiKeyRow {
+  id: number;
+  name: string;
+  prefix: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+}
+
+function ApiKeysPanel() {
+  const [keys, setKeys] = useState<ApiKeyRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [newName, setNewName] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [revealed, setRevealed] = useState<string | null>(null);
+  const [revoking, setRevoking] = useState<number | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await api.listApiKeys();
+      setKeys(data.keys);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load keys');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const handleCreate = async () => {
+    const name = newName.trim();
+    if (!name) return;
+    setCreating(true);
+    setError(null);
+    try {
+      const created = await api.generateApiKey(name);
+      setRevealed(created.key);
+      setNewName('');
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create the key');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleRevoke = async (id: number) => {
+    if (!window.confirm('Revoke this key? Anything using it stops working immediately.')) return;
+    setRevoking(id);
+    setError(null);
+    try {
+      await api.revokeApiKey(id);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not revoke the key');
+    } finally {
+      setRevoking(null);
+    }
+  };
+
+  return (
+    <section>
+      <div className="mb-4">
+        <p className="eyebrow mb-2">credentials</p>
+        <h2 className="display text-xl">API keys</h2>
+        <p className="lede mt-1.5 max-w-2xl">
+          Used by the CLI to push templates and by CI to publish. Keys are shown once — the hub only
+          keeps a hash.
+        </p>
+      </div>
+
+      {error && (
+        <div className="mb-4">
+          <ErrorNote>{error}</ErrorNote>
+        </div>
+      )}
+
+      {revealed && (
+        <div className="mb-4 rounded-lg border border-emerald-400/25 bg-emerald-400/[0.06] p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="eyebrow text-emerald-300">copy it now</p>
+              <p className="mt-1 text-[13px] text-emerald-200/80">
+                This key will not be shown again.
+              </p>
+            </div>
+            <button
+              onClick={() => setRevealed(null)}
+              className="font-mono text-2xs text-emerald-300/70 transition-colors hover:text-emerald-200"
+            >
+              dismiss
+            </button>
+          </div>
+          <div className="mt-3 flex items-center gap-2">
+            <code className="code-block flex-1 break-all text-emerald-200">{revealed}</code>
+            <button
+              onClick={() => void navigator.clipboard?.writeText(revealed)}
+              className="btn-secondary btn-sm flex-shrink-0"
+              title="Copy key"
+            >
+              <Copy className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <input
+          value={newName}
+          onChange={(event) => setNewName(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') void handleCreate();
+          }}
+          placeholder="Key name — e.g. “laptop” or “ci-publish”"
+          aria-label="New key name"
+          className="input flex-1"
+        />
+        <button
+          onClick={() => void handleCreate()}
+          disabled={creating || !newName.trim()}
+          className="btn-primary flex-shrink-0"
+        >
+          {creating ? <Spinner className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+          Generate key
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center gap-2.5 py-12 text-sm text-slate-500">
+          <Spinner className="h-4 w-4" />
+          Loading keys…
+        </div>
+      ) : keys.length === 0 ? (
+        <div className="mt-4">
+          <EmptyState
+            icon={<KeyRound className="h-5 w-5" />}
+            title="No API keys yet"
+            body="Generate one to authenticate the CLI without a browser round-trip."
+          />
+        </div>
+      ) : (
+        <ul className="mt-4 divide-y divide-white/[0.06] overflow-hidden rounded-xl border border-white/[0.07] bg-ink-850/70">
+          {keys.map((key) => (
+            <li
+              key={key.id}
+              className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5"
+            >
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-white/[0.07] bg-white/[0.03]">
+                  <KeyRound className="h-3.5 w-3.5 text-slate-500" />
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-slate-200">{key.name}</p>
+                  <p className="truncate font-mono text-2xs text-slate-600">
+                    {key.prefix}••••••••
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <div className="text-right font-mono text-2xs text-slate-600">
+                  <p>created {formatDate(key.createdAt)}</p>
+                  <p>
+                    {key.lastUsedAt ? `last used ${relativeTime(key.lastUsedAt)}` : 'never used'}
+                  </p>
+                </div>
+                <button
+                  onClick={() => void handleRevoke(key.id)}
+                  disabled={revoking === key.id}
+                  className="btn-ghost btn-sm text-rose-300 hover:bg-rose-500/10 hover:text-rose-200"
+                >
+                  {revoking === key.id ? (
+                    <Spinner className="h-3.5 w-3.5" />
+                  ) : (
+                    <Trash2 className="h-3.5 w-3.5" />
+                  )}
+                  Revoke
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="mt-4 flex items-center gap-2">
+        <Badge tone="neutral">scope: registry write</Badge>
+        <p className="font-mono text-2xs text-slate-600">
+          send as <span className="text-slate-500">Authorization: Bearer pkr_…</span>
+        </p>
+      </div>
+    </section>
+  );
 }

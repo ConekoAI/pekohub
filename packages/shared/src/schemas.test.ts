@@ -1,90 +1,101 @@
 import { describe, it, expect } from "vitest";
-import {
-  SearchResultItem,
-  SearchResponse,
-  BundleMetadata,
-  ExtensionManifest,
-  HookPoint,
-} from "../src/schemas.js";
+import { BundleMetadata, SearchQuery, SearchResultItem, SearchResponse } from "../src/schemas.js";
+import { BundleTypes } from "../src/constants.js";
 import { PrincipalName } from "../src/target-spec.js";
+
+/**
+ * Contract tests for the **template-only** registry.
+ *
+ * Beyond the coercion behaviour these pin the *shape* of the contract:
+ * the extension-era fields (`extensionType`, `hooks`, `compatibility`,
+ * `modelProviders`, `requiredMcpServers`, `categories`, `forkedFrom`)
+ * must not survive parsing, so the hub can never re-emit them even if a
+ * stale client or a legacy row supplies them. Runtime ADR-037 retired
+ * the `.agent`/`.ext` package formats, ADR-047 §5 made capabilities
+ * plain workspace files, and ADR-050 deleted the extension framework's
+ * management surface — there is no producer left for any of it.
+ */
+
+/** Every field the template-only cut removed. */
+const RETIRED_FIELDS = [
+  "extensionType",
+  "hooks",
+  "compatibility",
+  "modelProviders",
+  "requiredMcpServers",
+  "categories",
+  "forkedFrom",
+  "starCount",
+] as const;
+
+describe("BundleTypes is template-only", () => {
+  it("contains exactly one member", () => {
+    expect(BundleTypes).toEqual(["principal"]);
+  });
+});
 
 describe("nullishToUndefined coercion", () => {
   describe("SearchResultItem", () => {
     const validBase = {
-      namespace: "acme",
-      name: "test-agent",
+      namespace: "peko/principals",
+      name: "my-peko",
       version: "1.0.0",
       author: "test",
       bundleType: "principal",
       pullCount: 0,
-      starCount: 0,
       updatedAt: "2024-01-01T00:00:00Z",
     };
 
-    it("accepts hooks as an array", () => {
-      const result = SearchResultItem.safeParse({
-        ...validBase,
-        hooks: [{ point: "agent.init", handler: "onInit" }],
-      });
-      expect(result.success).toBe(true);
-      expect(result.data?.hooks).toHaveLength(1);
-    });
-
-    it("accepts missing hooks (undefined)", () => {
+    it("accepts a template item", () => {
       const result = SearchResultItem.safeParse(validBase);
       expect(result.success).toBe(true);
-      expect(result.data?.hooks).toBeUndefined();
-    });
-
-    it("coerces hooks: null → undefined (the 500 bug fix)", () => {
-      const result = SearchResultItem.safeParse({
-        ...validBase,
-        hooks: null,
-      });
-      expect(result.success).toBe(true);
-      expect(result.data?.hooks).toBeUndefined();
     });
 
     it("coerces tags: null → undefined", () => {
-      const result = SearchResultItem.safeParse({
-        ...validBase,
-        tags: null,
-      });
+      const result = SearchResultItem.safeParse({ ...validBase, tags: null });
       expect(result.success).toBe(true);
       expect(result.data?.tags).toBeUndefined();
     });
 
-    it("rejects hooks: string (still type-safe)", () => {
+    it("rejects a non-principal bundleType", () => {
       const result = SearchResultItem.safeParse({
         ...validBase,
-        hooks: "not-an-array",
+        bundleType: "extension",
       });
       expect(result.success).toBe(false);
     });
 
-    it("rejects invalid hook point values", () => {
+    it("rejects tags: string (still type-safe)", () => {
       const result = SearchResultItem.safeParse({
         ...validBase,
-        hooks: [{ point: "invalid.point", handler: "x" }],
+        tags: "not-an-array",
       });
       expect(result.success).toBe(false);
+    });
+
+    it.each(RETIRED_FIELDS)("drops the retired %s field", (field) => {
+      const result = SearchResultItem.safeParse({
+        ...validBase,
+        [field]: field === "starCount" ? 7 : [],
+      });
+      expect(result.success).toBe(true);
+      expect(result.data).not.toHaveProperty(field);
     });
   });
 
   describe("SearchResponse", () => {
-    it("accepts items with hooks: null (regression)", () => {
+    it("accepts items with tags: null (regression)", () => {
       const result = SearchResponse.safeParse({
         items: [
           {
-            namespace: "acme",
-            name: "agent",
+            namespace: "peko/principals",
+            name: "my-peko",
             version: "1.0.0",
             author: "test",
             bundleType: "principal",
             pullCount: 0,
-            starCount: 0,
             updatedAt: "2024-01-01T00:00:00Z",
-            hooks: null,
+            tags: null,
           },
         ],
         total: 1,
@@ -93,245 +104,101 @@ describe("nullishToUndefined coercion", () => {
         totalPages: 1,
       });
       expect(result.success).toBe(true);
-      expect(result.data?.items[0].hooks).toBeUndefined();
+      expect(result.data?.items[0].tags).toBeUndefined();
     });
   });
 
   describe("BundleMetadata", () => {
     const validBase = {
-      name: "my-bundle",
+      name: "my-peko",
       author: "test",
       bundleType: "principal",
       version: "1.0.0",
     };
 
-    it("coerces hooks: null → undefined", () => {
-      const result = BundleMetadata.safeParse({
-        ...validBase,
-        hooks: null,
-      });
-      expect(result.success).toBe(true);
-      expect(result.data?.hooks).toBeUndefined();
-    });
-
     it("coerces tags: null → undefined", () => {
-      const result = BundleMetadata.safeParse({
-        ...validBase,
-        tags: null,
-      });
+      const result = BundleMetadata.safeParse({ ...validBase, tags: null });
       expect(result.success).toBe(true);
       expect(result.data?.tags).toBeUndefined();
     });
 
-    it("coerces categories: null → undefined", () => {
+    it("preserves non-null tags", () => {
       const result = BundleMetadata.safeParse({
         ...validBase,
-        categories: null,
-      });
-      expect(result.success).toBe(true);
-      expect(result.data?.categories).toBeUndefined();
-    });
-
-    it("coerces modelProviders: null → undefined", () => {
-      const result = BundleMetadata.safeParse({
-        ...validBase,
-        modelProviders: null,
-      });
-      expect(result.success).toBe(true);
-      expect(result.data?.modelProviders).toBeUndefined();
-    });
-
-    it("coerces requiredMcpServers: null → undefined", () => {
-      const result = BundleMetadata.safeParse({
-        ...validBase,
-        requiredMcpServers: null,
-      });
-      expect(result.success).toBe(true);
-      expect(result.data?.requiredMcpServers).toBeUndefined();
-    });
-
-    it("preserves non-null arrays", () => {
-      const result = BundleMetadata.safeParse({
-        ...validBase,
-        hooks: [{ point: "agent.init" as HookPoint, handler: "init" }],
         tags: ["ai", "test"],
       });
       expect(result.success).toBe(true);
-      expect(result.data?.hooks).toHaveLength(1);
       expect(result.data?.tags).toHaveLength(2);
     });
+
+    it("accepts the template metadata surface", () => {
+      const result = BundleMetadata.safeParse({
+        ...validBase,
+        description: "A research peko",
+        license: "MIT",
+        homepage: "https://example.com",
+        repository: "https://github.com/example/peko",
+        readme: "# Hi",
+        deprecated: false,
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects bundleType: extension", () => {
+      const result = BundleMetadata.safeParse({
+        ...validBase,
+        bundleType: "extension",
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects legacy bundleType: agent / team", () => {
+      for (const bundleType of ["agent", "team"]) {
+        expect(
+          BundleMetadata.safeParse({ ...validBase, bundleType }).success,
+        ).toBe(false);
+      }
+    });
+
+    it.each(RETIRED_FIELDS)("drops the retired %s field", (field) => {
+      const result = BundleMetadata.safeParse({
+        ...validBase,
+        [field]: field === "starCount" ? 7 : [],
+      });
+      expect(result.success).toBe(true);
+      expect(result.data).not.toHaveProperty(field);
+    });
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// HookPoint — runtime-aligned (peko-runtime/src/extensions/framework/core/hook_points.rs)
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("HookPoint (runtime-aligned)", () => {
-  it.each([
-    // Base form — all 23 runtime hook point names
-    "agent.init",
-    "agent.shutdown",
-    "agent.iteration",
-    "tool.register",
-    "tool.execute",
-    "tool.execute_async",
-    "tool.check_status",
-    "tool.cancel",
-    "tool.result_transform",
-    "prompt.system_section",
-    "prompt.pre_process",
-    "prompt.post_process",
-    "session.state_change",
-    "session.compaction",
-    "session.context_build",
-    "session.compaction_post",
-    "session.start",
-    "io.channel_input",
-    "io.channel_output",
-    "io.message_pre_send",
-    "io.message_post_receive",
-    "event.subscribe",
-    "event.emit",
-  ])("accepts base form %s", (point) => {
-    const result = BundleMetadata.safeParse({
-      name: "x",
-      author: "t",
-      bundleType: "principal",
-      version: "1.0.0",
-      hooks: [{ point }],
+describe("SearchQuery filters are template-only", () => {
+  it("accepts the template-only filter set", () => {
+    const result = SearchQuery.safeParse({
+      q: "ada",
+      filters: { bundleType: "principal" },
     });
     expect(result.success).toBe(true);
   });
 
-  it.each([
-    // Parameterized form — runtime HookPoint::name() with concrete suffix
-    "prompt.system_section.skills",
-    "tool.execute.Read",
-    "tool.execute_async.shell",
-    "tool.check_status.Agent",
-    "tool.cancel.long_task",
-    "event.subscribe.instance.created",
-    "agent.iteration.3",
-  ])("accepts parameterized form %s", (point) => {
-    const result = BundleMetadata.safeParse({
-      name: "x",
-      author: "t",
-      bundleType: "principal",
-      version: "1.0.0",
-      hooks: [{ point }],
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it.each([
-    // Wildcard form — runtime HookPoint::matches() patterns
-    "tool.execute.*",
-    "session.*",
-    "agent.*",
-  ])("accepts wildcard form %s", (point) => {
-    const result = BundleMetadata.safeParse({
-      name: "x",
-      author: "t",
-      bundleType: "principal",
-      version: "1.0.0",
-      hooks: [{ point }],
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it.each([
-    // Reject: anything outside the six runtime hook categories
-    "invalid.point",
-    "principal.init", // speculative principal-layer hooks (not yet in runtime)
-    "principal.shutdown",
-    "principal.session.gc",
-    "memory.store", // invented — runtime has no memory hook layer
-    "mcp.toolDiscover",
-    "cron.schedule",
-    // Reject: wrong casing / wrong separators
-    "Agent.Init",
-    "tool.Execute",
-    "prompt-system-section",
-    "tool/execute",
-    // Reject: 4+ segments
-    "tool.execute.foo.bar",
-    // Reject: bare category / bare extension name
-    "agent",
-    "tool",
-    "",
-  ])("rejects invalid hook point %s", (point) => {
-    const result = BundleMetadata.safeParse({
-      name: "x",
-      author: "t",
-      bundleType: "principal",
-      version: "1.0.0",
-      hooks: [{ point }],
+  it("rejects bundleType: extension", () => {
+    const result = SearchQuery.safeParse({
+      q: "ada",
+      filters: { bundleType: "extension" },
     });
     expect(result.success).toBe(false);
   });
-});
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ExtensionType — the 5 standard peko-runtime types + custom:<id>
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("ExtensionType (runtime-aligned)", () => {
-  it.each([
-    "skill",
-    "agent",
-    "mcp",
-    "universal-tool",
-    "general",
-  ])("accepts standard type %s", (extType) => {
-    const result = BundleMetadata.safeParse({
-      name: "x",
-      author: "t",
-      bundleType: "extension",
-      version: "1.0.0",
-      extensionType: extType,
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it.each([
-    "custom:my-org/skill",
-    "custom:internal",
-    "custom:a",
-    "custom:my-org/skill.v2",
-    "custom:a_b",
-  ])("accepts custom:<id> form %s", (extType) => {
-    const result = BundleMetadata.safeParse({
-      name: "x",
-      author: "t",
-      bundleType: "extension",
-      version: "1.0.0",
-      extensionType: extType,
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it.each([
-    "builtin", // intentionally absent — runtime mod.rs:145-146
-    "universal", // renamed to universal-tool in runtime
-    "agent-team", // not a valid type
-    "gateway", // retired runtime-side (sprint 9)
-    "slash", // retired runtime-side
-    "custom:", // empty id
-    "custom:MyOrg/Skill", // uppercase not allowed
-    "custom:foo bar", // space not allowed
-    "CUSTOM:foo",
-    "team", // pre-ADR-041 type
-  ])("rejects invalid extension type %s", (extType) => {
-    const result = BundleMetadata.safeParse({
-      name: "x",
-      author: "t",
-      bundleType: "extension",
-      version: "1.0.0",
-      extensionType: extType,
-    });
-    expect(result.success).toBe(false);
-  });
+  it.each(["extensionType", "modelProvider", "category", "license"])(
+    "drops the retired %s filter",
+    (field) => {
+      const result = SearchQuery.safeParse({
+        q: "ada",
+        filters: { bundleType: "principal", [field]: "x" },
+      });
+      expect(result.success).toBe(true);
+      expect(result.data?.filters).not.toHaveProperty(field);
+    },
+  );
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -367,40 +234,6 @@ describe("PrincipalName (runtime-aligned)", () => {
     "a".repeat(65), // over max
   ])("rejects %s", (name) => {
     const result = PrincipalName.safeParse(name);
-    expect(result.success).toBe(false);
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ExtensionManifest.id (runtime-aligned; extension ids are lowercase
-// kebab-case with no leading/trailing "-")
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("ExtensionManifest.id (runtime-aligned)", () => {
-  it.each([
-    "a",
-    "docker-skill",
-    "test-echo",
-    "a1b2c3",
-    "abc-def-ghi",
-    "x".repeat(64), // exact max
-  ])("accepts %s", (id) => {
-    const result = ExtensionManifest.shape.id.safeParse(id);
-    expect(result.success).toBe(true);
-  });
-
-  it.each([
-    "",
-    "-leading",
-    "trailing-",
-    "--double",
-    "-", // single dash
-    "FOO", // uppercase not allowed
-    "foo_bar", // underscore not allowed
-    "foo.bar", // dot not allowed
-    "x".repeat(65), // over max
-  ])("rejects %s", (id) => {
-    const result = ExtensionManifest.shape.id.safeParse(id);
     expect(result.success).toBe(false);
   });
 });

@@ -16,6 +16,36 @@ export interface RepoRef {
   name: string;
 }
 
+/**
+ * Repository-path lanes retired by the runtime.
+ *
+ * `peko/extensions/…` distributed capability packages, `peko/agents/…`
+ * distributed standalone `.agent` bundles, and `peko/teams/…` predates
+ * ADR-039/041. All three lost their producers: runtime ADR-037 retired
+ * the `.agent`/`.ext` composite bundle, ADR-047 §5 made capabilities
+ * plain workspace files, and ADR-050 deleted the extension framework's
+ * management surface.
+ *
+ * The hub is template-only (ADR-056 D6), so a *new* push into one of
+ * these lanes is a client that cannot work. Existing rows stay readable
+ * and deletable — only growth is refused.
+ */
+export const RETIRED_REPO_LANES = ["extensions", "agents", "teams"] as const;
+
+/**
+ * Return the retired lane a namespace addresses, or null.
+ *
+ * Matches only the three-segment `peko/<lane>/<name>` shape, so
+ * `peko/principals/<name>` and pre-ADR-005 `<owner>/<name>` paths are
+ * unaffected.
+ */
+export function retiredLaneOf(namespace: string): string | null {
+  const segments = namespace.split("/");
+  if (segments.length !== 2 || segments[0] !== "peko") return null;
+  const lane = segments[1];
+  return (RETIRED_REPO_LANES as readonly string[]).includes(lane) ? lane : null;
+}
+
 /** Split a repository path into namespace (up to last '/') + name. */
 export function splitRepo(repo: string): RepoRef | null {
   const idx = repo.lastIndexOf("/");

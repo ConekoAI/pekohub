@@ -15,7 +15,6 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
   BundleTypes,
-  ExtensionTypes,
   type Subject,
 } from "@pekohub/shared";
 
@@ -93,7 +92,19 @@ export const refreshTokens = pgTable(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Bundles
+// Bundles (templates)
+//
+// One row per registry repository. The hub is template-only: a row is a
+// pushed *template* — a stripped `principal.toml` carried as a
+// zero-layer OCI manifest (peko-runtime ADR-056 D6) — never an
+// existence and never a capability package.
+//
+// Removed by the template-only cut (ADR-005 realignment): the
+// extension-era package metadata `extension_type`, `categories`,
+// `model_providers`, `required_mcp_servers`, `hooks`, `compatibility`,
+// and the fork lineage `forked_from`. Capabilities became workspace
+// files (runtime ADR-047 §5 / ADR-050) and the `.agent`/`.ext` package
+// formats were retired (ADR-037), so none of it has a producer.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const bundles = pgTable(
@@ -102,6 +113,7 @@ export const bundles = pgTable(
     id: serial("id").primaryKey(),
     namespace: varchar("namespace", { length: 128 }).notNull(),
     name: varchar("name", { length: 128 }).notNull(),
+    // `principal` is the only member of BundleTypes (see constants.ts).
     bundleType: varchar("bundle_type", { length: 32 })
       .notNull()
       .$type<(typeof BundleTypes)[number]>(),
@@ -114,30 +126,13 @@ export const bundles = pgTable(
     publisherId: uuid("publisher_id").references(() => users.id, {
       onDelete: "set null",
     }),
-    extensionType: varchar("extension_type", { length: 32 }).$type<
-      (typeof ExtensionTypes)[number]
-    >(),
     description: text("description"),
     author: varchar("author", { length: 256 }),
     license: varchar("license", { length: 64 }),
     tags: jsonb("tags").$type<string[]>(),
-    categories: jsonb("categories").$type<string[]>(),
-    modelProviders: jsonb("model_providers").$type<string[]>(),
-    requiredMcpServers: jsonb("required_mcp_servers").$type<string[]>(),
     homepage: text("homepage"),
     repository: text("repository"),
     readme: text("readme"),
-    hooks:
-      jsonb("hooks").$type<
-        Array<{ point: string; handler?: string; topicPattern?: string }>
-      >(),
-    compatibility: jsonb("compatibility").$type<{
-      runtime?: string;
-      minVersion?: string;
-      maxVersion?: string;
-    }>(),
-    forkedFrom: varchar("forked_from", { length: 256 }),
-    starCount: integer("star_count").default(0).notNull(),
     pullCount: integer("pull_count").default(0).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()

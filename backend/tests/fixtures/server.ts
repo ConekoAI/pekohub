@@ -74,8 +74,8 @@ function createMockSearch() {
       );
       return { hits, total: hits.length, page: 1, perPage: 20 };
     },
-    async deleteBundle(objectID: string) {
-      docs.delete(objectID);
+    async deleteBundleDocuments(objectIDs: string[]) {
+      for (const id of objectIDs) docs.delete(id);
     },
     clear() {
       docs.clear();

@@ -110,7 +110,7 @@ async function buildApp(): Promise<FastifyInstance> {
     search: vi
       .fn()
       .mockResolvedValue({ hits: [], total: 0, page: 1, perPage: 20 }),
-    deleteBundle: vi.fn().mockResolvedValue(undefined),
+    deleteBundleDocuments: vi.fn().mockResolvedValue(undefined),
     indexInstance: vi.fn().mockResolvedValue(undefined),
     searchInstances: vi
       .fn()
@@ -155,181 +155,24 @@ describe("Bundle API Routes", () => {
     resetMocks();
   });
 
-  describe("POST /v1/bundles/:namespace/:name/fork", () => {
-    it("forks a bundle to the authenticated namespace", async () => {
-      const sourceBundle = {
+  describe("POST /v1/bundles/:namespace/:name/fork (retired)", () => {
+    // Forking belonged to the package catalog. A template is DNA: it is
+    // re-pushed from a workspace with `peko push`, never copied out of the
+    // registry, so the endpoint is gone rather than deprecated.
+    it("is no longer routed", async () => {
+      mockDbQueries.bundles.findFirst.mockResolvedValue({
         id: 1,
         namespace: "acme",
         name: "alpha",
-        bundleType: "agent",
-        extensionType: null,
-        description: "A test agent",
-        author: "alice",
-        license: "MIT",
-        tags: ["ai"],
-        categories: ["research"],
-        modelProviders: ["openai"],
-        requiredMcpServers: null,
-        homepage: null,
-        repository: null,
-        readme: "# Alpha",
-        forkedFrom: null,
-        starCount: 5,
-        pullCount: 100,
-      };
-
-      const sourceVersions = [
-        {
-          id: 10,
-          bundleId: 1,
-          version: "v1.0.0",
-          digest: "sha256:abc",
-          manifestJson: {},
-          size: 100,
-          deprecated: false,
-          deprecatedMessage: null,
-        },
-        {
-          id: 11,
-          bundleId: 1,
-          version: "v1.1.0",
-          digest: "sha256:def",
-          manifestJson: {},
-          size: 200,
-          deprecated: false,
-          deprecatedMessage: null,
-        },
-      ];
-
-      mockDbQueries.bundles.findFirst
-        .mockResolvedValueOnce(sourceBundle) // source lookup
-        .mockResolvedValueOnce(undefined); // conflict check
-
-      mockDbQueries.bundleVersions.findMany.mockResolvedValue(sourceVersions);
-
-      mockDbInsert.mockImplementation(() => ({
-        values: vi.fn().mockReturnThis(),
-        returning: vi.fn().mockResolvedValue([
-          {
-            id: 99,
-            namespace: "forker",
-            name: "alpha",
-            forkedFrom: "acme/alpha",
-          },
-        ]),
-      }));
+        publisherId: 42,
+      });
 
       const res = await app.inject({
         method: "POST",
         url: "/v1/bundles/acme/alpha/fork",
-      });
-
-      expect(res.statusCode).toBe(201);
-      const body = JSON.parse(res.body);
-      expect(body.namespace).toBe("forker");
-      expect(body.name).toBe("alpha");
-      expect(body.forkedFrom).toBe("acme/alpha");
-      expect(body.versionsCopied).toBe(2);
-    });
-
-    it("returns 404 when source bundle does not exist", async () => {
-      mockDbQueries.bundles.findFirst.mockResolvedValue(undefined);
-
-      const res = await app.inject({
-        method: "POST",
-        url: "/v1/bundles/acme/missing/fork",
       });
 
       expect(res.statusCode).toBe(404);
-      const body = JSON.parse(res.body);
-      expect(body.error).toBe("Bundle not found");
-    });
-
-    it("returns 409 when target bundle already exists", async () => {
-      const sourceBundle = {
-        id: 1,
-        namespace: "acme",
-        name: "alpha",
-        bundleType: "agent",
-        extensionType: null,
-        description: null,
-        author: null,
-        license: null,
-        tags: null,
-        categories: null,
-        modelProviders: null,
-        requiredMcpServers: null,
-        homepage: null,
-        repository: null,
-        readme: null,
-        forkedFrom: null,
-        starCount: 0,
-        pullCount: 0,
-      };
-
-      mockDbQueries.bundles.findFirst
-        .mockResolvedValueOnce(sourceBundle)
-        .mockResolvedValueOnce({ id: 99, namespace: "forker", name: "alpha" }); // conflict
-
-      const res = await app.inject({
-        method: "POST",
-        url: "/v1/bundles/acme/alpha/fork",
-      });
-
-      expect(res.statusCode).toBe(409);
-      const body = JSON.parse(res.body);
-      expect(body.error).toContain("already exists");
-    });
-
-    it("supports optional targetName query param", async () => {
-      const sourceBundle = {
-        id: 1,
-        namespace: "acme",
-        name: "alpha",
-        bundleType: "agent",
-        extensionType: null,
-        description: null,
-        author: null,
-        license: null,
-        tags: null,
-        categories: null,
-        modelProviders: null,
-        requiredMcpServers: null,
-        homepage: null,
-        repository: null,
-        readme: null,
-        forkedFrom: null,
-        starCount: 0,
-        pullCount: 0,
-      };
-
-      mockDbQueries.bundles.findFirst
-        .mockResolvedValueOnce(sourceBundle)
-        .mockResolvedValueOnce(undefined);
-
-      mockDbQueries.bundleVersions.findMany.mockResolvedValue([]);
-
-      mockDbInsert.mockImplementation(() => ({
-        values: vi.fn().mockReturnThis(),
-        returning: vi.fn().mockResolvedValue([
-          {
-            id: 99,
-            namespace: "forker",
-            name: "beta",
-            forkedFrom: "acme/alpha",
-          },
-        ]),
-      }));
-
-      const res = await app.inject({
-        method: "POST",
-        url: "/v1/bundles/acme/alpha/fork?targetName=beta",
-      });
-
-      expect(res.statusCode).toBe(201);
-      const body = JSON.parse(res.body);
-      expect(body.name).toBe("beta");
-      expect(body.forkedFrom).toBe("acme/alpha");
     });
   });
 

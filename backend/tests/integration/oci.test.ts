@@ -93,9 +93,10 @@ describe("OCI Distribution API", () => {
   });
 
   // Inner-config identity validation (audit section 7). The
-  // runtime emits `dev.pekohub.principalName` / `dev.pekohub.extensionId`
-  // in the OCI manifest annotations; PekoHub validates them here
-  // (without parsing the TOML config blob) before persisting.
+  // runtime emits `dev.pekohub.principalName` in the OCI manifest
+  // annotations; PekoHub validates it here (without parsing the TOML
+  // config blob) before persisting. There is no `extensionId`
+  // counterpart any more — templates have no extension identity.
   describe("PUT /v2/:namespace/:name/manifests/:reference — inner-config validation", () => {
     it("rejects unsafe dev.pekohub.principalName annotation", async () => {
       const app = await buildTestApp({ testDb });
@@ -139,7 +140,7 @@ describe("OCI Distribution API", () => {
       expect(body.errors[0].message).toContain("principalName");
     });
 
-    it("rejects unsafe dev.pekohub.extensionId annotation", async () => {
+    it("rejects a push that declares itself an extension", async () => {
       const app = await buildTestApp({ testDb });
       const user = await createUser(testDb.client, { namespace: "acme" });
 
@@ -154,7 +155,7 @@ describe("OCI Distribution API", () => {
 
       const res = await app.inject({
         method: "PUT",
-        url: "/v2/acme/my-extension/manifests/v1.0.0",
+        url: "/v2/peko/extensions/my-extension/manifests/v1.0.0",
         headers: {
           "content-type": "application/vnd.oci.image.manifest.v1+json",
           ...(await authHeaders(user)),
@@ -169,14 +170,54 @@ describe("OCI Distribution API", () => {
           },
           layers: [],
           annotations: {
-            "dev.pekohub.extensionId": "-leading-dash",
+            "org.peko.kind": "extension",
           },
         }),
       });
-      expect(res.statusCode).toBe(400);
+
+      // 410 Gone, not 400: the kind is *retired*, not malformed. The
+      // extension framework's registry surface was deleted runtime-side
+      // (ADR-047 §5 / ADR-050), so no client that sends this can work.
+      expect(res.statusCode).toBe(410);
       const body = JSON.parse(res.body);
-      expect(body.errors[0].code).toBe("MANIFEST_INVALID");
-      expect(body.errors[0].message).toContain("extensionId");
+      expect(body.error).toContain("template-only");
+    });
+
+    it("rejects the retired agent / team kinds too", async () => {
+      const app = await buildTestApp({ testDb });
+      const user = await createUser(testDb.client, { namespace: "acme" });
+
+      const configBody = "{}";
+      const configDigest = sha256(configBody);
+      await testDb.client.query(
+        `INSERT INTO blobs (digest, size, media_type, storage_key)
+         VALUES ($1, $2, $3, $4)`,
+        [configDigest, 2, "application/octet-stream", `blobs/${configDigest}`],
+      );
+      await app.storage.put(`blobs/${configDigest}`, Buffer.from(configBody));
+
+      for (const kind of ["agent", "team"]) {
+        const res = await app.inject({
+          method: "PUT",
+          url: `/v2/acme/legacy-${kind}/manifests/v1.0.0`,
+          headers: {
+            "content-type": "application/vnd.oci.image.manifest.v1+json",
+            ...(await authHeaders(user)),
+          },
+          payload: JSON.stringify({
+            schemaVersion: 2,
+            mediaType: "application/vnd.oci.image.manifest.v1+json",
+            config: {
+              mediaType: "application/vnd.oci.image.config.v1+json",
+              digest: configDigest,
+              size: 2,
+            },
+            layers: [],
+            annotations: { "org.peko.kind": kind },
+          }),
+        });
+        expect(res.statusCode).toBe(410);
+      }
     });
   });
 });

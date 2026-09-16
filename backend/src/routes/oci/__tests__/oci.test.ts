@@ -148,7 +148,7 @@ async function buildApp(): Promise<FastifyInstance> {
     search: vi
       .fn()
       .mockResolvedValue({ hits: [], total: 0, page: 1, perPage: 20 }),
-    deleteBundle: vi.fn().mockResolvedValue(undefined),
+    deleteBundleDocuments: vi.fn().mockResolvedValue(undefined),
     indexInstance: vi.fn().mockResolvedValue(undefined),
     searchInstances: vi
       .fn()
@@ -736,9 +736,10 @@ describe("OCI Distribution Spec Routes", () => {
     });
 
     // Inner-config identity validation (audit section 7). The
-    // runtime emits `dev.pekohub.principalName` / `dev.pekohub.extensionId`
-    // in the OCI manifest annotations; PekoHub validates them here
-    // (without parsing the TOML config blob) before persisting.
+    // runtime emits `dev.pekohub.principalName` in the OCI manifest
+    // annotations; PekoHub validates it here (without parsing the TOML
+    // config blob) before persisting. There is no extension counterpart:
+    // templates carry no extension identity (ADR-047 §5 / ADR-050).
     it("rejects manifest with unsafe principal name annotation", async () => {
       const manifest = {
         schemaVersion: 2,
@@ -769,7 +770,7 @@ describe("OCI Distribution Spec Routes", () => {
       expect(body.errors[0].message).toContain("principalName");
     });
 
-    it("rejects manifest with unsafe extension id annotation", async () => {
+    it("rejects a push whose kind is the retired 'extension'", async () => {
       const manifest = {
         schemaVersion: 2,
         mediaType: "application/vnd.oci.image.manifest.v1+json",
@@ -779,9 +780,7 @@ describe("OCI Distribution Spec Routes", () => {
           size: 2,
         },
         layers: [],
-        annotations: {
-          "dev.pekohub.extensionId": "-leading-dash",
-        },
+        annotations: { "org.peko.kind": "extension" },
       };
       mockDbQueries.blobs.findFirst.mockResolvedValue({ digest: "x" });
 
@@ -793,10 +792,12 @@ describe("OCI Distribution Spec Routes", () => {
         },
         payload: JSON.stringify(manifest),
       });
-      expect(res.statusCode).toBe(400);
+
+      // 410: retired, not malformed. The extension framework's registry
+      // surface is gone runtime-side, so such a client cannot work.
+      expect(res.statusCode).toBe(410);
       const body = JSON.parse(res.body);
-      expect(body.errors[0].code).toBe("MANIFEST_INVALID");
-      expect(body.errors[0].message).toContain("extensionId");
+      expect(body.error).toContain("template-only");
     });
 
     it("creates bundle and version on first push", async () => {
@@ -883,7 +884,7 @@ describe("OCI Distribution Spec Routes", () => {
       expect(body.errors[0].code).toBe("MANIFEST_INVALID");
     });
 
-    it("creates extension bundle with hooks and compatibility metadata from flat annotations", async () => {
+    it("creates a template with only template metadata from flat annotations", async () => {
       const manifest = {
         schemaVersion: 2,
         mediaType: "application/vnd.oci.image.manifest.v1+json",
@@ -894,19 +895,11 @@ describe("OCI Distribution Spec Routes", () => {
         },
         layers: [],
         annotations: {
-          "dev.pekohub.bundleType": "extension",
-          "dev.pekohub.extensionType": "skill",
-          "org.opencontainers.image.description": "A skill extension",
+          "org.peko.kind": "principal",
+          "org.opencontainers.image.description": "A research peko template",
           "org.opencontainers.image.authors": "alice",
-          "dev.pekohub.hooks": JSON.stringify([
-            { point: "tool.register", handler: "registerTools" },
-            { point: "agent.init", handler: "onInit" },
-          ]),
-          "dev.pekohub.compatibility": JSON.stringify({
-            runtime: "peko",
-            minVersion: "1.0.0",
-            maxVersion: "2.0.0",
-          }),
+          "dev.pekohub.tags": JSON.stringify(["research", "notes"]),
+          "dev.pekohub.readme": "# Ada",
         },
       };
       const manifestBytes = Buffer.from(JSON.stringify(manifest));
@@ -919,14 +912,13 @@ describe("OCI Distribution Spec Routes", () => {
         returning: vi.fn().mockResolvedValue([
           {
             id: 1,
-            namespace: "ns",
-            name: "ext",
-            bundleType: "extension",
-            extensionType: "skill",
-            description: "A skill extension",
+            namespace: "peko/principals",
+            name: "ada",
+            bundleType: "principal",
+            description: "A research peko template",
             author: "alice",
-            hooks: [{ point: "tool.register", handler: "registerTools" }],
-            compatibility: { runtime: "peko", minVersion: "1.0.0" },
+            tags: ["research", "notes"],
+            readme: "# Ada",
           },
         ]),
         onConflictDoUpdate: vi.fn().mockReturnThis(),
@@ -939,7 +931,7 @@ describe("OCI Distribution Spec Routes", () => {
 
       const res = await app.inject({
         method: "PUT",
-        url: "/v2/ns/ext/manifests/v1.0.0",
+        url: "/v2/peko/principals/ada/manifests/v1.0.0",
         headers: {
           "content-type": "application/vnd.oci.image.manifest.v1+json",
         },
@@ -949,17 +941,29 @@ describe("OCI Distribution Spec Routes", () => {
       expect(res.statusCode).toBe(201);
       expect(res.headers["docker-content-digest"]).toBe(digest);
 
-      // Verify search index was called with extension metadata
-      expect(app.search.indexBundle).toHaveBeenCalledWith(
-        expect.objectContaining({
-          bundleType: "extension",
-          extensionType: "skill",
-          hooks: expect.arrayContaining([
-            expect.objectContaining({ point: "tool.register" }),
-          ]),
-          compatibility: expect.objectContaining({ runtime: "peko" }),
-        }),
-      );
+      // The indexed document is exactly SearchResultItem — no
+      // extension-era metadata survives the push. Read the *last* call:
+      // the shared `app` is built once per file, so earlier tests have
+      // already indexed their own documents.
+      const calls = (app.search.indexBundle as ReturnType<typeof vi.fn>).mock
+        .calls;
+      const indexed = calls[calls.length - 1][0];
+      expect(indexed).toMatchObject({ bundleType: "principal" });
+      for (const field of [
+        "extensionType",
+        "hooks",
+        "compatibility",
+        "starCount",
+      ]) {
+        expect(indexed).not.toHaveProperty(field);
+      }
+
+      // `id` is the canonical primary key; the caller's `objectID` is the
+      // input the search plugin sanitizes into it, and must not leak into
+      // the document (two `*id` attributes break Meilisearch's primary-key
+      // inference and the add task fails silently).
+      expect(indexed).toHaveProperty("objectID");
+      expect(indexed).not.toHaveProperty("id");
     });
   });
 });
