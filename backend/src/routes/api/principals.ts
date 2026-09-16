@@ -39,7 +39,9 @@ const OWNER_PARAM = "[a-z0-9][a-z0-9_\\-]{0,127}";
 //   and would have allowed a path-traversal spelling. The Zod
 //   `PrincipalName` schema (target-spec.ts) is the authoritative
 //   validator; this is a cheap URL-level pre-filter.
-const AGENT_NAME_PARAM = "[A-Za-z0-9][A-Za-z0-9_\\-]{0,63}";
+// (ADR-059: the constant is renamed for the web-facing "peko"
+// vocabulary; the matched wire value is unchanged.)
+const PEKO_NAME_PARAM = "[A-Za-z0-9][A-Za-z0-9_\\-]{0,63}";
 
 /**
  * Extract the caller's `Principal` from the request. Mirrors the
@@ -93,7 +95,7 @@ export default async function principalDirectoryRoutes(
 
   // ── GET /v1/principals/by-handle/:owner/:principal_name ──────────────────────────
   fastify.get(
-    `/principals/by-handle/:owner(${OWNER_PARAM})/:principal_name(${AGENT_NAME_PARAM})`,
+    `/principals/by-handle/:owner(${OWNER_PARAM})/:principal_name(${PEKO_NAME_PARAM})`,
     async (request, reply) => {
       const { owner, principal_name: principalName } = request.params as {
         owner: string;

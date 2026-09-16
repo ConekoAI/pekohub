@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Search as SearchIcon, Loader2, AlertTriangle, Sparkles, Clock, Star } from 'lucide-react';
 import { api } from '~/lib/api';
 import { AppShell } from '~/components/AppShell';
-import { PrincipalCard } from '~/components/PrincipalCard';
+import { PekoCard } from '~/components/PekoCard';
 
 /**
  * PR #8: Discovery SPA page. Searches /v1/discovery/search and
@@ -68,7 +68,7 @@ function DiscoverPage() {
       <header>
         <h1 className="text-2xl font-bold text-gray-900">Discover</h1>
         <p className="mt-1 text-sm text-gray-600">
-          Browse public principals shared across the PekoHub network.
+          Browse public pekos shared across the PekoHub network.
         </p>
       </header>
 
@@ -80,7 +80,7 @@ function DiscoverPage() {
             type="search"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search principals..."
+            placeholder="Search pekos..."
             className="input pl-10"
           />
         </div>
@@ -109,7 +109,7 @@ function DiscoverPage() {
         <div className="flex items-center justify-between">
           <div className="text-xs text-gray-500">
             {search.data
-              ? `${search.data.total} principal${search.data.total === 1 ? '' : 's'}`
+              ? `${search.data.total} peko${search.data.total === 1 ? '' : 's'}`
               : ' '}
           </div>
           <select
@@ -141,12 +141,12 @@ function DiscoverPage() {
           </div>
         ) : !search.data || search.data.hits.length === 0 ? (
           <div className="rounded-lg border border-dashed border-gray-300 bg-white p-12 text-center text-sm text-gray-500">
-            No principals matched. Try a different query or category.
+            No pekos matched. Try a different query or category.
           </div>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {search.data.hits.map((hit) => (
-              <PrincipalCard key={hit.id} hit={hit} />
+              <PekoCard key={hit.id} hit={hit} />
             ))}
           </div>
         )}

@@ -8,6 +8,27 @@
 
 ---
 
+> **⚠️ Amendment (2026-09-16, [ADR-005](./ADR-005-peko-realignment.md)):**
+> - The bridge headers this ADR establishes are **retired**:
+>   `x-pekohub-caller-principal` and `x-pekohub-user-id` are replaced by the
+>   EdDSA **bridge JWT** (60s, mandatory `kind:"user"|"visitor"` claim; JWKS at
+>   `/v1/jwks.json`). References to those headers below are historical.
+> - The `principal_to_principal_*` tunnel messages (§3, `tunnel-protocol.ts`
+>   row) are **gone**: cross-runtime principal traffic now flows through the
+>   channel relay arms `tunnel_channel_event` / `tunnel_channel_invite` (dual
+>   JWS signatures, hub is a pure relay — see ADR-004 amendment).
+> - §2.4's promised `principal.*` `HookPoint` variants never matched the
+>   implemented hook-name regex; the actual hook categories are
+>   `prompt` / `tool` / `session` / `io` / `event` / `agent`.
+> - The four-step migration chain in §2.3 was **squashed to a fresh baseline**
+>   (see ADR-005, operator note); the individual `0008a`–`0008d` files no longer
+>   exist.
+> - Terminology: user-facing surfaces now say "peko" while wire/machine names
+>   keep "principal" (ADR-005 §1), so the directory API below
+>   (`/v1/principals/by-did|by-handle`) remains correct as written.
+
+---
+
 ## 1. Context
 
 The runtime has shipped Principal-as-Container (#82, commit 9031a27). PekoHub is the broker between the runtime and the wider world; its on-the-wire actor enum (`Principal`), the database columns it writes, and the OCI bundle type catalog it advertises all need to match the new model. This ADR documents PekoHub's v2 cut.

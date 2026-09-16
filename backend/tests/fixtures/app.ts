@@ -9,6 +9,7 @@ import { setDb } from "../../src/db/index.js";
 import searchApiRoutes from "../../src/routes/api/search.js";
 import bundleApiRoutes from "../../src/routes/api/bundles.js";
 import instanceRoutes from "../../src/routes/api/instances.js";
+import publicPekoRoutes from "../../src/routes/api/public-pekos.js";
 import runtimeRoutes from "../../src/routes/api/runtimes.js";
 import principalDirectoryRoutes from "../../src/routes/api/principals.js";
 import adminRoutes from "../../src/routes/api/admin.js";
@@ -111,12 +112,20 @@ export async function buildTestApp(options: TestAppOptions) {
   await app.register(searchApiRoutes, { prefix: "/v1" });
   await app.register(bundleApiRoutes, { prefix: "/v1" });
   await app.register(instanceRoutes, { prefix: "/v1" });
+  await app.register(publicPekoRoutes, { prefix: "/v1" });
   await app.register(runtimeRoutes, { prefix: "/v1" });
   // Issue #14: agent directory (by-did / by-handle) for tests.
   await app.register(principalDirectoryRoutes, { prefix: "/v1" });
   await app.register(adminRoutes, { prefix: "/v1/admin" });
   await app.register(oauthRoutes, { prefix: "/v1/auth" });
   await app.register(apiKeyRoutes, { prefix: "/v1/auth" });
+
+  // `/api/v1` alias surface — mirrors `src/index.ts` (the runtime CLI
+  // hard-codes this prefix for search / bundle detail / OAuth).
+  await app.register(searchApiRoutes, { prefix: "/api/v1" });
+  await app.register(bundleApiRoutes, { prefix: "/api/v1" });
+  await app.register(oauthRoutes, { prefix: "/api/v1/auth" });
+  await app.register(apiKeyRoutes, { prefix: "/api/v1/auth" });
 
   // Health check
   app.get("/health", async () => ({ status: "ok", version: "0.1.0" }));

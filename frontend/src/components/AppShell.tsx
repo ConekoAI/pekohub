@@ -81,7 +81,7 @@ function SubNavLink({
 function SignedOutPlaceholder() {
   return (
     <div className="mt-12 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-6 text-center text-sm text-gray-600">
-      <p>Sign in to manage your principals, publish bundles, and invite collaborators.</p>
+      <p>Sign in to manage your pekos, publish bundles, and invite collaborators.</p>
     </div>
   );
 }

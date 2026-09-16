@@ -186,10 +186,12 @@ export const UserProfile = z.object({
 export type UserProfile = z.infer<typeof UserProfile>;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Public principal profile (PR-C1)
+// Public peko profile (PR-C1)
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// The shape returned by `GET /v1/public/principals/:owner/:principalName`.
+// The shape returned by `GET /v1/public/pekos/:owner/:pekoName`
+// (renamed from `/v1/public/principals/...` in the ADR-005
+// realignment).
 // The SPA consumes this for the share-link profile + chat page. The
 // owner object is intentionally minimal — just enough to render a
 // header avatar; no email or any PII.
@@ -228,7 +230,7 @@ export const PublicProfile = z.object({
 export type PublicProfile = z.infer<typeof PublicProfile>;
 
 // Chat request body for the public chat endpoint
-// (POST /v1/public/principals/:owner/:principalName/chat). Mirrors
+// (POST /v1/public/pekos/:owner/:pekoName/chat). Mirrors
 // the backend's ChatBodySchema — single message plus an optional
 // ToS-acknowledged flag (PR-C4: TermsGate persists acks to
 // localStorage and re-sends them on subsequent messages).

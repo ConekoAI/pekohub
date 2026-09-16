@@ -5,7 +5,10 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['tests/**/*.test.ts'],
+    // tests/** is the primary suite; src/**/__tests__ holds the
+    // colocated mock-based unit tests (OCI routes, bundles routes,
+    // audit/scheduler services) — both run.
+    include: ['tests/**/*.test.ts', 'src/**/__tests__/**/*.test.ts'],
     setupFiles: ['./tests/setup.ts'],
     testTimeout: 30000,
     hookTimeout: 30000,

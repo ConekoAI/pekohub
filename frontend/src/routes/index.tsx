@@ -29,10 +29,10 @@ function HomePage() {
       <section className="bg-gradient-to-b from-peko-50 to-white py-20">
         <div className="mx-auto max-w-4xl px-4 text-center">
           <h1 className="text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl">
-            Discover & Share Principals
+            Discover & Share Pekos
           </h1>
           <p className="mt-4 text-lg text-gray-600">
-            The public registry for Pekobot principals and extensions.
+            The public registry for pekos and extensions.
           </p>
           <div className="mt-8 flex justify-center">
             <SearchBar onSearch={handleSearch} />
@@ -46,7 +46,7 @@ function HomePage() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <CategoryCard
               icon={<Package className="h-6 w-6" />}
-              title="Principals"
+              title="Pekos"
               description="Self-contained AI actors with their own prompts, permissions, and runtime"
             />
             <CategoryCard

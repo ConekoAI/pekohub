@@ -1,7 +1,7 @@
 /**
  * Public-chat SSE consumer hook (PR-C2).
  *
- * Drives a single round-trip conversation with a public principal:
+ * Drives a single round-trip conversation with a public peko:
  * `sendMessage(text)` opens a `fetch` + SSE stream, ingests the
  * dual-channel events, and folds chunks into assistant bubbles
  * broken at iteration boundaries.
@@ -34,7 +34,7 @@ import { parseSseStream, readerToIterable, type StreamEvent } from "~/lib/sse";
 
 export interface ChatMessage {
   /** Discriminator: "user" for human turns, "assistant" for the
-   *  principal, "error" for inline quota / runtime errors. */
+   *  peko, "error" for inline quota / runtime errors. */
   kind: "user" | "assistant" | "error";
   /** Bubble text. For assistant bubbles, content accumulates across
    *  chunks within the same iteration; for user / error it's a
@@ -57,7 +57,7 @@ export interface ChatMessage {
 
 interface UsePublicChatArgs {
   owner: string;
-  principalName: string;
+  pekoName: string;
   /** Optional ToS-acknowledged flag. PR-C4: TermsGate persists
    *  acknowledgments to localStorage and re-sends them on every
    *  message so the server's 428 path doesn't trip on a returning
@@ -77,7 +77,7 @@ interface UsePublicChatReturn {
 
 export function usePublicChat({
   owner,
-  principalName,
+  pekoName,
   tosAcknowledged,
 }: UsePublicChatArgs): UsePublicChatReturn {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -127,7 +127,7 @@ export function usePublicChat({
 
       let response: Response;
       try {
-        response = await api.publicChat(owner, principalName, {
+        response = await api.publicChat(owner, pekoName, {
           message: trimmed,
           tos_acknowledged: tosAcknowledged,
         });
@@ -230,7 +230,7 @@ export function usePublicChat({
         }
       }
     },
-    [owner, principalName, tosAcknowledged, streaming],
+    [owner, pekoName, tosAcknowledged, streaming],
   );
 
   return { messages, streaming, awaitingToken, error, sendMessage, abort, clear };

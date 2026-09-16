@@ -7,29 +7,14 @@ import { shareUrlFor } from '~/lib/api';
  * PR #8: Discovery card. Renders one row in the search/feed grid
  * with two actions:
  *
- * 1. "Open" → /p/$owner/$publicName (in-browser public chat)
- * 2. "Add to my desktop" → `peko://add-principal?url=${shareUrl}`
- *    deep-link. Resolves in peko-desktop via PR #6's
- *    `installDeepLinkHandler`. Falls back to a copy-link button
- *    when the runtime is not installed (per
- *    `window.matchMedia('Tauri')` heuristic — the desktop sets
- *    this on its own webview).
+ * 1. "Open" → /peko/$owner/$pekoName (in-browser public chat)
+ * 2. "Copy link" → copies the share URL to the clipboard.
  *
  * Visual contract: card width is determined by the parent grid;
  * the card itself caps at `max-w-sm` so 3-up layouts stay tidy.
  */
-export function PrincipalCard({ hit }: { hit: DiscoveryHit }) {
+export function PekoCard({ hit }: { hit: DiscoveryHit }) {
   const shareUrl = shareUrlFor(hit);
-  const deepLink = `peko://add-principal?url=${encodeURIComponent(shareUrl)}`;
-
-  // Heuristic for "running inside peko-desktop" — the Tauri
-  // webview injects a custom user-agent. We keep this best-effort
-  // and rely on the deep-link plugin's failure path (it surfaces
-  // a toast via `deep-link-error`) for the rare case where a
-  // user has peko-desktop installed but isn't on the desktop's
-  // webview.
-  const isInsideDesktop =
-    typeof navigator !== 'undefined' && /Tauri/i.test(navigator.userAgent);
 
   return (
     <article className="card flex max-w-sm flex-col p-4">
@@ -65,25 +50,15 @@ export function PrincipalCard({ hit }: { hit: DiscoveryHit }) {
 
       <footer className="mt-4 flex items-center justify-between gap-2">
         <Link
-          to="/p/$owner/$principalName"
-          params={{ owner: hit.ownerName, principalName: hit.publicName }}
+          to="/peko/$owner/$pekoName"
+          params={{ owner: hit.ownerName, pekoName: hit.publicName }}
           target="_blank"
           className="inline-flex items-center gap-1 text-xs font-medium text-peko-600 hover:underline"
         >
           <ExternalLink className="h-3 w-3" />
           Open
         </Link>
-        {isInsideDesktop ? (
-          <a
-            href={deepLink}
-            className="btn-secondary inline-flex items-center gap-1 text-xs py-1"
-          >
-            <Plus className="h-3 w-3" />
-            Add to desktop
-          </a>
-        ) : (
-          <CopyLinkButton url={shareUrl} />
-        )}
+        <CopyLinkButton url={shareUrl} />
       </footer>
     </article>
   );

@@ -69,6 +69,7 @@ vi.mock("../../../db/index.js", () => ({
 vi.mock("../../../services/throttle.js", () => ({
   shouldRecordPullStats: vi.fn().mockResolvedValue(true),
   resetThrottleForTests: vi.fn(),
+  NAMESPACE_MAX: 60,
 }));
 
 // Import routes after mocking db

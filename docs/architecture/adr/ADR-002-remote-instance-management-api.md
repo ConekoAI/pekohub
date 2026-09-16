@@ -14,6 +14,15 @@
 > The runtime dropped the `Team` subject variant entirely; see
 > [ADR-042](./ADR-042-principal-as-container-v2.md) for the current data model.
 > The text below is retained as the original decision record.
+>
+> **⚠️ Amendment (2026-09-16, [ADR-005](./ADR-005-peko-realignment.md)):**
+> The `Instance` sketch below (~"Instance Model" / "Database Schema") is stale
+> even relative to ADR-042. The current `instances` table keys ownership via
+> `owner_subject` (JSONB, typed `Subject`), carries **no allow-list column**
+> (`allowed_users` / `allowed_principals` are both gone — private sharing moved
+> to runtime-side permissions + invite tokens), and `exposure` has **four**
+> modes: `unexposed`, `private`, `unlisted`, `public`. The
+> `allowed_users`-based authz checks in the API sketches below no longer exist.
 
 ---
 

@@ -1,1 +1,0 @@
--- No-op migration (placeholder to maintain journal continuity)

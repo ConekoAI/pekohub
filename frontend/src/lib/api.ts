@@ -179,17 +179,17 @@ export const api = {
   // ─────────────────────────────────────────────────────────────────────────
 
   /**
-   * Fetch the public profile for a principal. Used by `/p/$owner/$name`
+   * Fetch the public profile for a peko. Used by `/peko/$owner/$pekoName`
    * to render the share-link landing page (description, model,
    * tags, ToS gate, chat input). No JWT — anyone with the link can
    * see this; the visitor cookie is set by the backend so the
    * subsequent `publicChat` call can resolve a thread.
    */
-  publicProfile: (owner: string, principalName: string) =>
-    fetchJson<PublicProfile>(`/v1/public/principals/${owner}/${principalName}`),
+  publicProfile: (owner: string, pekoName: string) =>
+    fetchJson<PublicProfile>(`/v1/public/pekos/${owner}/${pekoName}`),
 
   /**
-   * Open a streaming SSE chat with a public principal. Returns the
+   * Open a streaming SSE chat with a public peko. Returns the
    * raw `Response` so the caller can attach a body-reader; callers
    * that need a discriminated stream of `chunk | iteration | done |
    * error` events should use `usePublicChat()` which parses the
@@ -199,8 +199,8 @@ export const api = {
    * No `Authorization` header — public endpoint. The visitor cookie
    * travels via `credentials: 'include'`.
    */
-  publicChat: (owner: string, principalName: string, body: PublicChatBody) =>
-    fetch(`${API_BASE}/v1/public/principals/${owner}/${principalName}/chat`, {
+  publicChat: (owner: string, pekoName: string, body: PublicChatBody) =>
+    fetch(`${API_BASE}/v1/public/pekos/${owner}/${pekoName}/chat`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -211,8 +211,8 @@ export const api = {
   // Owner dashboard (PR #7) — instances scoped to the signed-in user.
   // Mirrors `GET /v1/instances` on the backend (which already filters
   // by owner subject for any non-admin caller via JWT). For the
-  // private-only view, `listAccessiblePrincipals` below still hits
-  // `/v1/me/accessible-principals`, which post-H4 returns a stripped
+  // private-only view, `listAccessiblePekos` below still hits
+  // `/v1/me/accessible-pekos`, which post-H4 returns a stripped
   // shape without runtime metadata.
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -236,16 +236,16 @@ export const api = {
    * "private discovery" side-panel; the dashboard itself uses
    * `listOwnedInstances`).
    */
-  listAccessiblePrincipals: () =>
+  listAccessiblePekos: () =>
     fetchJson<{
-      principals: Array<{
+      pekos: Array<{
         id: string;
         ownerName: string;
-        principalName: string;
+        pekoName: string;
         publicName: string | null;
         status: 'online' | 'offline' | 'busy' | 'error';
       }>;
-    }>(`/v1/me/accessible-principals`),
+    }>(`/v1/me/accessible-pekos`),
 
   /** Single-instance fetch (owner view; non-owners get a redacted shape). */
   getInstance: (id: string) => fetchJson<OwnedInstanceRecord>(`/v1/instances/${id}`),
@@ -328,13 +328,13 @@ export const api = {
     }),
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Discovery (PR #8) — public principal browse + curated feeds.
+  // Discovery (PR #8) — public peko browse + curated feeds.
   // Anonymous endpoints (no JWT). Results are a flattened
   // `DiscoveryHit` shape — no runtime metadata, no ownerSubject,
-  // just the public profile the /p/$owner/$name landing page shows.
-  // The `ownerName` field is the human-readable namespace the
+  // just the public profile the /peko/$owner/$pekoName landing page
+  // shows. The `ownerName` field is the human-readable namespace the
   // share-link path uses; we surface it directly so the card can
-  // build the deep-link URL without a second round-trip.
+  // build the share URL without a second round-trip.
   // ─────────────────────────────────────────────────────────────────────────
 
   /**
@@ -397,12 +397,12 @@ export interface DiscoveryHit {
 
 /**
  * Build the canonical share URL for a discovery hit. The frontend
- * uses this for both "Open in browser" links and the deep-link
- * `peko://add-principal?url=${shareUrl}` form (PR #6).
+ * uses this for the "Open in browser" link and the copy-link action
+ * on the discovery card.
  */
 export function shareUrlFor(hit: { ownerName: string; publicName: string }, origin?: string): string {
   const base = origin ?? (typeof window !== 'undefined' ? window.location.origin : '');
-  return `${base}/p/${encodeURIComponent(hit.ownerName)}/${encodeURIComponent(hit.publicName)}`;
+  return `${base}/peko/${encodeURIComponent(hit.ownerName)}/${encodeURIComponent(hit.publicName)}`;
 }
 
 // Shape returned by GET /v1/instances for the owner. Mirrors
@@ -440,6 +440,7 @@ export interface OwnedInstanceRecord {
     priceCents: number | null;
     stripeProductId: string | null;
   };
-  transportPreference: 'auto' | 'tunnel' | 'direct';
+  // `type` and `principalDid` are wire values — the runtime's machine
+  // naming stays "principal" even though the UI calls these "pekos".
   principalDid: string | null;
 }

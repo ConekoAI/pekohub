@@ -35,7 +35,7 @@ export function PublicChatPanel({ profile }: PublicChatPanelProps) {
     sendMessage,
   } = usePublicChat({
     owner: liveInstance.owner.name,
-    principalName: liveInstance.publicName,
+    pekoName: liveInstance.publicName,
     tosAcknowledged: tosAcknowledged || undefined,
   });
 
@@ -70,7 +70,7 @@ export function PublicChatPanel({ profile }: PublicChatPanelProps) {
             key={i}
             message={m}
             ownerName={ownerName}
-            principalName={liveInstance.publicName}
+            pekoName={liveInstance.publicName}
           />
         ))}
         {/* Thinking pill — surfaced between iterations. Mirrors
@@ -95,14 +95,14 @@ export function PublicChatPanel({ profile }: PublicChatPanelProps) {
         <div className="border-t border-gray-200 bg-gray-50 p-4">
           <TermsGate
             owner={liveInstance.owner.name}
-            principalName={liveInstance.publicName}
+            pekoName={liveInstance.publicName}
             tosText={liveInstance.tosText}
             onAccept={() => setTosAcknowledged(true)}
           />
         </div>
       ) : offline ? (
         <div className="border-t border-gray-200 bg-gray-50 px-4 py-3 text-center text-sm text-gray-500">
-          This principal is offline. Try again later.
+          This peko is offline. Try again later.
         </div>
       ) : (
         <PublicChatInput

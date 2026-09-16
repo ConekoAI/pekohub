@@ -47,10 +47,10 @@ describe('dashboard api helpers', () => {
     expect(url).toContain('exposure=public');
   });
 
-  it('listAccessiblePrincipals hits /v1/me/accessible-principals', async () => {
-    await api.listAccessiblePrincipals();
+  it('listAccessiblePekos hits /v1/me/accessible-pekos', async () => {
+    await api.listAccessiblePekos();
     const [url] = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(url).toBe('/v1/me/accessible-principals');
+    expect(url).toBe('/v1/me/accessible-pekos');
   });
 
   it('getInstance uses the instance id in the path', async () => {
@@ -70,14 +70,14 @@ describe('dashboard api helpers', () => {
 
   it('setInstanceExposure includes public_profile when provided', async () => {
     await api.setInstanceExposure('inst-1234', 'public', {
-      public_name: 'My Agent',
-      description: 'A test agent',
+      public_name: 'My Peko',
+      description: 'A test peko',
       tags: ['ai', 'assistant'],
       category: 'coding',
     });
     const [, init] = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
     const body = JSON.parse(init.body);
-    expect(body.public_profile.public_name).toBe('My Agent');
+    expect(body.public_profile.public_name).toBe('My Peko');
     expect(body.public_profile.category).toBe('coding');
   });
 

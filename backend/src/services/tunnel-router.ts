@@ -149,8 +149,8 @@ export class TunnelRouter {
         reason: result.reason,
         message:
           result.reason === "daily"
-            ? "This principal has reached its daily message limit. Please try again tomorrow."
-            : "This principal has reached its weekly message limit. Please try again next week.",
+            ? "This peko has reached its daily message limit. Please try again tomorrow."
+            : "This peko has reached its weekly message limit. Please try again next week.",
       })}\n\n`,
     );
     reply.raw.write(`data: ${JSON.stringify({ done: true })}\n\n`);

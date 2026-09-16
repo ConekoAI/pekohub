@@ -5,99 +5,15 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1778919045032,
-      "tag": "0000_initial_schema",
+      "when": 1789561390317,
+      "tag": "0000_baseline",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "7",
-      "when": 1779081566224,
-      "tag": "0001_gifted_argent",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1779103125876,
-      "tag": "0002_mean_kabuki",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1779104697200,
-      "tag": "0003_slow_microbe",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1780841381309,
-      "tag": "0004_add_instances_table",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1780883419549,
-      "tag": "0005_add_exposure_profile_fields",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1781860241244,
-      "tag": "0006_yummy_wild_child",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1781877424674,
-      "tag": "0007_add_agent_did",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "7",
-      "when": 1779000000001,
-      "tag": "0008a_add_principal_did",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "7",
-      "when": 1779000000002,
-      "tag": "0008b_replace_team_with_principal",
-      "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "7",
-      "when": 1779000000003,
-      "tag": "0008c_rename_allowed_columns",
-      "breakpoints": true
-    },
-    {
-      "idx": 11,
-      "version": "7",
-      "when": 1779000000004,
-      "tag": "0008d_drop_agent_did",
-      "breakpoints": true
-    },
-    {
-      "idx": 12,
-      "version": "7",
-      "when": 1783053317711,
-      "tag": "0009_add_transport_preference_and_direct_endpoint",
-      "breakpoints": true
-    },
-    {
-      "idx": 13,
-      "version": "7",
-      "when": 1789535640718,
-      "tag": "0014_add_principal_did_verified",
+      "when": 1789561400241,
+      "tag": "0001_bundle_publisher",
       "breakpoints": true
     }
   ]

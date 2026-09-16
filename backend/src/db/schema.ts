@@ -105,6 +105,15 @@ export const bundles = pgTable(
     bundleType: varchar("bundle_type", { length: 32 })
       .notNull()
       .$type<(typeof BundleTypes)[number]>(),
+    // Publisher ownership (ADR-056). The account that first pushed this
+    // bundle owns it: only the publisher may push new versions,
+    // deprecate, or delete. Nullable because rows predating this
+    // column have no recorded publisher — such legacy rows can be
+    // claimed by the caller whose `users.namespace` matches
+    // `bundles.namespace` (the pre-publisher ownership rule).
+    publisherId: uuid("publisher_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
     extensionType: varchar("extension_type", { length: 32 }).$type<
       (typeof ExtensionTypes)[number]
     >(),
@@ -279,10 +288,11 @@ export const instances = pgTable(
     // ADR-041: per-Principal DID, the key the cross-runtime
     // `principal_send` resolver uses to look up a host via
     // `/v1/principals/by-did/:did`. Set by the runtime on
-    // `instance_announce` and unique when present. Nullable so
-    // pre-#82 runtimes and migrations keep working; the by-did
-    // endpoint simply 404s when the column is null. The runtime
-    // emits `did:peko:principal:<keyhash>` post-#82.
+    // `instance_announce`. Nullable so pre-#82 runtimes and
+    // migrations keep working; the by-did endpoint simply 404s when
+    // the column is null. The runtime emits
+    // `did:peko:principal:<keyhash>` post-#82. Post-ADR-056-D7 the
+    // column is indexed but NOT unique — see the index note below.
     principalDid: varchar("principal_did", { length: 512 }),
     // ADR-058 D4: true only when the announcing runtime proved
     // possession of the principal DID's key via `principalPop`
@@ -303,11 +313,14 @@ export const instances = pgTable(
     publishedAtIdx: index("idx_instances_published_at").on(table.publishedAt),
     featuredIdx: index("idx_instances_featured").on(table.featured),
     categoryIdx: index("idx_instances_category").on(table.category),
-    // ADR-041: B-tree unique on `principal_did` so the by-did
-    // resolver is a single indexed lookup. Postgres treats NULLs as
-    // distinct in unique indexes, so pre-#82 rows (where
-    // `principal_did IS NULL`) don't conflict with each other.
-    principalDidUniqueIdx: uniqueIndex("idx_instances_principal_did").on(
+    // ADR-041: B-tree on `principal_did` so the by-did resolver is an
+    // indexed lookup. Post-ADR-056-D7 this is deliberately NOT unique:
+    // a cryogenic-transported principal lands on a new runtime with the
+    // SAME DID and a new instance id, so multiple rows may carry one
+    // DID. Singularity is enforced at the exposure layer instead —
+    // see `InstanceService.findPublicExposureConflict` (at most one
+    // publicly exposed instance per DID network-wide).
+    principalDidIdx: index("idx_instances_principal_did").on(
       table.principalDid,
     ),
   }),

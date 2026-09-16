@@ -17,12 +17,13 @@ export interface TestBundle {
   namespace: string;
   name: string;
   bundleType: "principal" | "extension";
+  // ADR-056: publisher ownership (nullable for legacy rows).
+  publisherId?: string | null;
   extensionType?:
     | "mcp"
     | "skill"
-    | "tool"
-    | "gateway"
-    | "universal"
+    | "agent"
+    | "universal-tool"
     | "general";
   description: string;
   author: string;
@@ -152,13 +153,14 @@ export async function createBundle(
   const bundleType = overrides.bundleType ?? "principal";
 
   const result = await client.query(
-    `INSERT INTO bundles (namespace, name, bundle_type, extension_type, description, author, tags, hooks, compatibility, star_count, pull_count)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-     RETURNING id, namespace, name, bundle_type, extension_type, description, author, tags, hooks, compatibility, star_count, pull_count`,
+    `INSERT INTO bundles (namespace, name, bundle_type, publisher_id, extension_type, description, author, tags, hooks, compatibility, star_count, pull_count)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+     RETURNING id, namespace, name, bundle_type, publisher_id, extension_type, description, author, tags, hooks, compatibility, star_count, pull_count`,
     [
       namespace,
       name,
       bundleType,
+      overrides.publisherId ?? null,
       overrides.extensionType ?? null,
       overrides.description ?? faker.lorem.sentence(),
       overrides.author ?? faker.person.fullName(),

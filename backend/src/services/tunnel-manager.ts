@@ -776,6 +776,34 @@ export class TunnelManager {
       }
     }
 
+    // ADR-056 D7: at most one publicly exposed instance per
+    // principal DID network-wide. A runtime announcing a public /
+    // unlisted instance for a DID that ANOTHER instance already
+    // serves publicly is rejected — the same rule the exposure PATCH
+    // enforces on the HTTP side.
+    if (
+      (payload.exposure === "public" || payload.exposure === "unlisted") &&
+      payload.principalDid
+    ) {
+      const conflict = await instanceService.findPublicExposureConflict(
+        payload.principalDid,
+        payload.id,
+      );
+      if (conflict) {
+        this.fastify.log.warn(
+          {
+            runtimeId,
+            instanceId: payload.id,
+            principalDid: payload.principalDid,
+            conflictingInstanceId: conflict.id,
+            conflictingInstanceName: conflict.name,
+          },
+          "Announce rejected: another instance is already publicly exposed for this principal DID (ADR-056 D7)",
+        );
+        return;
+      }
+    }
+
     try {
       // Post-H1: instances carry only the typed `owner_subject`
       // (the legacy `owner_id` integer FK is gone). Project the
