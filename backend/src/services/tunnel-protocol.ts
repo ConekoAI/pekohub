@@ -220,10 +220,18 @@ export interface TunnelChannelEventPayload {
   channelId: string;
   /** The full `ChannelEvent` payload. Forwarded verbatim. */
   event: ChannelEvent;
-  /** Ed25519 signature, base64url-encoded, over the canonical
-   * pre-image described in the Rust module docs. The hub forwards
-   * this verbatim; the receiver verifies end-to-end. */
+  /** ADR-058 D3: compact JWS (EdDSA, embedded payload) by the source
+   * runtime's key. The payload carries every envelope field plus
+   * `iat`/`exp`. The hub forwards this verbatim; the receiver
+   * verifies end-to-end. */
   signature: string;
+  /** ADR-058 D2: compact JWS by the authoring principal's own key
+   * over the SAME payload segment as `signature`. Empty when the
+   * author has no vault-backed key (legacy runtime-vouched path).
+   * The hub forwards this verbatim; the receiver verifies it against
+   * the key embedded in `sourcePrincipalDid` when that is a
+   * `did:key`. */
+  authorSignature: string;
 }
 
 // ── Cross-runtime channel invites (peko-channel cross-runtime PR-3a-followup) ─
@@ -289,13 +297,17 @@ export interface TunnelChannelInvitePayload {
    * receiver partitions on `runtime_id` to build both the
    * `members` and `remote_members` arrays. */
   initialMembers: InitialMember[];
-  /** Ed25519 signature, base64url-encoded, over the canonical
-   * pre-image described in the Rust module docs (domain tag
-   * `channel-invite:v1` — distinct from the channel-event tag
-   * `channel:v1` so a signature over a channel event cannot be
-   * replayed as a channel invite or vice versa). The hub forwards
-   * this verbatim; the receiver verifies end-to-end. */
+  /** ADR-058 D3: compact JWS (EdDSA, embedded payload) by the source
+   * runtime's key. The payload carries every envelope field plus
+   * `iat`/`exp`. The hub forwards this verbatim; the receiver
+   * verifies end-to-end. */
   signature: string;
+  /** ADR-058 D2: compact JWS by the creator principal's own key over
+   * the SAME payload segment as `signature`. Empty for legacy
+   * runtime-vouched invites; required (plus
+   * `creatorDid === sourcePrincipalDid`) when `creatorDid` is a
+   * `did:key`. The hub forwards this verbatim. */
+  authorSignature: string;
 }
 
 export type TunnelMessage =
