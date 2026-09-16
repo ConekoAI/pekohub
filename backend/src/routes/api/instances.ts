@@ -1020,7 +1020,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     // returns the existing or newly-minted id; we set the cookie
     // unconditionally because that's idempotent and keeps the
     // expiry rolling.
-    readOrSetVisitor(request, reply);
+    readOrSetVisitor(request, reply, fastify.config.JWT_SECRET);
 
     const ownerRow = await db.query.users.findFirst({
       where: eq(users.namespace, owner),
@@ -1153,7 +1153,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       // rejects the proxied request with 403 — the historical
       // blocker that prevented anonymous public chat from ever
       // reaching the principal.
-      const visitorId = readOrSetVisitor(request, reply);
+      const visitorId = readOrSetVisitor(request, reply, fastify.config.JWT_SECRET);
 
       // Proxy through tunnel as an SSE stream
       await fastify.tunnelRouter.proxyStream(

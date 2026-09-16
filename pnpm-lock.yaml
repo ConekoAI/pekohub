@@ -80,6 +80,9 @@ importers:
       fastify-type-provider-zod:
         specifier: '2'
         version: 2.1.0(fastify@4.29.1)(zod@3.25.76)
+      jose:
+        specifier: ^6.2.3
+        version: 6.2.3
       meilisearch:
         specifier: ^0.40.0
         version: 0.40.0
@@ -123,9 +126,6 @@ importers:
       fast-jwt:
         specifier: ^6.2.4
         version: 6.2.4
-      jose:
-        specifier: ^6.2.3
-        version: 6.2.3
       postgres:
         specifier: ^3.4.9
         version: 3.4.9

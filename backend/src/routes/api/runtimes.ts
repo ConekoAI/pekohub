@@ -1,18 +1,165 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import { randomBytes } from "node:crypto";
 import { db } from "../../db/index.js";
 import { runtimes } from "../../db/schema.js";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
+import { verifyDidKeyJws } from "../../services/tunnel-crypto.js";
+
+/**
+ * ADR-058 D4 — runtime registration requires proof of possession of
+ * the claimed DID's Ed25519 key. Without it, the first registrant to
+ * claim a `runtime_did` owned the row and the real key holder got a
+ * 403 forever after (DID squatting).
+ *
+ * Flow:
+ *   1. `POST /v1/runtimes/register-challenge` (authenticated) →
+ *      `{ nonce, exp, owner }`. The nonce is single-use, ~60s TTL, held in
+ *      the in-memory challenge store below (same pattern as the
+ *      tunnel handshake nonce in `tunnel-manager.ts`). `owner` is the
+ *      authenticated user id, disclosed so the client can sign it
+ *      into the PoP payload verbatim.
+ *   2. `POST /v1/runtimes/register` with body
+ *      `{ runtime_did, display_name?, pop: { nonce, jws } }` where
+ *      `jws` is a compact JWS (EdDSA) signed with the claimed DID's
+ *      key. The JWS payload is canonical JSON with exactly these
+ *      keys, in this order, no whitespace:
+ *
+ *        {"nonce":"…","runtimeDid":"…","owner":"…","iat":N,"exp":N}
+ *
+ *      - `nonce`      — the challenge nonce from step 1
+ *      - `runtimeDid` — the DID being registered (must match the body)
+ *      - `owner`      — the authenticated pekohub user id
+ *      - `iat`/`exp`  — unix seconds; must be fresh at verification
+ *
+ *      (The hub verifies the signature over the embedded payload and
+ *      then compares parsed claims; the canonical form above is what
+ *      the runtime signs — see peko-runtime ADR-058 D4.)
+ */
+
+const RegisterPopSchema = z.object({
+  nonce: z.string().min(1).max(255),
+  jws: z.string().min(1).max(8192),
+});
 
 const RegisterBodySchema = z.object({
   runtime_did: z.string().min(1).max(255),
   display_name: z.string().max(255).optional(),
+  pop: RegisterPopSchema,
 });
+
+/** Challenge nonce TTL (~60s) and store bound (same LRU-eviction
+ *  style as `TunnelManager.lastChallengeByRuntime`). */
+const REGISTER_CHALLENGE_TTL_MS = 60_000;
+const MAX_TRACKED_REGISTER_CHALLENGES = 4_096;
+const REGISTER_CHALLENGE_NONCE_BYTES = 32;
+/** Clock-skew leeway for the PoP payload's `iat`. */
+const POP_IAT_LEEWAY_SECS = 60;
+
+interface RegisterChallenge {
+  expiresAt: number;
+}
+
+/**
+ * In-memory, per-app challenge store. Single-use: a nonce is deleted
+ * the moment it is consumed, so a captured PoP cannot be replayed.
+ * A nonce lost on restart simply forces the client to re-request a
+ * challenge — registration is rare, so persistence buys nothing.
+ */
+class RegisterChallengeStore {
+  private challenges = new Map<string, RegisterChallenge>();
+
+  issue(): { nonce: string; exp: number } {
+    const nonce = randomBytes(REGISTER_CHALLENGE_NONCE_BYTES).toString(
+      "base64url",
+    );
+    const expiresAt = Date.now() + REGISTER_CHALLENGE_TTL_MS;
+    // LRU-style bound: evict the oldest entry when full.
+    if (this.challenges.size >= MAX_TRACKED_REGISTER_CHALLENGES) {
+      const oldest = this.challenges.keys().next().value;
+      if (oldest !== undefined) this.challenges.delete(oldest);
+    }
+    this.challenges.set(nonce, { expiresAt });
+    return { nonce, exp: Math.floor(expiresAt / 1000) };
+  }
+
+  /** Returns true and consumes the nonce iff it exists and is
+   *  unexpired. Expired/unknown nonces are rejected (and pruned). */
+  consume(nonce: string): boolean {
+    const challenge = this.challenges.get(nonce);
+    if (!challenge) return false;
+    this.challenges.delete(nonce);
+    return challenge.expiresAt > Date.now();
+  }
+}
+
+/**
+ * Verify the registration PoP against the request. Returns an error
+ * code string on failure, `null` on success.
+ *
+ * Order matters for security: the nonce is consumed as soon as it
+ * validates (single-use), BEFORE the JWS is checked — a failed JWS
+ * burns the nonce so an attacker cannot probe signatures against a
+ * live challenge.
+ */
+async function verifyRegisterPop(
+  store: RegisterChallengeStore,
+  runtimeDid: string,
+  ownerId: string,
+  pop: z.infer<typeof RegisterPopSchema>,
+): Promise<string | null> {
+  if (!store.consume(pop.nonce)) {
+    return "invalid_pop_nonce";
+  }
+
+  const payload = await verifyDidKeyJws(runtimeDid, pop.jws);
+  if (payload === null) {
+    // Covers: runtime_did is not a did:key, malformed JWS, or a
+    // signature made with the wrong key.
+    return "invalid_pop_signature";
+  }
+
+  if (
+    payload.nonce !== pop.nonce ||
+    payload.runtimeDid !== runtimeDid ||
+    payload.owner !== ownerId
+  ) {
+    return "invalid_pop_claims";
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const { iat, exp } = payload;
+  if (
+    typeof iat !== "number" ||
+    typeof exp !== "number" ||
+    exp <= now ||
+    iat > now + POP_IAT_LEEWAY_SECS
+  ) {
+    return "invalid_pop_freshness";
+  }
+
+  return null;
+}
 
 /**
  * Runtime management API routes.
  */
 export default async function runtimeRoutes(fastify: FastifyInstance) {
+  const challengeStore = new RegisterChallengeStore();
+
+  // ── Issue a registration challenge (ADR-058 D4) ────────────────────────────
+  fastify.post(
+    "/runtimes/register-challenge",
+    { preHandler: [authenticateOrDevBypass] },
+    async (request, reply) => {
+      const { nonce, exp } = challengeStore.issue();
+      // `owner` rides the challenge so the runtime can sign it into
+      // the PoP payload verbatim; `verifyRegisterPop` compares it
+      // against the authenticated user at register time.
+      return reply.status(200).send({ nonce, exp, owner: request.user.id });
+    },
+  );
+
   // ── Register or update a runtime ───────────────────────────────────────────
   fastify.post(
     "/runtimes/register",
@@ -29,7 +176,18 @@ export default async function runtimeRoutes(fastify: FastifyInstance) {
           });
       }
 
-      const { runtime_did, display_name } = body.data;
+      const { runtime_did, display_name, pop } = body.data;
+
+      // ADR-058 D4: proof of possession of the claimed DID's key.
+      const popError = await verifyRegisterPop(
+        challengeStore,
+        runtime_did,
+        user.id,
+        pop,
+      );
+      if (popError !== null) {
+        return reply.status(400).send({ error: popError });
+      }
 
       // Upsert with ON CONFLICT to eliminate TOCTOU race
       const [row] = await db

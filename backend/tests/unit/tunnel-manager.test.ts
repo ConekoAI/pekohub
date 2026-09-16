@@ -2,9 +2,14 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { EventEmitter } from "events";
 import Fastify from "fastify";
 import { TunnelManager } from "../../src/services/tunnel-manager.js";
+import { instanceService } from "../../src/services/instances.js";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { base58 } from "@scure/base";
-import type { TunnelMessage } from "../../src/services/tunnel-protocol.js";
+import { SignJWT, importJWK } from "jose";
+import type {
+  InstanceAnnouncePayload,
+  TunnelMessage,
+} from "../../src/services/tunnel-protocol.js";
 
 const ED25519_PUB_MULTICODEC = new Uint8Array([0xed, 0x01]);
 
@@ -581,5 +586,203 @@ describe("TunnelManager", () => {
     expect(markOfflineSpy).toHaveBeenCalledWith(did);
 
     markOfflineSpy.mockRestore();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ADR-058 D4: instance_announce principalDid proof of possession.
+//
+// Contract: an announce whose `principalDid` is a did:key MUST carry
+// `principalPop` — a compact EdDSA JWS over canonical JSON
+// {"runtimeId","principalDid","iat","exp"} signed with the PRINCIPAL's
+// key — or the hub rejects the announce (no directory row write).
+// Legacy (non-did:key) ids are stored as unverified.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function b64url(bytes: Uint8Array): string {
+  return Buffer.from(bytes).toString("base64url");
+}
+
+/** Sign a principalPop JWS with the principal's Ed25519 keypair. */
+async function signPrincipalPop(
+  key: { privateKey: Uint8Array },
+  principalDid: string,
+  payload: Record<string, unknown>,
+): Promise<string> {
+  const jwk = await importJWK(
+    {
+      kty: "OKP",
+      crv: "Ed25519",
+      x: b64url(ed25519.getPublicKey(key.privateKey)),
+      d: b64url(key.privateKey),
+    },
+    "EdDSA",
+  );
+  return new SignJWT({ ...payload, principalDid })
+    .setProtectedHeader({ alg: "EdDSA" })
+    .sign(jwk);
+}
+
+function canonicalPrincipalPopPayload(
+  runtimeId: string,
+  principalDid: string,
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  const now = Math.floor(Date.now() / 1000);
+  return { runtimeId, principalDid, iat: now, exp: now + 60, ...overrides };
+}
+
+function makeAnnounce(overrides: Partial<InstanceAnnouncePayload> = {}): InstanceAnnouncePayload {
+  return {
+    id: "inst-pop-1",
+    type: "principal",
+    name: "helper",
+    status: "online",
+    exposure: "private",
+    ...overrides,
+  };
+}
+
+describe("TunnelManager instance_announce principalPop (ADR-058 D4)", () => {
+  let app: Awaited<ReturnType<typeof buildFastify>>;
+
+  beforeEach(async () => {
+    app = await buildFastify();
+  });
+
+  async function setup(runtime: { did: string; privateKey: Uint8Array }) {
+    const manager = new TunnelManager(app);
+    const socket = new MockWebSocket();
+    allowRuntime(manager, runtime.did);
+    vi.spyOn(manager as any, "resolveRuntimeOwner").mockResolvedValue(
+      "owner-user-id",
+    );
+    const upsertSpy = vi
+      .spyOn(instanceService, "upsertFromAnnounce")
+      .mockResolvedValue(null as any);
+    manager.handleSocket(socket as any);
+    await completeHandshake(manager, socket, runtime.did, runtime.privateKey);
+    return { manager, socket, upsertSpy };
+  }
+
+  async function settle() {
+    await new Promise((r) => setTimeout(r, 30));
+  }
+
+  it("accepts an announce with a valid principalPop and marks the DID verified", async () => {
+    const runtime = makeRuntimeIdentity();
+    const principal = makeRuntimeIdentity();
+    const { socket, upsertSpy } = await setup(runtime);
+
+    const principalPop = await signPrincipalPop(
+      principal,
+      principal.did,
+      canonicalPrincipalPopPayload(runtime.did, principal.did),
+    );
+    socket.triggerMessage({
+      type: "instance_announce",
+      payload: makeAnnounce({ principalDid: principal.did, principalPop }),
+    });
+    await settle();
+
+    expect(upsertSpy).toHaveBeenCalledTimes(1);
+    expect(upsertSpy.mock.calls[0][0]).toMatchObject({
+      principalDid: principal.did,
+      principalDidVerified: true,
+    });
+    upsertSpy.mockRestore();
+  });
+
+  it("rejects an announce whose principalPop is signed with the wrong key", async () => {
+    const runtime = makeRuntimeIdentity();
+    const principal = makeRuntimeIdentity();
+    const attacker = makeRuntimeIdentity();
+    const { socket, upsertSpy } = await setup(runtime);
+
+    // Attacker signs with THEIR key but claims the victim principal DID.
+    const principalPop = await signPrincipalPop(
+      attacker,
+      principal.did,
+      canonicalPrincipalPopPayload(runtime.did, principal.did),
+    );
+    socket.triggerMessage({
+      type: "instance_announce",
+      payload: makeAnnounce({ principalDid: principal.did, principalPop }),
+    });
+    await settle();
+
+    expect(upsertSpy).not.toHaveBeenCalled();
+    upsertSpy.mockRestore();
+  });
+
+  it("rejects an announce with a did:key principalDid but no principalPop", async () => {
+    const runtime = makeRuntimeIdentity();
+    const principal = makeRuntimeIdentity();
+    const { socket, upsertSpy } = await setup(runtime);
+
+    socket.triggerMessage({
+      type: "instance_announce",
+      payload: makeAnnounce({ principalDid: principal.did }),
+    });
+    await settle();
+
+    expect(upsertSpy).not.toHaveBeenCalled();
+    upsertSpy.mockRestore();
+  });
+
+  it("rejects an announce whose principalPop names a different runtime", async () => {
+    const runtime = makeRuntimeIdentity();
+    const otherRuntime = makeRuntimeIdentity();
+    const principal = makeRuntimeIdentity();
+    const { socket, upsertSpy } = await setup(runtime);
+
+    const principalPop = await signPrincipalPop(
+      principal,
+      principal.did,
+      canonicalPrincipalPopPayload(otherRuntime.did, principal.did),
+    );
+    socket.triggerMessage({
+      type: "instance_announce",
+      payload: makeAnnounce({ principalDid: principal.did, principalPop }),
+    });
+    await settle();
+
+    expect(upsertSpy).not.toHaveBeenCalled();
+    upsertSpy.mockRestore();
+  });
+
+  it("accepts a legacy (non-did:key) principalDid as unverified", async () => {
+    const runtime = makeRuntimeIdentity();
+    const { socket, upsertSpy } = await setup(runtime);
+
+    socket.triggerMessage({
+      type: "instance_announce",
+      payload: makeAnnounce({ principalDid: "did:peko:principal:abc123" }),
+    });
+    await settle();
+
+    expect(upsertSpy).toHaveBeenCalledTimes(1);
+    expect(upsertSpy.mock.calls[0][0]).toMatchObject({
+      principalDid: "did:peko:principal:abc123",
+      principalDidVerified: false,
+    });
+    upsertSpy.mockRestore();
+  });
+
+  it("leaves the DID and verified flag alone when the announce omits principalDid", async () => {
+    const runtime = makeRuntimeIdentity();
+    const { socket, upsertSpy } = await setup(runtime);
+
+    socket.triggerMessage({
+      type: "instance_announce",
+      payload: makeAnnounce(),
+    });
+    await settle();
+
+    expect(upsertSpy).toHaveBeenCalledTimes(1);
+    const input = upsertSpy.mock.calls[0][0];
+    expect(input.principalDid).toBeUndefined();
+    expect(input.principalDidVerified).toBeUndefined();
+    upsertSpy.mockRestore();
   });
 });

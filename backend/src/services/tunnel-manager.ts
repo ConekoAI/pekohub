@@ -18,7 +18,7 @@ import {
   type InstanceDeregisterPayload,
   type StatusUpdatePayload,
 } from "./tunnel-protocol.js";
-import { verifyDidKeySignature, TunnelAuthError } from "./tunnel-crypto.js";
+import { verifyDidKeySignature, verifyDidKeyJws, TunnelAuthError } from "./tunnel-crypto.js";
 import {
   instanceService,
   subjectCanAccess,
@@ -40,6 +40,11 @@ const CHALLENGE_NONCE_BYTES = 32;
 /** TTL for an in-flight cross-runtime a2a request. Matches the
  *  proxyChat default (30s) and is what the issue specifies. */
 const A2A_IN_FLIGHT_TTL_MS = 30_000;
+/** ADR-058 D4: freshness leeways for the announce `principalPop`
+ *  JWS — `exp` may lag the hub clock by 30s, `iat` may lead it by
+ *  60s (the runtime mints the PoP immediately before announcing). */
+const PRINCIPAL_POP_EXP_LEEWAY_SECS = 30;
+const PRINCIPAL_POP_IAT_LEEWAY_SECS = 60;
 
 /** Options bag for `TunnelManager`. Currently only the a2a TTL is
  *  exposed, for test injection. Production callers leave it alone. */
@@ -732,6 +737,68 @@ export class TunnelManager {
     return row?.ownerId ?? null;
   }
 
+  /**
+   * ADR-058 D4: verify the announce's `principalPop` — a compact JWS
+   * over canonical JSON `{"runtimeId","principalDid","iat","exp"}`
+   * signed with the PRINCIPAL's key. Guards the directory against a
+   * runtime asserting a `principalDid` it does not control
+   * (directory poisoning).
+   *
+   * Returns true iff: the JWS verifies against the key embedded in
+   * `payload.principalDid` (a did:key), the payload's `runtimeId`
+   * matches the announcing connection's runtimeId, `principalDid`
+   * matches the announce field, and `iat`/`exp` are fresh
+   * (`exp` + 30s leeway, `iat` ≤ now + 60s).
+   */
+  private async verifyPrincipalPop(
+    runtimeId: string,
+    payload: InstanceAnnouncePayload,
+  ): Promise<boolean> {
+    const principalDid = payload.principalDid!;
+    if (!payload.principalPop) {
+      this.fastify.log.warn(
+        { runtimeId, instanceId: payload.id, principalDid },
+        "Announce rejected: did:key principalDid without principalPop",
+      );
+      return false;
+    }
+    const claims = await verifyDidKeyJws(principalDid, payload.principalPop);
+    if (claims === null) {
+      this.fastify.log.warn(
+        { runtimeId, instanceId: payload.id, principalDid },
+        "Announce rejected: principalPop JWS did not verify",
+      );
+      return false;
+    }
+    if (claims.runtimeId !== runtimeId || claims.principalDid !== principalDid) {
+      this.fastify.log.warn(
+        {
+          runtimeId,
+          instanceId: payload.id,
+          principalDid,
+          claimedRuntimeId: claims.runtimeId,
+        },
+        "Announce rejected: principalPop claims mismatch",
+      );
+      return false;
+    }
+    const now = Math.floor(Date.now() / 1000);
+    const { iat, exp } = claims;
+    if (
+      typeof iat !== "number" ||
+      typeof exp !== "number" ||
+      exp + PRINCIPAL_POP_EXP_LEEWAY_SECS < now ||
+      iat > now + PRINCIPAL_POP_IAT_LEEWAY_SECS
+    ) {
+      this.fastify.log.warn(
+        { runtimeId, instanceId: payload.id, principalDid, iat, exp },
+        "Announce rejected: principalPop stale or future-dated",
+      );
+      return false;
+    }
+    return true;
+  }
+
   private async handleInstanceAnnounce(
     runtimeId: string,
     payload: InstanceAnnouncePayload,
@@ -748,6 +815,29 @@ export class TunnelManager {
         "Allowlisted runtime missing from runtimes table; skipping instance upsert",
       );
       return;
+    }
+
+    // ADR-058 D4: a did:key `principalDid` is only stored once the
+    // principal proves key possession via `principalPop`. A legacy
+    // (non-did:key) id is accepted but recorded as UNVERIFIED. When
+    // the announce omits `principalDid` entirely, leave both the DID
+    // and the verified flag alone (`undefined` = don't touch).
+    let principalDidVerified: boolean | undefined;
+    if (payload.principalDid !== undefined && payload.principalDid !== null) {
+      if (payload.principalDid.startsWith("did:key:")) {
+        if (!(await this.verifyPrincipalPop(runtimeId, payload))) {
+          // Reject the announce: storing a principalDid the announcer
+          // cannot prove ownership of is directory poisoning.
+          return;
+        }
+        principalDidVerified = true;
+      } else {
+        principalDidVerified = false;
+        this.fastify.log.info(
+          { runtimeId, instanceId: payload.id, principalDid: payload.principalDid },
+          "Announce stored with unverified (legacy, non-did:key) principalDid",
+        );
+      }
     }
 
     try {
@@ -776,6 +866,10 @@ export class TunnelManager {
         // the service layer leaves the existing column alone in that
         // case (see `upsertFromAnnounce`).
         principalDid: payload.principalDid,
+        // ADR-058 D4: whether `principalDid` was proven via
+        // `principalPop` on this announce. `undefined` when the
+        // announce carries no DID — same leave-alone semantics.
+        principalDidVerified,
       });
     } catch (err) {
       this.fastify.log.warn(

@@ -106,6 +106,15 @@ export interface InstanceAnnouncePayload {
   // runtimes still announce cleanly. Omit to leave the existing
   // value alone in the service layer.
   principalDid?: string;
+  // ADR-058 D4: proof of possession for `principalDid`. A compact
+  // JWS (EdDSA, embedded payload) over canonical JSON
+  // {"runtimeId","principalDid","iat","exp"} signed with the
+  // PRINCIPAL's key. REQUIRED when `principalDid` is a `did:key:...`
+  // — the hub rejects the announce otherwise (directory poisoning
+  // guard). Omitted for legacy (non-did:key) principal ids, which
+  // the hub stores as unverified. The runtime only sends this for
+  // did:key principals.
+  principalPop?: string;
 }
 
 export interface InstanceHeartbeatPayload {

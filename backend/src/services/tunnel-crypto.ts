@@ -11,6 +11,7 @@
 
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { base58 } from "@scure/base";
+import { compactVerify, importJWK } from "jose";
 
 const ED25519_PUB_MULTICODEC = new Uint8Array([0xed, 0x01]);
 
@@ -78,5 +79,43 @@ export function verifyDidKeySignature(
     return ed25519.verify(signature, messageBytes, pubKey);
   } catch {
     return false;
+  }
+}
+
+/**
+ * ADR-058 D4: verify a compact JWS (EdDSA, embedded JSON payload)
+ * against the Ed25519 key embedded in `didKey`. Returns the parsed
+ * payload on success, `null` on any failure (bad DID, bad signature,
+ * non-JSON payload). Callers MUST then check the payload's claims
+ * (nonce/ids/iat/exp) against the request they gate — this helper
+ * only establishes "the DID's key signed these bytes".
+ *
+ * The raw 32-byte key is imported as a JWK
+ * `{ kty: "OKP", crv: "Ed25519", x: base64url(pubkey) }` per the
+ * ADR-058 contract so the runtime side can mirror the verification
+ * with any JWS library.
+ */
+export async function verifyDidKeyJws(
+  didKey: string,
+  jws: string,
+): Promise<Record<string, unknown> | null> {
+  try {
+    const pubKey = publicKeyFromDidKey(didKey);
+    const key = await importJWK(
+      {
+        kty: "OKP",
+        crv: "Ed25519",
+        x: Buffer.from(pubKey).toString("base64url"),
+      },
+      "EdDSA",
+    );
+    const { payload } = await compactVerify(jws, key);
+    const parsed: unknown = JSON.parse(new TextDecoder().decode(payload));
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return null;
+    }
+    return parsed as Record<string, unknown>;
+  } catch {
+    return null;
   }
 }

@@ -150,6 +150,10 @@ export interface InstanceRecord {
   // column. Nullable for pre-#82 peers; the by-did endpoint 404s
   // when null.
   principalDid: string | null;
+  // ADR-058 D4: whether `principalDid` was proven via `principalPop`
+  // on announce (did:key principals). False for legacy ids and rows
+  // that predate the column.
+  principalDidVerified: boolean;
 }
 
 export interface CreateInstanceInput {
@@ -181,6 +185,11 @@ export interface CreateInstanceInput {
   // ADR-041: per-Principal DID, set on `instance_announce`. Unique
   // when present.
   principalDid?: string | null;
+  // ADR-058 D4: PoP verification result for `principalDid`. Only
+  // meaningful when `principalDid` is set on the same call; the
+  // tunnel manager computes it — other callers should leave it
+  // undefined.
+  principalDidVerified?: boolean;
 }
 
 export interface UpdateInstanceInput {
@@ -212,6 +221,10 @@ export interface UpdateInstanceInput {
   // resolver ([peko-runtime#29]). Setting to `null` clears the column
   // (e.g. if a runtime downgrades to pre-#34).
   principalDid?: string | null;
+  // ADR-058 D4: PoP verification result paired with `principalDid`.
+  // `undefined` leaves the existing flag alone (same leave-alone
+  // semantics as `principalDid`).
+  principalDidVerified?: boolean;
 }
 
 export interface ListInstancesOptions {
@@ -380,6 +393,9 @@ export class InstanceService {
         // include in the INSERT", so the default `null` from the
         // schema applies.
         principalDid: input.principalDid ?? undefined,
+        // ADR-058 D4: PoP verification flag. `undefined` → schema
+        // default (false).
+        principalDidVerified: input.principalDidVerified ?? undefined,
       })
       .returning();
 
@@ -479,6 +495,8 @@ export class InstanceService {
     if (input.publishedAt !== undefined) values.publishedAt = input.publishedAt;
     if (input.featured !== undefined) values.featured = input.featured;
     if (input.principalDid !== undefined) values.principalDid = input.principalDid;
+    if (input.principalDidVerified !== undefined)
+      values.principalDidVerified = input.principalDidVerified;
 
     if (Object.keys(values).length === 0) {
       return this.getById(id);
@@ -654,6 +672,13 @@ export class InstanceService {
       // as "leave the existing value alone" — otherwise a downgrade
       // would silently clear the column.
       if (input.principalDid !== undefined) values.principalDid = input.principalDid;
+      // ADR-058 D4: the verified flag travels with the DID — the
+      // tunnel manager recomputes it on every announce that carries
+      // a `principalDid`, so a re-announce that fails PoP never
+      // leaves a stale `verified: true` behind (it rejects the whole
+      // announce instead).
+      if (input.principalDidVerified !== undefined)
+        values.principalDidVerified = input.principalDidVerified;
       // Persist the per-Principal transport preference on re-announce.
       // Treat `undefined` as "leave the existing value alone".
       const updated = await this.update(input.id!, values);
@@ -826,6 +851,8 @@ export class InstanceService {
       },
       // ADR-041: per-Principal DID from `instance_announce`.
       principalDid: row.principalDid ?? null,
+      // ADR-058 D4: PoP verification flag for `principalDid`.
+      principalDidVerified: row.principalDidVerified ?? false,
     };
   }
 }
