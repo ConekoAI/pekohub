@@ -97,7 +97,7 @@ describe("GET /metrics (issue #16)", () => {
     expect(body).toEqual({});
   });
 
-  it("reflects forwarding counters after a successful cross-runtime request", async () => {
+  it("reflects forwarding counters after a cross-runtime channel event", async () => {
     const { app, tunnelManager } = await buildMetricsTestApp(testDb);
 
     const ownerA = await createUser(testDb.client, { namespace: "alice" });
@@ -107,15 +107,6 @@ describe("GET /metrics (issue #16)", () => {
     const idB = makeRuntimeIdentity();
     await seedRuntime(testDb, idA.did, ownerA.id);
     await seedRuntime(testDb, idB.did, ownerB.id);
-
-    const DID_B_AGENT = "did:peko:principal:target-b";
-    await createInstance(testDb.client, {
-      ownerSubject: { kind: "user", id: String(ownerB.id) },
-      name: "target-b",
-      runtimeId: idB.did,
-      exposure: "public",
-      principalDid: DID_B_AGENT,
-    });
 
     const socketA = new MockWebSocket();
     const socketB = new MockWebSocket();
@@ -125,13 +116,15 @@ describe("GET /metrics (issue #16)", () => {
     await completeHandshake(socketB, idB.did, idB.privateKey);
 
     socketA.triggerMessage({
-      type: "principal_to_principal_request",
-      requestId: "metrics-req-1",
-      callerRuntimeId: idA.did,
-      callerPrincipalDid: "caller-a",
-      targetPrincipalDid: DID_B_AGENT,
-      message: "hi",
+      type: "tunnel_channel_event",
+      requestId: "metrics-chan-1",
+      sourceRuntimeId: idA.did,
+      recipientRuntimeId: idB.did,
+      sourcePrincipalDid: "did:key:z6MkAuthor",
+      channelId: "chan_metrics01",
+      event: { kind: "posted", channelId: "chan_metrics01", sender: "did:key:z6MkAuthor", text: "hi" },
       signature: "x",
+      authorSignature: "y",
     });
     await flush();
 
@@ -139,70 +132,12 @@ describe("GET /metrics (issue #16)", () => {
 
     expect(response.statusCode).toBe(200);
     const body = JSON.parse(response.payload);
-    // The forwarded request should show up in the snapshot.
-    expect(body[CounterName.HubA2AForwarded]).toBe(1);
+    // The forwarded event should show up in the snapshot.
+    expect(body[CounterName.HubChannelEventForwarded]).toBe(1);
     // And the unrelated counters should be absent (snapshot omits
     // untouched counters — the consumer can distinguish "zero" from
     // "missing").
-    expect(body[CounterName.HubA2AForbidden]).toBeUndefined();
-    expect(body[CounterName.HubA2ATargetOffline]).toBeUndefined();
-    expect(body[CounterName.HubA2ATargetMissing]).toBeUndefined();
-  });
-
-  it("reflects multiple counter categories in a single snapshot", async () => {
-    const { app, tunnelManager } = await buildMetricsTestApp(testDb);
-
-    const ownerA = await createUser(testDb.client, { namespace: "alice" });
-    const ownerB = await createUser(testDb.client, { namespace: "bob" });
-
-    const idA = makeRuntimeIdentity();
-    const idB = makeRuntimeIdentity();
-    await seedRuntime(testDb, idA.did, ownerA.id);
-    await seedRuntime(testDb, idB.did, ownerB.id);
-
-    const DID_B_AGENT = "did:peko:principal:target-b";
-    await createInstance(testDb.client, {
-      ownerSubject: { kind: "user", id: String(ownerB.id) },
-      name: "target-b",
-      runtimeId: idB.did,
-      exposure: "private",
-      principalDid: DID_B_AGENT,
-    });
-
-    const socketA = new MockWebSocket();
-    tunnelManager.handleSocket(socketA.asWebSocket());
-    await completeHandshake(socketA, idA.did, idA.privateKey);
-
-    // First: target-missing — targetPrincipalDid doesn't exist.
-    socketA.triggerMessage({
-      type: "principal_to_principal_request",
-      requestId: "metrics-req-missing",
-      callerRuntimeId: idA.did,
-      callerPrincipalDid: "caller-a",
-      targetPrincipalDid: "did:peko:principal:not-on-file",
-      message: "hi",
-      signature: "x",
-    });
-    await flush();
-
-    // Second: forbidden — target exists (private, no allow-list),
-    // Principal-kind caller doesn't match User owner.
-    socketA.triggerMessage({
-      type: "principal_to_principal_request",
-      requestId: "metrics-req-forbidden",
-      callerRuntimeId: idA.did,
-      callerPrincipalDid: "caller-a",
-      targetPrincipalDid: DID_B_AGENT,
-      message: "hi",
-      signature: "x",
-    });
-    await flush();
-
-    const response = await app.inject({ method: "GET", url: "/metrics" });
-
-    expect(response.statusCode).toBe(200);
-    const body = JSON.parse(response.payload);
-    expect(body[CounterName.HubA2ATargetMissing]).toBe(1);
-    expect(body[CounterName.HubA2AForbidden]).toBe(1);
+    expect(body[CounterName.HubChannelEventRejectedSourceAllowlist]).toBeUndefined();
+    expect(body[CounterName.HubChannelEventRecipientOffline]).toBeUndefined();
   });
 });

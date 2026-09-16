@@ -19,14 +19,8 @@ import {
   type StatusUpdatePayload,
 } from "./tunnel-protocol.js";
 import { verifyDidKeySignature, verifyDidKeyJws, TunnelAuthError } from "./tunnel-crypto.js";
-import {
-  instanceService,
-  subjectCanAccess,
-  resolveOwnerSubject,
-  type InstanceStatus,
-} from "./instances.js";
+import { instanceService, type InstanceStatus } from "./instances.js";
 import { metrics, CounterName } from "./metrics.js";
-import type { Subject } from "@pekohub/shared";
 import { db } from "../db/index.js";
 import { runtimes, instances } from "../db/schema.js";
 import { eq, inArray, and } from "drizzle-orm";
@@ -37,22 +31,11 @@ const HEARTBEAT_INTERVAL_SECS = 30;
 const HEARTBEAT_TIMEOUT_MS = 90_000;
 const REAPER_INTERVAL_MS = 30_000;
 const CHALLENGE_NONCE_BYTES = 32;
-/** TTL for an in-flight cross-runtime a2a request. Matches the
- *  proxyChat default (30s) and is what the issue specifies. */
-const A2A_IN_FLIGHT_TTL_MS = 30_000;
 /** ADR-058 D4: freshness leeways for the announce `principalPop`
  *  JWS — `exp` may lag the hub clock by 30s, `iat` may lead it by
  *  60s (the runtime mints the PoP immediately before announcing). */
 const PRINCIPAL_POP_EXP_LEEWAY_SECS = 30;
 const PRINCIPAL_POP_IAT_LEEWAY_SECS = 60;
-
-/** Options bag for `TunnelManager`. Currently only the a2a TTL is
- *  exposed, for test injection. Production callers leave it alone. */
-export interface TunnelManagerOptions {
-  /** Override the in-flight a2a request TTL (default 30s). Tests
-   *  use a small value to avoid waiting 30s in the timeout case. */
-  a2aInFlightTtlMs?: number;
-}
 
 /** Phases of the runtime-side handshake. */
 type HandshakePhase = "hello" | "challenge" | "ready";
@@ -97,33 +80,6 @@ export interface RuntimeConnection {
   pendingRequestIds: Set<string>;
 }
 
-/**
- * Cross-runtime a2a correlation entry (issue #16). Mirrors the
- * `pendingRequests` pattern for proxyChat: keyed by `requestId`,
- * carries both sockets so a response can be relayed back AND the
- * target can be notified if the caller disappears mid-flight, plus a
- * TTL timer so a non-responsive target doesn't leak entries.
- */
-interface A2AInFlightEntry {
-  callerRuntimeId: string;
-  callerSocket: WebSocket;
-  targetRuntimeId: string;
-  targetSocket: WebSocket;
-  timer: NodeJS.Timeout;
-}
-
-/**
- * Codes for synthesized error responses (issue #16). The runtime decodes
- * the `payload` JSON `{ kind: "error", code, message }` and surfaces the
- * error to the original `principal_send` caller.
- */
-export type A2AErrorCode =
-  | "target_not_found"
-  | "target_offline"
-  | "forbidden"
-  | "timeout"
-  | "internal_error";
-
 export class TunnelManager {
   private connections = new Map<string, RuntimeConnection>();
   private pendingRequests = new Map<string, PendingRequest>();
@@ -136,17 +92,7 @@ export class TunnelManager {
   private lastChallengeByRuntime = new Map<string, string>();
   private static readonly MAX_TRACKED_CHALLENGES = 4_096;
 
-  /** Issue #16: in-flight cross-runtime a2a requests, keyed by requestId. */
-  private a2aInFlight = new Map<string, A2AInFlightEntry>();
-  /** Issue #16: configurable TTL (constructor-injected for tests). */
-  private readonly a2aInFlightTtlMs: number;
-
-  constructor(
-    private fastify: FastifyInstance,
-    opts: TunnelManagerOptions = {},
-  ) {
-    this.a2aInFlightTtlMs = opts.a2aInFlightTtlMs ?? A2A_IN_FLIGHT_TTL_MS;
-  }
+  constructor(private fastify: FastifyInstance) {}
 
   startReaper(): void {
     if (this.reaperTimer) return;
@@ -530,16 +476,6 @@ export class TunnelManager {
 
       case "status_update": {
         await this.handleStatusUpdate(conn.runtimeId, msg.payload);
-        break;
-      }
-
-      case "principal_to_principal_request": {
-        await this.handlePrincipalToPrincipalRequest(conn, msg);
-        break;
-      }
-
-      case "principal_to_principal_response": {
-        this.handlePrincipalToPrincipalResponse(conn, msg);
         break;
       }
 
@@ -952,8 +888,6 @@ export class TunnelManager {
     }
   }
 
-  // ── Cross-runtime a2a forwarding (issue #16) ─────────────────────────────
-
   /**
    * Look up the live `RuntimeConnection` for a runtime. Returns
    * `undefined` if the runtime isn't connected or its socket is no
@@ -968,194 +902,6 @@ export class TunnelManager {
     if (!conn) return undefined;
     if (conn.socket.readyState !== conn.socket.OPEN) return undefined;
     return conn;
-  }
-
-  /**
-   * Synthesize and send an `principal_to_principal_response` carrying a JSON
-   * `{ kind: "error", code, message }` payload. The runtime decodes it
-   * and surfaces the error to the `principal_send` caller.
-   */
-  private sendA2AErrorResponse(
-    socket: WebSocket,
-    requestId: string,
-    code: A2AErrorCode,
-    message: string,
-  ): void {
-    if (socket.readyState !== socket.OPEN) return;
-    const payload = JSON.stringify({ kind: "error", code, message });
-    this.sendMessage(socket, {
-      type: "principal_to_principal_response",
-      requestId,
-      payload,
-    });
-  }
-
-  private async handlePrincipalToPrincipalRequest(
-    conn: RuntimeConnection,
-    req: Extract<TunnelMessage, { type: "principal_to_principal_request" }>,
-  ): Promise<void> {
-    // 1. Source allowlist — the receiving tunnel's authenticated
-    //    `runtimeId` must match the envelope's claim. Otherwise a
-    //    runtime is impersonating another (P0-class incident: a
-    //    runtime can sign with its own key but claim to be sending on
-    //    behalf of someone else's DID). Close + log; no error reply
-    //    is sent to the impersonator.
-    if (conn.runtimeId !== req.callerRuntimeId) {
-      metrics.inc(CounterName.HubA2ARejectedSourceAllowlist);
-      this.fastify.log.warn(
-        {
-          connRuntime: conn.runtimeId,
-          claim: req.callerRuntimeId,
-          requestId: req.requestId,
-        },
-        "a2a source allowlist mismatch — closing tunnel (impersonation)",
-      );
-      this.closeConnection(conn, "source allowlist mismatch");
-      this.handleDisconnect(conn);
-      return;
-    }
-
-    // 2. Target lookup — resolve the target principal DID to a host
-    //    runtime via the directory API (#14). 404-ish: synthesize a
-    //    structured error response so the runtime doesn't hang.
-    const target = await instanceService.getByDid(req.targetPrincipalDid);
-    if (!target) {
-      metrics.inc(CounterName.HubA2ATargetMissing);
-      this.fastify.log.warn(
-        {
-          callerRuntime: conn.runtimeId,
-          targetPrincipalDid: req.targetPrincipalDid,
-          requestId: req.requestId,
-        },
-        "a2a target not found",
-      );
-      this.sendA2AErrorResponse(
-        conn.socket,
-        req.requestId,
-        "target_not_found",
-        `No instance with principal_did ${req.targetPrincipalDid}`,
-      );
-      return;
-    }
-
-    // 3. Hub-side ACL (defense in depth). The caller runtime already
-    //    passed the directory ACL at resolve time, but we re-check
-    //    here against the row we're actually routing to. Public
-    //    exposure short-circuits the ACL — matches `resolvePrincipalTarget`
-    //    in `instances.ts`. The caller is presented as a Principal-kind
-    //    principal carrying its DID.
-    const owner = resolveOwnerSubject(target);
-    if (owner === null) {
-      // Ownerless row — treat as missing for ACL purposes.
-      metrics.inc(CounterName.HubA2ATargetMissing);
-      this.sendA2AErrorResponse(
-        conn.socket,
-        req.requestId,
-        "target_not_found",
-        `Target has no resolvable owner`,
-      );
-      return;
-    }
-    const callerSubject: Subject = { kind: "principal", id: req.callerPrincipalDid };
-    if (
-      target.exposure !== "public" &&
-      !(await subjectCanAccess(owner, callerSubject))
-    ) {
-      metrics.inc(CounterName.HubA2AForbidden);
-      this.fastify.log.warn(
-        {
-          callerRuntime: conn.runtimeId,
-          callerPrincipalDid: req.callerPrincipalDid,
-          targetOwner: owner,
-          requestId: req.requestId,
-        },
-        "a2a forbidden by hub-side ACL",
-      );
-      this.sendA2AErrorResponse(
-        conn.socket,
-        req.requestId,
-        "forbidden",
-        `Caller ${req.callerPrincipalDid} not allowed to reach target`,
-      );
-      return;
-    }
-
-    // 4. Find target tunnel. If offline, send a structured response
-    //    so the caller's principal_send fails cleanly instead of hanging.
-    const targetConn = this.getConnection(target.runtimeId);
-    if (!targetConn) {
-      metrics.inc(CounterName.HubA2ATargetOffline);
-      this.fastify.log.warn(
-        {
-          callerRuntime: conn.runtimeId,
-          targetRuntime: target.runtimeId,
-          requestId: req.requestId,
-        },
-        "a2a target offline",
-      );
-      this.sendA2AErrorResponse(
-        conn.socket,
-        req.requestId,
-        "target_offline",
-        `Target runtime ${target.runtimeId} not connected`,
-      );
-      return;
-    }
-
-    // 5. Forward — relay verbatim, including `signature` and
-    //    `message`. The target verifies end-to-end.
-    metrics.inc(CounterName.HubA2AForwarded);
-    this.sendMessage(targetConn.socket, req);
-
-    // Register in-flight for response correlation. TTL timer cleans
-    // up the entry if the target never replies.
-    const timer = setTimeout(() => {
-      const entry = this.a2aInFlight.get(req.requestId);
-      if (!entry) return;
-      this.a2aInFlight.delete(req.requestId);
-      metrics.inc(CounterName.HubA2ATimeout);
-      this.fastify.log.warn(
-        {
-          requestId: req.requestId,
-          callerRuntime: entry.callerRuntimeId,
-          targetRuntime: entry.targetRuntimeId,
-        },
-        "a2a in-flight TTL expired",
-      );
-      this.sendA2AErrorResponse(
-        entry.callerSocket,
-        req.requestId,
-        "timeout",
-        "Target did not respond within TTL",
-      );
-    }, this.a2aInFlightTtlMs);
-    timer.unref?.();
-
-    this.a2aInFlight.set(req.requestId, {
-      callerRuntimeId: conn.runtimeId,
-      callerSocket: conn.socket,
-      targetRuntimeId: target.runtimeId,
-      targetSocket: targetConn.socket,
-      timer,
-    });
-  }
-
-  private handlePrincipalToPrincipalResponse(
-    _conn: RuntimeConnection,
-    resp: Extract<TunnelMessage, { type: "principal_to_principal_response" }>,
-  ): void {
-    const entry = this.a2aInFlight.get(resp.requestId);
-    if (!entry) {
-      // Caller already timed out (or this is a duplicate). Drop.
-      this.fastify.log.debug(
-        { requestId: resp.requestId },
-        "a2a response with no in-flight entry",
-      );
-      return;
-    }
-    clearTimeout(entry.timer);
-    this.a2aInFlight.delete(resp.requestId);
-    this.sendMessage(entry.callerSocket, resp);
   }
 
   // ── Cross-runtime channel event forwarding (peko-channel PR-C) ──────────
@@ -1297,49 +1043,7 @@ export class TunnelManager {
     this.sendMessage(targetConn.socket, msg);
   }
 
-  /**
-   * Sweep `a2aInFlight` for entries touching a runtime that just
-   * disconnected. Symmetric: the *surviving* side gets an
-   * `internal_error` synthesized response so it doesn't carry a
-   * request whose peer is gone.
-   *
-   *   - caller disconnects → notify the target (`internal_error`).
-   *     Without this, the target's eventual reply would be silently
-   *     dropped at `handlePrincipalToPrincipalResponse` (no in-flight entry)
-   *     and the target runtime would carry the request until its own
-   *     a2a timeout.
-   *
-   *   - target disconnects → notify the caller. (This was the
-   *     pre-existing single-side behavior; the caller-side
-   *     `target_offline` synthesized response at forwarding time only
-   *     fires for a never-connected target. A target that drops
-   *     mid-flight is a separate failure mode.)
-   */
-  private cleanupA2AForRuntime(runtimeId: string): void {
-    for (const [requestId, entry] of this.a2aInFlight) {
-      if (
-        entry.callerRuntimeId === runtimeId ||
-        entry.targetRuntimeId === runtimeId
-      ) {
-        clearTimeout(entry.timer);
-        this.a2aInFlight.delete(requestId);
-        const survivorSocket =
-          entry.callerRuntimeId === runtimeId
-            ? entry.targetSocket // tell the target its caller vanished
-            : entry.callerSocket; // tell the caller its peer vanished
-        if (survivorSocket && survivorSocket.readyState === survivorSocket.OPEN) {
-          this.sendA2AErrorResponse(
-            survivorSocket,
-            requestId,
-            "internal_error",
-            "Peer runtime disconnected mid-flight",
-          );
-        }
-      }
-    }
-  }
-
-  private handleDisconnect(conn: RuntimeConnection): void {
+    private handleDisconnect(conn: RuntimeConnection): void {
     if (conn.heartbeatTimeout) {
       clearTimeout(conn.heartbeatTimeout);
       conn.heartbeatTimeout = null;
@@ -1351,10 +1055,6 @@ export class TunnelManager {
     }
     conn.pendingRequestIds.clear();
 
-    // Issue #16: clean up any in-flight a2a requests that touched
-    // this runtime (either as caller or as target). Survivors get an
-    // `internal_error` synthesized response.
-    this.cleanupA2AForRuntime(conn.runtimeId);
 
     if (this.connections.get(conn.runtimeId) === conn) {
       this.connections.delete(conn.runtimeId);

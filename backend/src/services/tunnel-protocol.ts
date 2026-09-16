@@ -139,35 +139,6 @@ export interface StatusUpdatePayload {
   status: InstanceStatus;
 }
 
-// ── Cross-runtime a2a (issue #16, ADR-041 P2P) ───────────────────────────────
-//
-// The hub forwards these envelopes *opaquely* between runtime tunnels.
-// It reads only the routing fields (`callerRuntimeId`, `targetPrincipalDid`,
-// `requestId`); the `signature` and `message` are relayed verbatim so the
-// target runtime can verify end-to-end. Synthesized error responses use
-// the same `principal_to_principal_response` envelope with a JSON-encoded
-// payload shaped `{ kind: "error", code, message }`.
-
-export interface PrincipalToPrincipalRequestPayload {
-  requestId: string;
-  callerRuntimeId: string;
-  callerPrincipalDid: string;
-  targetPrincipalDid: string;
-  message: string;
-  signature: string;
-}
-
-export interface PrincipalToPrincipalResponsePayload {
-  requestId: string;
-  /**
-   * Opaque to the hub — relayed verbatim. Successful responses carry
-   * the runtime's `principal_send` result string; failures
-   * (synthesized by the hub on missing target, ACL deny, etc.)
-   * carry a JSON-encoded `{ kind: "error", code, message }` object.
-   */
-  payload: string;
-}
-
 // ── Cross-runtime channel events (peko-channel cross-runtime PR-C) ──────────
 //
 // Mirror of Rust `TunnelMessage::TunnelChannelEvent`
@@ -357,21 +328,6 @@ export type TunnelMessage =
   | { type: "instance_deregister"; payload: InstanceDeregisterPayload }
   | { type: "exposure_update"; payload: ExposureUpdatePayload }
   | { type: "status_update"; payload: StatusUpdatePayload }
-  // Cross-runtime P2P forwarding — see backend issue #16 + ADR-041.
-  | {
-      type: "principal_to_principal_request";
-      requestId: string;
-      callerRuntimeId: string;
-      callerPrincipalDid: string;
-      targetPrincipalDid: string;
-      message: string;
-      signature: string;
-    }
-  | {
-      type: "principal_to_principal_response";
-      requestId: string;
-      payload: string;
-    }
   // PR #11: invite-token mint / revoke. The hub does not understand
   // the token shape — it just forwards the request to the runtime
   // and surfaces the response. The runtime's InviteRevocationSet

@@ -189,7 +189,25 @@ export default async function runtimeRoutes(fastify: FastifyInstance) {
         return reply.status(400).send({ error: popError });
       }
 
-      // Upsert with ON CONFLICT to eliminate TOCTOU race
+      // Ownership check BEFORE any write (ADR-058 post-review fix):
+      // the previous upsert-then-403 ordering let a valid-PoP caller
+      // who is not the row owner clobber the owner's `displayName`
+      // and bump `lastSeenAt` before being rejected. A missing row
+      // falls through to the insert below (first registrant with a
+      // valid PoP creates it).
+      const existing = await db
+        .select({ ownerId: runtimes.ownerId })
+        .from(runtimes)
+        .where(eq(runtimes.runtimeDid, runtime_did))
+        .limit(1);
+      if (existing.length > 0 && existing[0].ownerId !== user.id) {
+        return reply.status(403).send({ error: "Forbidden" });
+      }
+
+      // Upsert with ON CONFLICT to eliminate TOCTOU race between the
+      // check above and this write (a concurrent re-registrant with a
+      // different owner still cannot take the row: the update set
+      // below never touches ownerId).
       const [row] = await db
         .insert(runtimes)
         .values({
@@ -207,8 +225,9 @@ export default async function runtimeRoutes(fastify: FastifyInstance) {
         })
         .returning();
 
-      // If the row already existed with a different owner, the update silently
-      // succeeds but ownerId is unchanged. We must verify ownership post-upsert.
+      // Defense in depth: re-verify ownership post-upsert in case a
+      // concurrent transaction changed the row between check and
+      // write.
       if (row.ownerId !== user.id) {
         return reply.status(403).send({ error: "Forbidden" });
       }
