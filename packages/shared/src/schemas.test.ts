@@ -4,7 +4,7 @@ import { BundleTypes } from "../src/constants.js";
 import { PrincipalName } from "../src/target-spec.js";
 
 /**
- * Contract tests for the **template-only** registry.
+ * Contract tests for the **seed-only** registry.
  *
  * Beyond the coercion behaviour these pin the *shape* of the contract:
  * the extension-era fields (`extensionType`, `hooks`, `compatibility`,
@@ -16,7 +16,7 @@ import { PrincipalName } from "../src/target-spec.js";
  * management surface — there is no producer left for any of it.
  */
 
-/** Every field the template-only cut removed. */
+/** Every field the seed-only cut removed. */
 const RETIRED_FIELDS = [
   "extensionType",
   "hooks",
@@ -28,7 +28,7 @@ const RETIRED_FIELDS = [
   "starCount",
 ] as const;
 
-describe("BundleTypes is template-only", () => {
+describe("BundleTypes is seed-only", () => {
   it("contains exactly one member", () => {
     expect(BundleTypes).toEqual(["principal"]);
   });
@@ -46,7 +46,7 @@ describe("nullishToUndefined coercion", () => {
       updatedAt: "2024-01-01T00:00:00Z",
     };
 
-    it("accepts a template item", () => {
+    it("accepts a seed item", () => {
       const result = SearchResultItem.safeParse(validBase);
       expect(result.success).toBe(true);
     });
@@ -131,7 +131,7 @@ describe("nullishToUndefined coercion", () => {
       expect(result.data?.tags).toHaveLength(2);
     });
 
-    it("accepts the template metadata surface", () => {
+    it("accepts the seed metadata surface", () => {
       const result = BundleMetadata.safeParse({
         ...validBase,
         description: "A research peko",
@@ -171,8 +171,8 @@ describe("nullishToUndefined coercion", () => {
   });
 });
 
-describe("SearchQuery filters are template-only", () => {
-  it("accepts the template-only filter set", () => {
+describe("SearchQuery filters are seed-only", () => {
+  it("accepts the seed-only filter set", () => {
     const result = SearchQuery.safeParse({
       q: "ada",
       filters: { bundleType: "principal" },

@@ -26,7 +26,7 @@ describe("Search API", () => {
       const bundle = await createBundle(testDb.client, {
         namespace: "peko/principals",
         name: "searchable-peko",
-        description: "A searchable template",
+        description: "A searchable seed",
       });
       await createBundleVersion(testDb.client, bundle.id, {
         version: "1.0.0",
@@ -60,13 +60,13 @@ describe("Search API", () => {
       expect(body.items[0].name).toBe("searchable-peko");
     });
 
-    it("returns template metadata and no extension-era fields", async () => {
+    it("returns seed metadata and no extension-era fields", async () => {
       const app = await buildTestApp({ testDb });
 
       const bundle = await createBundle(testDb.client, {
         namespace: "peko/principals",
         name: "tagged-peko",
-        description: "A template with tags",
+        description: "A seed with tags",
         tags: ["research", "notes"],
       });
       await createBundleVersion(testDb.client, bundle.id, {

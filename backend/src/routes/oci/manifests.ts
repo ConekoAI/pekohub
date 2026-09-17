@@ -139,7 +139,7 @@ export async function headManifest(
 /**
  * Derive the artifact kind for a newly-pushed artifact.
  *
- * The hub is a **template-only** registry (ADR-005 realignment, runtime
+ * The hub is a **seed-only** registry (ADR-005 realignment, runtime
  * ADR-056 D6), so exactly one kind is accepted:
  *
  *   1. `org.peko.kind` — the runtime's current annotation. `principal`
@@ -196,7 +196,7 @@ export async function putManifest(
     return reply.status(410).send({
       error:
         `The 'peko/${retiredLane}/' lane is retired and no longer accepts pushes. ` +
-        `PekoHub is a template-only registry: push DNA under 'peko/principals/<name>'. ` +
+        `PekoHub is a seed-only registry: push DNA under 'peko/principals/<name>'. ` +
         `Capabilities are workspace files (ADR-047 §5, ADR-050), not registry artifacts.`,
     });
   }
@@ -243,7 +243,7 @@ export async function putManifest(
   // Inner-config identity validation (audit section 7).
   //
   // PekoHub does not parse the TOML config blob (the runtime's
-  // template `principal.toml` under media type
+  // seed `principal.toml` under media type
   // `application/vnd.peko.config.v1+json`), so a path-traversal
   // spelling in the inner `principal.name` would otherwise reach the
   // DB unchecked. The runtime emits the same name in the flat
@@ -268,8 +268,8 @@ export async function putManifest(
     }
   }
 
-  // Verify all referenced blobs exist. ADR-056 template artifacts are
-  // zero-layer: only the config descriptor (the template TOML blob)
+  // Verify all referenced blobs exist. ADR-056 seed artifacts are
+  // zero-layer: only the config descriptor (the seed TOML blob)
   // is checked. The config blob is never parsed — identity comes from
   // the flat annotations validated above.
   const allDescriptors = [manifest.config, ...manifest.layers];
@@ -339,7 +339,7 @@ export async function putManifest(
       return reply.status(410).send({
         error:
           `Artifact kind '${attemptedKind(annotations)}' is no longer supported. ` +
-          `PekoHub is a template-only registry (ADR-056 D6) — the only ` +
+          `PekoHub is a seed-only registry (ADR-056 D6) — the only ` +
           `accepted kind is 'principal'. Capabilities are workspace files ` +
           `(ADR-047 §5, ADR-050), not registry artifacts.`,
       });

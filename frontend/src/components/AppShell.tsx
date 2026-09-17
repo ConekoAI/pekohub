@@ -65,7 +65,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <nav className="flex items-center gap-1 border-b border-white/[0.06] pt-4">
           <SubNavLink to="/dashboard" icon={<LayoutDashboard className="h-4 w-4" />} label="Pekos" />
           <SubNavLink to="/pekos" icon={<Radar className="h-4 w-4" />} label="Discover" />
-          <SubNavLink to="/templates" icon={<Boxes className="h-4 w-4" />} label="Templates" />
+          <SubNavLink to="/seeds" icon={<Boxes className="h-4 w-4" />} label="Seeds" />
           <SubNavLink to="/profile" icon={<UserIcon className="h-4 w-4" />} label="Profile" />
 
           <div className="ml-auto flex items-center gap-2 pb-1">
@@ -92,7 +92,7 @@ function SubNavLink({
   icon,
   label,
 }: {
-  to: '/dashboard' | '/pekos' | '/templates' | '/profile';
+  to: '/dashboard' | '/pekos' | '/seeds' | '/profile';
   icon: ReactNode;
   label: string;
 }) {

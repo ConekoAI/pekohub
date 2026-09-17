@@ -19,7 +19,7 @@ See `Phase2_Success_Criteria.md` for the complete, detailed success criteria. Th
 > the flattened verbs — `peko push`, `peko pull`, `peko create`, `peko export`, etc.
 > (`peko principal <sub>` survives only as a hidden alias). Registry references are now
 > multi-segment: `<host>/peko/principals/<name>:<version>`. The package format is
-> `.peko` (`.principal` retired); registry push distributes a **template** (stripped
+> `.peko` (`.principal` retired); registry push distributes a **seed** (stripped
 > `principal.toml`), never a full existence. The `pekohub_session` cookie fallback was
 > removed — auth is 15-min access JWT + rotating refresh cookie only (ADR-001).
 
@@ -123,8 +123,8 @@ peko search "github assistant"     # Search registry
 peko show <name>                   # Show local peko metadata
 
 # Publishing
-peko push                          # Push template to public registry
-peko pull pekohub.org/peko/principals/researcher:v1.0  # Pull + import a template
+peko push                          # Push seed to public registry
+peko pull pekohub.org/peko/principals/researcher:v1.0  # Pull + import a seed
 ```
 
 > **Note on Extensions**: `peko ext publish` and `peko ext install <registry-ref>` are deferred to Phase 3. The registry accepts `.ext` packages (they are OCI artifacts like any other), but the CLI does not yet resolve or install them from remote sources.

@@ -6,7 +6,7 @@ import { BundleDetail } from "@pekohub/shared";
 import { auditService } from "../../services/audit.js";
 
 /**
- * Custom API: Template metadata and detail pages.
+ * Custom API: Seed metadata and detail pages.
  *
  * Namespaces may be multi-segment (`peko/principals`), which Fastify
  * params cannot express, so every route here is a `/bundles/*`
@@ -18,8 +18,8 @@ import { auditService } from "../../services/audit.js";
  * Mounted under both `/v1` and `/api/v1` (the runtime CLI calls the
  * `/api/v1` surface — see peko-rs/cli/src/commands/search.rs), so the
  * `bundles` path is a wire-compatibility name: the artifact it serves
- * is a *template*. `fork` was the other half of the package catalog and
- * is gone — a template is DNA, re-pushed from a workspace with
+ * is a *seed*. `fork` was the other half of the package catalog and
+ * is gone — a seed is DNA, re-pushed from a workspace with
  * `peko push`, never copied out of the registry.
  */
 
@@ -112,7 +112,7 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
     const deprecateMatch = DEPRECATE_RE.exec(wildcard);
     if (deprecateMatch) {
       const repo = splitRepoPath(deprecateMatch[1]);
-      if (!repo) return reply.status(404).send({ error: "Template not found" });
+      if (!repo) return reply.status(404).send({ error: "Seed not found" });
       return deprecateVersion(fastify, request, reply, repo, deprecateMatch[2]);
     }
 
@@ -191,7 +191,7 @@ export default async function bundleRoutes(fastify: FastifyInstance) {
       })),
       metadata: {
         name: bundle.name,
-        // Template pushes (ADR-056) carry no author/description
+        // Seed pushes (ADR-056) carry no author/description
         // annotations — coalesce so the detail payload stays valid
         // for the CLI (`peko search` bundle detail flow).
         description: bundle.description ?? undefined,

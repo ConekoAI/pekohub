@@ -7,14 +7,14 @@ import { api } from '~/lib/api';
 import { classifyRepo, type RepoRef } from '~/lib/repo';
 import { PageHeader, PageShell } from '~/components/PageShell';
 import { SearchBar } from '~/components/SearchBar';
-import { TemplateCard, TemplateRepoRow } from '~/components/TemplateCard';
+import { SeedCard, SeedRepoRow } from '~/components/SeedCard';
 import { Badge, CopyButton, EmptyState, ErrorNote } from '~/components/ui';
-import { useTemplateCatalog } from '~/hooks/useTemplate';
+import { useSeedCatalog } from '~/hooks/useSeed';
 
 /**
- * Template directory.
+ * Seed directory.
  *
- * The hub is a template-only registry (pekohub ADR-005 §2, runtime
+ * The hub is a seed-only registry (pekohub ADR-005 §2, runtime
  * ADR-056 D6): a push carries a stripped `principal.toml` — DNA — and
  * never an existence, a key, or a capability package.
  *
@@ -33,29 +33,29 @@ import { useTemplateCatalog } from '~/hooks/useTemplate';
 
 const searchSchema = z.object({ q: z.string().optional() });
 
-export const Route = createFileRoute('/templates/')({
+export const Route = createFileRoute('/seeds/')({
   validateSearch: searchSchema,
-  component: TemplatesPage,
+  component: SeedsPage,
 });
 
-function TemplatesPage() {
-  const { q = '' } = useRouteSearch({ from: '/templates/' });
+function SeedsPage() {
+  const { q = '' } = useRouteSearch({ from: '/seeds/' });
   const navigate = useNavigate();
 
   const handleSearch = (query: string) => {
-    void navigate({ to: '/templates', search: query ? { q: query } : {}, replace: true });
+    void navigate({ to: '/seeds', search: query ? { q: query } : {}, replace: true });
   };
 
   return (
     <PageShell width="wide">
       <PageHeader
         eyebrow="registry · OCI distribution v1.1"
-        title="Templates"
+        title="Seeds"
         description={
           <>
-            Templates are the DNA a peko grows from — a stripped{' '}
+            Seeds are the DNA a peko grows from — a stripped{' '}
             <code className="code-inline">principal.toml</code> pushed as a zero-layer manifest.
-            Pull one and ground it with <code className="code-inline">peko create -f</code>.
+            Pull one and ground it with <code className="code-inline">peko create -s</code>.
           </>
         }
         action={<Badge tone="iris">DNA only</Badge>}
@@ -65,7 +65,7 @@ function TemplatesPage() {
         <SearchBar
           initialQuery={q}
           onSearch={handleSearch}
-          placeholder="Search templates by name, tag or author…"
+          placeholder="Search seeds by name, tag or author…"
           size="md"
         />
       </div>
@@ -82,13 +82,13 @@ function TemplatesPage() {
 function SearchResults({ q }: { q: string }) {
   const navigate = useNavigate();
   const query = useQuery({
-    queryKey: ['template-search', q],
+    queryKey: ['seed-search', q],
     queryFn: () =>
       api.search({
         q,
         page: 1,
         perPage: 24,
-        // Server-side: keep the directory template-only. `bundleType`
+        // Server-side: keep the directory seed-only. `bundleType`
         // is a filterable attribute on the bundles index.
         filters: { bundleType: 'principal' },
       }),
@@ -121,7 +121,7 @@ function SearchResults({ q }: { q: string }) {
           {items.length} result{items.length === 1 ? '' : 's'} · “{q}”
         </p>
         <button
-          onClick={() => void navigate({ to: '/templates', search: {} })}
+          onClick={() => void navigate({ to: '/seeds', search: {} })}
           className="btn-ghost btn-sm"
         >
           Clear
@@ -132,14 +132,14 @@ function SearchResults({ q }: { q: string }) {
         <div className="mt-4">
           <EmptyState
             icon={<Boxes className="h-5 w-5" />}
-            title="No templates matched"
-            body="Template names and descriptions are indexed. Try a shorter query, or browse the catalog instead."
+            title="No seeds matched"
+            body="Seed names and descriptions are indexed. Try a shorter query, or browse the catalog instead."
           />
         </div>
       ) : (
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {items.map((item) => (
-            <TemplateCard key={`${item.namespace}/${item.name}`} item={item} />
+            <SeedCard key={`${item.namespace}/${item.name}`} item={item} />
           ))}
         </div>
       )}
@@ -152,24 +152,24 @@ function SearchResults({ q }: { q: string }) {
    ───────────────────────────────────────────────────────────────────────── */
 
 function CatalogListing() {
-  const catalog = useTemplateCatalog();
+  const catalog = useSeedCatalog();
   const [filter, setFilter] = useState('');
 
-  const { templates, retired } = useMemo(() => {
+  const { seeds, retired } = useMemo(() => {
     const repositories = catalog.data?.repositories ?? [];
     const parsed = repositories
       .map(classifyRepo)
       .filter((entry): entry is RepoRef => entry !== null);
 
     return {
-      templates: parsed.filter((entry) => entry.isTemplate),
+      seeds: parsed.filter((entry) => entry.isSeed),
       retired: parsed.filter((entry) => entry.isRetired),
     };
   }, [catalog.data]);
 
   const visible = filter
-    ? templates.filter((entry) => entry.repo.toLowerCase().includes(filter.toLowerCase()))
-    : templates;
+    ? seeds.filter((entry) => entry.repo.toLowerCase().includes(filter.toLowerCase()))
+    : seeds;
 
   if (catalog.isLoading) {
     return (
@@ -194,9 +194,9 @@ function CatalogListing() {
       <section>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="eyebrow">
-            {visible.length} template{visible.length === 1 ? '' : 's'} in the catalog
+            {visible.length} seed{visible.length === 1 ? '' : 's'} in the catalog
           </p>
-          {templates.length > 8 && (
+          {seeds.length > 8 && (
             <input
               value={filter}
               onChange={(event) => setFilter(event.target.value)}
@@ -227,7 +227,7 @@ function CatalogListing() {
         ) : (
           <div className="mt-4 flex flex-col gap-2">
             {visible.map((entry) => (
-              <TemplateRepoRow key={entry.repo} entry={entry} />
+              <SeedRepoRow key={entry.repo} entry={entry} />
             ))}
           </div>
         )}
@@ -283,7 +283,7 @@ function PublishGuide() {
           <p className="eyebrow text-slate-400">publish</p>
         </div>
         <p className="mt-3 text-[13px] leading-relaxed text-slate-400">
-          Templates go up from a runtime, never from the browser. The hub only ever sees the config
+          Seeds go up from a runtime, never from the browser. The hub only ever sees the config
           blob — keys, sessions and knowledge stay on your machine.
         </p>
         <div className="mt-4 space-y-2">
@@ -308,7 +308,7 @@ function PublishGuide() {
           <li className="flex items-start gap-2">
             <span className="mt-1.5 h-1 w-1 flex-shrink-0 rounded-full bg-iris-400" />
             <span>
-              <code className="code-inline">peko/principals/&lt;name&gt;</code> — the template lane
+              <code className="code-inline">peko/principals/&lt;name&gt;</code> — the seed lane
             </span>
           </li>
           <li className="flex items-start gap-2">

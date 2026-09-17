@@ -33,7 +33,7 @@ export function SignInModal({ isOpen, onClose }: SignInModalProps) {
         <p className="eyebrow">PekoHub account</p>
         <h2 className="display mt-2 text-xl">Sign in to PekoHub</h2>
         <p className="lede mt-1.5">
-          Manage exposure, publish templates and keep your API keys in one place.
+          Manage exposure, publish seeds and keep your API keys in one place.
         </p>
 
         <div className="mt-6 flex flex-col gap-2.5">

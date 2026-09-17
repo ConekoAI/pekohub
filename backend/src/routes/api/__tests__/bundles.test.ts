@@ -156,7 +156,7 @@ describe("Bundle API Routes", () => {
   });
 
   describe("POST /v1/bundles/:namespace/:name/fork (retired)", () => {
-    // Forking belonged to the package catalog. A template is DNA: it is
+    // Forking belonged to the package catalog. A seed is DNA: it is
     // re-pushed from a workspace with `peko push`, never copied out of the
     // registry, so the endpoint is gone rather than deprecated.
     it("is no longer routed", async () => {

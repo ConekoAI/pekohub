@@ -102,9 +102,9 @@ function HomePage() {
         <LaneCard
           icon={<Boxes className="h-4 w-4" />}
           eyebrow="DNA"
-          title="Templates"
-          body="The stripped principal.toml a peko grows from. Pull one and ground it into a brand-new identity with peko create -f. No keys, no memory, no sessions."
-          to="/templates"
+          title="Seeds"
+          body="The stripped principal.toml a peko grows from. Pull one and ground it into a brand-new identity with peko create -s. No keys, no memory, no sessions."
+          to="/seeds"
           cta="Browse the registry"
           tone="iris"
         />
@@ -194,7 +194,7 @@ function HomePage() {
             step="02"
             icon={<Boxes className="h-4 w-4" />}
             title="Push its DNA"
-            body="Optionally publish the template — a stripped config with identity, state and keys removed — so others can start their own."
+            body="Optionally publish the seed — a stripped config with identity, state and keys removed — so others can start their own."
           >
             <code className="code-block text-xs">peko push ada</code>
           </StepCard>
@@ -219,13 +219,13 @@ function HomePage() {
               Ship a peko people can actually reach.
             </h2>
             <p className="lede mt-3 max-w-xl">
-              Templates are the distribution primitive. Push a config, get an OCI artifact, and
+              Seeds are the distribution primitive. Push a config, get an OCI artifact, and
               anyone can pull it into a fresh identity. Your keys, sessions and knowledge base never
               leave your host — the registry is structurally incapable of carrying them.
             </p>
             <div className="mt-6 flex flex-wrap items-center gap-2">
-              <Link to="/templates" className="btn-primary">
-                Browse templates
+              <Link to="/seeds" className="btn-primary">
+                Browse seeds
                 <ArrowRight className="h-4 w-4" />
               </Link>
               <Link to="/dashboard" className="btn-secondary">
@@ -277,7 +277,7 @@ function LaneCard({
   eyebrow: string;
   title: string;
   body: string;
-  to: '/pekos' | '/templates';
+  to: '/pekos' | '/seeds';
   cta: string;
   tone?: 'peko' | 'iris';
 }) {

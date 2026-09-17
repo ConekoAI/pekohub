@@ -6,16 +6,19 @@ import { compactNumber, relativeTime } from '~/lib/format';
 import { classifyRepo, laneLabel, type RepoRef } from '~/lib/repo';
 
 /**
- * A registry template.
+ * A registry seed.
  *
- * The hub is template-only (runtime ADR-056 D6): a pushed artifact is
+ * The hub is seed-only (runtime ADR-056 D6): a pushed artifact is
  * DNA — a stripped `principal.toml` — carried as a zero-layer OCI
  * manifest under `peko/principals/<name>`. There is no extension
  * package format any more (runtime ADR-047 §5 / ADR-050 moved
  * capabilities into plain workspace files), so the card shows only the
- * template's identity, provenance and version.
+ * seed's identity, provenance and version.
+ *
+ * It is a seed rather than a template because `peko create` mints a
+ * fresh identity from it — see runtime ADR-060.
  */
-export function TemplateCard({ item }: { item: SearchResultItem }) {
+export function SeedCard({ item }: { item: SearchResultItem }) {
   const repo = `${item.namespace}/${item.name}`;
   const installRef = `${repo}:${item.version}`;
 
@@ -28,7 +31,7 @@ export function TemplateCard({ item }: { item: SearchResultItem }) {
             {item.name}
           </h3>
         </div>
-        <Badge tone="iris">template</Badge>
+        <Badge tone="iris">seed</Badge>
       </header>
 
       <p className="mt-3 line-clamp-3 min-h-[3.4rem] text-[13px] leading-relaxed text-slate-400">
@@ -64,7 +67,7 @@ export function TemplateCard({ item }: { item: SearchResultItem }) {
         <div className="mt-4 flex items-center justify-between gap-2 border-t border-white/[0.06] pt-4">
           <CopyButton value={installRef} label="Ref" className="btn-ghost btn-sm" />
           <Link
-            to="/templates/$"
+            to="/seeds/$"
             params={{ _splat: repo }}
             className="btn-secondary btn-sm group-hover:border-iris-400/40 group-hover:text-iris-200"
           >
@@ -85,10 +88,10 @@ export function TemplateCard({ item }: { item: SearchResultItem }) {
  * it exists to make the registry's real contents legible and to link
  * into the detail page, which resolves the rest.
  */
-export function TemplateRepoRow({ entry }: { entry: RepoRef }) {
+export function SeedRepoRow({ entry }: { entry: RepoRef }) {
   return (
     <Link
-      to="/templates/$"
+      to="/seeds/$"
       params={{ _splat: entry.repo }}
       className="group flex items-center gap-4 rounded-lg border border-white/[0.06] bg-white/[0.015] px-4 py-3.5 transition-all duration-150 hover:border-iris-400/25 hover:bg-white/[0.035]"
     >
@@ -118,7 +121,7 @@ export function TemplateRepoRow({ entry }: { entry: RepoRef }) {
 }
 
 /** Convenience: classify then render, skipping anything unparseable. */
-export function isTemplateRepo(repo: string): boolean {
+export function isSeedRepo(repo: string): boolean {
   const parsed = classifyRepo(repo);
-  return parsed !== null && parsed.isTemplate;
+  return parsed !== null && parsed.isSeed;
 }

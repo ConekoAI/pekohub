@@ -63,12 +63,12 @@ describe("Bundle API", () => {
       expect(response.statusCode).toBe(404);
     });
 
-    it("returns template metadata and never an extension-era field", async () => {
+    it("returns seed metadata and never an extension-era field", async () => {
       const app = await buildTestApp({ testDb });
       const bundle = await createBundle(testDb.client, {
         namespace: "peko/principals",
         name: "my-peko",
-        description: "A template",
+        description: "A seed",
         tags: ["research"],
       });
 
@@ -82,7 +82,7 @@ describe("Bundle API", () => {
       expect(body.metadata.bundleType).toBe("principal");
       expect(body.metadata.tags).toEqual(["research"]);
 
-      // The template-only cut: none of these have a producer any more
+      // The seed-only cut: none of these have a producer any more
       // (runtime ADR-037 / ADR-047 §5 / ADR-050).
       for (const field of [
         "extensionType",

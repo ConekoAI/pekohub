@@ -32,7 +32,7 @@ export default {
           950: '#083344',
         },
         // Secondary accent (violet). Pairs with peko for gradients and
-        // marks the "template / DNA" lane.
+        // marks the "seed / DNA" lane.
         iris: {
           300: '#c4b5fd',
           400: '#a78bfa',

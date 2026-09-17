@@ -2,9 +2,12 @@
  * OCI Distribution Spec constants
  * https://github.com/opencontainers/distribution-spec/blob/main/spec.md
  *
- * PekoHub is a **template-only** registry. Per peko-runtime ADR-056 D6 a
+ * PekoHub is a **seed-only** registry. Per peko-runtime ADR-056 D6 a
  * pushed artifact is DNA: a zero-layer OCI manifest whose config blob is
- * a stripped `principal.toml`. There is no extension package format and
+ * a stripped `principal.toml`. Per peko-runtime ADR-060 that artifact is
+ * called a **seed** — it mints a fresh identity every time it is
+ * ground, so it is never a copy of its source the way a seed would
+ * be. There is no extension package format and
  * no `.peko`/`.agent` bundle format on the wire — the standalone
  * extension framework (runtime ADR-017/024/027/036) was superseded by
  * workspace-file capabilities (ADR-047 §5, ADR-050), and ADR-037 retired
@@ -19,7 +22,7 @@ export const MediaTypes = {
   OCI_INDEX: 'application/vnd.oci.image.index.v1+json',
   // Config + layers
   //
-  // A pushed template is a zero-layer OCI manifest whose config blob is
+  // A pushed seed is a zero-layer OCI manifest whose config blob is
   // a stripped `principal.toml` under PEKO_CONFIG (the runtime's
   // `PEKO_CONFIG_MEDIA_TYPE`). Full-existence `.peko` snapshots never
   // transit the hub.
@@ -36,6 +39,11 @@ export const MediaTypes = {
 // `org.peko.kind`) is an older client, and any value other than
 // `principal` is answered with 410 Gone rather than silently re-typed.
 // See `deriveBundleType` in `backend/src/routes/oci/manifests.ts`.
+//
+// NOTE: the wire values below are deliberately NOT renamed by ADR-060.
+// Deployed runtimes consume them, so a rename needs a versioned overlap
+// window (ADR-059 §6 precedent) — the same reason the `bundles` tables
+// and the `/v1/bundles` API paths keep their names.
 export const OCIAnnotations = {
   ORG_PEKO_NAME: 'org.peko.name',
   ORG_PEKO_VERSION: 'org.peko.version',
@@ -46,7 +54,7 @@ export const OCIAnnotations = {
   ORG_PEKO_KIND: 'org.peko.kind',
   DEV_PEKOHUB_BUNDLE_TYPE: 'dev.pekohub.bundleType',
   DEV_PEKOHUB_PRINCIPAL_NAME: 'dev.pekohub.principalName',
-  // Coarse classification only; template identity is the repo path plus
+  // Coarse classification only; seed identity is the repo path plus
   // `org.peko.{name,version}`. `categories` / `modelProviders` /
   // `requiredMcpServers` / `hooks` / `compatibility` were extension-era
   // package metadata and are gone.
@@ -57,13 +65,15 @@ export const OCIAnnotations = {
 /**
  * Bundle kinds.
  *
- * `principal` is the wire value for a template; the UI calls it a
- * template and the runtime calls the actor a peko, but per pekohub
- * ADR-005 §1 the machine vocabulary keeps the pre-pivot spelling.
+ * `principal` is the wire value for a seed. Before ADR-060 the three
+ * vocabularies disagreed — the wire said `principal`, the UI said
+ * "seed", and the runtime called the actor a peko. ADR-060 collapsed
+ * the UI term onto "seed"; per pekohub ADR-005 §1 the machine vocabulary
+ * keeps the pre-pivot spelling, so the wire value is unchanged.
  *
  * `extension` is intentionally absent: capability distribution moved to
  * workspace files (runtime ADR-047 §5 / ADR-050) and the registry is
- * template-only (ADR-056 D6). A push carrying it is rejected with
+ * seed-only (ADR-056 D6). A push carrying it is rejected with
  * `410 Gone`. `agent`/`team` were already retired by ADR-041.
  */
 export const BundleTypes = ['principal'] as const;

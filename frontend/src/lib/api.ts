@@ -146,10 +146,14 @@ export const api = {
 
   /**
    * OCI catalog — every repository path the registry holds
-   * (`peko/principals/<name>` for current templates, plus any
-   * pre-ADR-005 two-segment rows). Anonymous; no JWT. The template
+   * (`peko/principals/<name>` for current seeds, plus any
+   * pre-ADR-005 two-segment rows). Anonymous; no JWT. The seed
    * directory uses this as its listing source because it reads the
    * registry's real contents rather than a derived search index.
+   *
+   * The `/v2/_catalog` and `/v1/bundles/...` paths below are the
+   * registry's **machine** vocabulary and are unchanged by ADR-060 —
+   * only the user-facing term moved from "template" to "seed".
    */
   getCatalog: () => fetchJson<CatalogResponse>('/v2/_catalog'),
 
@@ -477,7 +481,7 @@ export interface RuntimeRecord {
 }
 
 /** One version row from `GET /v1/bundles/:namespace/:name/versions`. */
-export interface TemplateVersion {
+export interface SeedVersion {
   version: string;
   digest: string;
   size: number;
@@ -486,10 +490,10 @@ export interface TemplateVersion {
   deprecatedMessage: string | null;
 }
 
-export interface TemplateVersionsResponse {
+export interface SeedVersionsResponse {
   namespace: string;
   name: string;
-  versions: TemplateVersion[];
+  versions: SeedVersion[];
 }
 
 // Shape returned by GET /v1/instances for the owner. Mirrors
