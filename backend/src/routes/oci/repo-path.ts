@@ -26,7 +26,7 @@ export interface RepoRef {
  * plain workspace files, and ADR-050 deleted the extension framework's
  * management surface.
  *
- * The hub is template-only (ADR-056 D6), so a *new* push into one of
+ * The hub is seed-only (ADR-056 D6), so a *new* push into one of
  * these lanes is a client that cannot work. Existing rows stay readable
  * and deletable — only growth is refused.
  */

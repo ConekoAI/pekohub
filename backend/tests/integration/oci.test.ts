@@ -96,7 +96,7 @@ describe("OCI Distribution API", () => {
   // runtime emits `dev.pekohub.principalName` in the OCI manifest
   // annotations; PekoHub validates it here (without parsing the TOML
   // config blob) before persisting. There is no `extensionId`
-  // counterpart any more — templates have no extension identity.
+  // counterpart any more — seeds have no extension identity.
   describe("PUT /v2/:namespace/:name/manifests/:reference — inner-config validation", () => {
     it("rejects unsafe dev.pekohub.principalName annotation", async () => {
       const app = await buildTestApp({ testDb });
@@ -180,7 +180,7 @@ describe("OCI Distribution API", () => {
       // (ADR-047 §5 / ADR-050), so no client that sends this can work.
       expect(res.statusCode).toBe(410);
       const body = JSON.parse(res.body);
-      expect(body.error).toContain("template-only");
+      expect(body.error).toContain("seed-only");
     });
 
     it("rejects the retired agent / team kinds too", async () => {

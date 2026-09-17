@@ -10,8 +10,9 @@ import { createTestQueryClient } from '~/test/utils';
  *
  * These pin the post-pivot information architecture:
  *  - the public directory is `/pekos` (the API noun, ADR-059);
- *  - the registry surface is `/templates`, and the pre-pivot
- *    `/search` + `/discover` + `/bundles/*` URLs all still resolve;
+ *  - the registry surface is `/seeds` (runtime ADR-060), and the
+ *    pre-pivot `/search` + `/discover` + `/bundles/*` + `/templates/*`
+ *    URLs all still resolve;
  *  - every page mounts without throwing.
  *
  * A page that renders here but throws in the browser is caught by the
@@ -57,9 +58,19 @@ describe('legacy URL redirects', () => {
     expect(router.state.location.search).toMatchObject({ q: 'ada' });
   });
 
-  it('/bundles/<repo> → /templates/<repo>', async () => {
+  it('/bundles/<repo> → /seeds/<repo>', async () => {
     const router = await loadRouter('/bundles/peko/principals/my-peko');
-    expect(router.state.location.pathname).toBe('/templates/peko/principals/my-peko');
+    expect(router.state.location.pathname).toBe('/seeds/peko/principals/my-peko');
+  });
+
+  it('/templates/<repo> → /seeds/<repo> (ADR-060)', async () => {
+    const router = await loadRouter('/templates/peko/principals/my-peko');
+    expect(router.state.location.pathname).toBe('/seeds/peko/principals/my-peko');
+  });
+
+  it('bare /templates → /seeds (ADR-060)', async () => {
+    const router = await loadRouter('/templates');
+    expect(router.state.location.pathname).toBe('/seeds');
   });
 
   it('/p/<owner>/<name> → /peko/<owner>/<name>', async () => {
@@ -88,11 +99,11 @@ describe('page smoke tests', () => {
     expect(await screen.findByText('Ada')).toBeInTheDocument();
   });
 
-  it('/templates renders the catalog and drops retired lanes', async () => {
-    renderAt('/templates');
-    expect(await screen.findByRole('heading', { name: 'Templates' })).toBeInTheDocument();
+  it('/seeds renders the catalog and drops retired lanes', async () => {
+    renderAt('/seeds');
+    expect(await screen.findByRole('heading', { name: 'Seeds' })).toBeInTheDocument();
 
-    // The current template lane and the pre-ADR-005 row are listed…
+    // The current seed lane and the pre-ADR-005 row are listed…
     expect(await screen.findByText('my-peko')).toBeInTheDocument();
     expect(await screen.findByText('old-peko')).toBeInTheDocument();
 
@@ -101,12 +112,12 @@ describe('page smoke tests', () => {
     expect(screen.queryByText('retired-thing')).not.toBeInTheDocument();
   });
 
-  it('/templates/<repo> renders the detail page with the install flow', async () => {
-    renderAt('/templates/peko/principals/my-peko');
+  it('/seeds/<repo> renders the detail page with the install flow', async () => {
+    renderAt('/seeds/peko/principals/my-peko');
     expect(await screen.findByRole('heading', { name: 'my-peko' })).toBeInTheDocument();
     expect(await screen.findByText(/How to use it/i)).toBeInTheDocument();
     // Step 2 teaches the ADR-056 D6 grounding step, not a package install.
-    expect(await screen.findByText(/peko create my-peko -f/)).toBeInTheDocument();
+    expect(await screen.findByText(/peko create my-peko -s/)).toBeInTheDocument();
   });
 
   it('/dashboard renders the owner console', async () => {

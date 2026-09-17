@@ -3,7 +3,7 @@
  *
  * There is no longer a separate search page: the peko directory owns
  * free-text search (`/pekos?q=`), and the registry has its own filtered
- * search at `/templates?q=`. Old `/search?q=…` links fold into the
+ * search at `/seeds?q=`. Old `/search?q=…` links fold into the
  * directory, which is where a general query belongs.
  */
 

@@ -7,7 +7,7 @@ import type { TestDb } from "../fixtures/db.js";
 import crypto from "node:crypto";
 
 /**
- * ADR-056 template push/pull end-to-end, mirroring the runtime's exact
+ * ADR-056 seed push/pull end-to-end, mirroring the runtime's exact
  * wire sequence (peko-rs/core/src/registry/client.rs `push_principal` /
  * `pull`) against the multi-segment repo `peko/principals/<name>`:
  *
@@ -31,16 +31,16 @@ function sha256(buffer: Buffer | string): string {
 const REPO = "peko/principals/assistant";
 
 /** The stripped principal.toml the runtime ships as the config blob. */
-const TEMPLATE_TOML = '[principal]\nname = "assistant"\n';
+const SEED_TOML = '[principal]\nname = "assistant"\n';
 
-function templateManifest(configDigest: string, version: string) {
+function seedManifest(configDigest: string, version: string) {
   return {
     schemaVersion: 2,
     mediaType: "application/vnd.oci.image.manifest.v1+json",
     config: {
       mediaType: "application/vnd.peko.config.v1+json",
       digest: configDigest,
-      size: Buffer.byteLength(TEMPLATE_TOML),
+      size: Buffer.byteLength(SEED_TOML),
     },
     layers: [],
     annotations: {
@@ -80,7 +80,7 @@ async function uploadBlob(
   return digest;
 }
 
-describe("ADR-056 template push/pull (peko/principals/<name>)", () => {
+describe("ADR-056 seed push/pull (peko/principals/<name>)", () => {
   let testDb: TestDb;
 
   beforeAll(async () => {
@@ -99,7 +99,7 @@ describe("ADR-056 template push/pull (peko/principals/<name>)", () => {
     const app = await buildTestApp({ testDb });
     const alice = await createUser(testDb.client, { namespace: "alice" });
     const headers = await authHeaders(alice);
-    const configDigest = sha256(TEMPLATE_TOML);
+    const configDigest = sha256(SEED_TOML);
 
     // 1. Runtime mount check: HEAD blob → 404 (blob not on the hub yet)
     const head = await app.inject({
@@ -120,16 +120,16 @@ describe("ADR-056 template push/pull (peko/principals/<name>)", () => {
       method: "PUT",
       url: `/v2/${REPO}/blobs/uploads/123e4567-e89b-12d3-a456-426614174000?digest=${configDigest}`,
       headers: { "content-type": "application/octet-stream" },
-      payload: Buffer.from(TEMPLATE_TOML),
+      payload: Buffer.from(SEED_TOML),
     });
     expect(anonPut.statusCode).toBe(401);
 
     // 3. Blob upload with auth
-    await uploadBlob(app, headers, TEMPLATE_TOML);
+    await uploadBlob(app, headers, SEED_TOML);
 
-    // 4. Zero-layer template manifest PUT — annotations carry
+    // 4. Zero-layer seed manifest PUT — annotations carry
     //    `org.peko.kind: "principal"` and NO `dev.pekohub.bundleType`
-    const manifest = templateManifest(configDigest, "1.0.0");
+    const manifest = seedManifest(configDigest, "1.0.0");
     const manifestPut = await app.inject({
       method: "PUT",
       url: `/v2/${REPO}/manifests/1.0.0`,
@@ -162,13 +162,13 @@ describe("ADR-056 template push/pull (peko/principals/<name>)", () => {
       expect(get.headers["docker-content-digest"]).toBe(manifestDigest);
     }
 
-    // 6. Pull side: GET blob returns the template TOML verbatim
+    // 6. Pull side: GET blob returns the seed TOML verbatim
     const blobGet = await app.inject({
       method: "GET",
       url: `/v2/${REPO}/blobs/${configDigest}`,
     });
     expect(blobGet.statusCode).toBe(200);
-    expect(blobGet.body).toBe(TEMPLATE_TOML);
+    expect(blobGet.body).toBe(SEED_TOML);
 
     // 7. Multi-segment tags/list + catalog carry the full repo path
     const tags = await app.inject({
@@ -194,7 +194,7 @@ describe("ADR-056 template push/pull (peko/principals/<name>)", () => {
     const bob = await createUser(testDb.client, { namespace: "bob" });
     const aliceHeaders = await authHeaders(alice);
     const bobHeaders = await authHeaders(bob);
-    const configDigest = await uploadBlob(app, aliceHeaders, TEMPLATE_TOML);
+    const configDigest = await uploadBlob(app, aliceHeaders, SEED_TOML);
 
     const v1 = await app.inject({
       method: "PUT",
@@ -203,7 +203,7 @@ describe("ADR-056 template push/pull (peko/principals/<name>)", () => {
         ...aliceHeaders,
         "content-type": "application/vnd.oci.image.manifest.v1+json",
       },
-      payload: JSON.stringify(templateManifest(configDigest, "1.0.0")),
+      payload: JSON.stringify(seedManifest(configDigest, "1.0.0")),
     });
     expect(v1.statusCode).toBe(201);
 
@@ -215,7 +215,7 @@ describe("ADR-056 template push/pull (peko/principals/<name>)", () => {
         ...bobHeaders,
         "content-type": "application/vnd.oci.image.manifest.v1+json",
       },
-      payload: JSON.stringify(templateManifest(configDigest, "2.0.0")),
+      payload: JSON.stringify(seedManifest(configDigest, "2.0.0")),
     });
     expect(bobPush.statusCode).toBe(403);
     expect(JSON.parse(bobPush.body).errors[0].code).toBe("DENIED");
@@ -228,7 +228,7 @@ describe("ADR-056 template push/pull (peko/principals/<name>)", () => {
         ...aliceHeaders,
         "content-type": "application/vnd.oci.image.manifest.v1+json",
       },
-      payload: JSON.stringify(templateManifest(configDigest, "2.0.0")),
+      payload: JSON.stringify(seedManifest(configDigest, "2.0.0")),
     });
     expect(v2.statusCode).toBe(201);
 
@@ -248,7 +248,7 @@ describe("ADR-056 template push/pull (peko/principals/<name>)", () => {
     await createUser(testDb.client, { namespace: "alice" });
     const bob = await createUser(testDb.client, { namespace: "bob" });
     const bobHeaders = await authHeaders(bob);
-    const configDigest = await uploadBlob(app, bobHeaders, TEMPLATE_TOML);
+    const configDigest = await uploadBlob(app, bobHeaders, SEED_TOML);
 
     const res = await app.inject({
       method: "PUT",
@@ -257,7 +257,7 @@ describe("ADR-056 template push/pull (peko/principals/<name>)", () => {
         ...bobHeaders,
         "content-type": "application/vnd.oci.image.manifest.v1+json",
       },
-      payload: JSON.stringify(templateManifest(configDigest, "1.0.0")),
+      payload: JSON.stringify(seedManifest(configDigest, "1.0.0")),
     });
     expect(res.statusCode).toBe(403);
   });
@@ -266,7 +266,7 @@ describe("ADR-056 template push/pull (peko/principals/<name>)", () => {
     const app = await buildTestApp({ testDb });
     const alice = await createUser(testDb.client, { namespace: "alice" });
     const headers = await authHeaders(alice);
-    const configDigest = await uploadBlob(app, headers, TEMPLATE_TOML);
+    const configDigest = await uploadBlob(app, headers, SEED_TOML);
 
     // The current annotation. `extension` is retired (capabilities are
     // workspace files — ADR-047 §5 / ADR-050); `agent`/`team` went with
@@ -280,12 +280,12 @@ describe("ADR-056 template push/pull (peko/principals/<name>)", () => {
           "content-type": "application/vnd.oci.image.manifest.v1+json",
         },
         payload: JSON.stringify({
-          ...templateManifest(configDigest, "1.0.0"),
+          ...seedManifest(configDigest, "1.0.0"),
           annotations: { "org.peko.kind": kind },
         }),
       });
       expect(res.statusCode).toBe(410);
-      expect(JSON.parse(res.body).error).toContain("template-only");
+      expect(JSON.parse(res.body).error).toContain("seed-only");
     }
 
     // The hub's own older annotation is still read as a rejection guard,
@@ -299,7 +299,7 @@ describe("ADR-056 template push/pull (peko/principals/<name>)", () => {
         "content-type": "application/vnd.oci.image.manifest.v1+json",
       },
       payload: JSON.stringify({
-        ...templateManifest(configDigest, "1.0.0"),
+        ...seedManifest(configDigest, "1.0.0"),
         annotations: { "dev.pekohub.bundleType": "agent" },
       }),
     });
@@ -310,7 +310,7 @@ describe("ADR-056 template push/pull (peko/principals/<name>)", () => {
     const app = await buildTestApp({ testDb });
     const alice = await createUser(testDb.client, { namespace: "alice" });
     const headers = await authHeaders(alice);
-    const configDigest = await uploadBlob(app, headers, TEMPLATE_TOML);
+    const configDigest = await uploadBlob(app, headers, SEED_TOML);
 
     // `peko/extensions/…`, `peko/agents/…` and `peko/teams/…` distributed
     // capability packages and `.agent` bundles (ADR-037 / ADR-047 §5 /
@@ -324,13 +324,13 @@ describe("ADR-056 template push/pull (peko/principals/<name>)", () => {
           ...headers,
           "content-type": "application/vnd.oci.image.manifest.v1+json",
         },
-        payload: JSON.stringify(templateManifest(configDigest, "1.0.0")),
+        payload: JSON.stringify(seedManifest(configDigest, "1.0.0")),
       });
       expect(res.statusCode).toBe(410);
       expect(JSON.parse(res.body).error).toContain("retired");
     }
 
-    // The template lane still accepts the same push.
+    // The seed lane still accepts the same push.
     const ok = await app.inject({
       method: "PUT",
       url: `/v2/peko/principals/legacy-thing/manifests/1.0.0`,
@@ -338,7 +338,7 @@ describe("ADR-056 template push/pull (peko/principals/<name>)", () => {
         ...headers,
         "content-type": "application/vnd.oci.image.manifest.v1+json",
       },
-      payload: JSON.stringify(templateManifest(configDigest, "1.0.0")),
+      payload: JSON.stringify(seedManifest(configDigest, "1.0.0")),
     });
     expect(ok.statusCode).toBe(201);
   });
@@ -349,7 +349,7 @@ describe("ADR-056 template push/pull (peko/principals/<name>)", () => {
     const bob = await createUser(testDb.client, { namespace: "bob" });
     const aliceHeaders = await authHeaders(alice);
     const bobHeaders = await authHeaders(bob);
-    const configDigest = await uploadBlob(app, aliceHeaders, TEMPLATE_TOML);
+    const configDigest = await uploadBlob(app, aliceHeaders, SEED_TOML);
 
     // Legacy row: no publisher recorded (pre-ADR-056)
     await createBundle(testDb.client, {
@@ -366,7 +366,7 @@ describe("ADR-056 template push/pull (peko/principals/<name>)", () => {
         ...bobHeaders,
         "content-type": "application/vnd.oci.image.manifest.v1+json",
       },
-      payload: JSON.stringify(templateManifest(configDigest, "1.0.0")),
+      payload: JSON.stringify(seedManifest(configDigest, "1.0.0")),
     });
     expect(bobPush.statusCode).toBe(403);
 
@@ -378,7 +378,7 @@ describe("ADR-056 template push/pull (peko/principals/<name>)", () => {
         ...aliceHeaders,
         "content-type": "application/vnd.oci.image.manifest.v1+json",
       },
-      payload: JSON.stringify(templateManifest(configDigest, "1.0.0")),
+      payload: JSON.stringify(seedManifest(configDigest, "1.0.0")),
     });
     expect(alicePush.statusCode).toBe(201);
 
@@ -392,7 +392,7 @@ describe("ADR-056 template push/pull (peko/principals/<name>)", () => {
     const app = await buildTestApp({ testDb, enableOAuth: true });
     const alice = await createUser(testDb.client, { namespace: "alice" });
     const headers = await authHeaders(alice);
-    const configDigest = await uploadBlob(app, headers, TEMPLATE_TOML);
+    const configDigest = await uploadBlob(app, headers, SEED_TOML);
 
     const put = await app.inject({
       method: "PUT",
@@ -401,7 +401,7 @@ describe("ADR-056 template push/pull (peko/principals/<name>)", () => {
         ...headers,
         "content-type": "application/vnd.oci.image.manifest.v1+json",
       },
-      payload: JSON.stringify(templateManifest(configDigest, "1.0.0")),
+      payload: JSON.stringify(seedManifest(configDigest, "1.0.0")),
     });
     expect(put.statusCode).toBe(201);
 

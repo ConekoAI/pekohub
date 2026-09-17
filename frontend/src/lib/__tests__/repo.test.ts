@@ -1,32 +1,32 @@
 import { describe, expect, it } from 'vitest';
-import { classifyRepo, laneLabel, splitInstallRef, RETIRED_LANES, TEMPLATE_LANE } from '~/lib/repo';
+import { classifyRepo, laneLabel, splitInstallRef, RETIRED_LANES, SEED_LANE } from '~/lib/repo';
 
 /**
- * Pin the registry classification rules the template directory depends
+ * Pin the registry classification rules the seed directory depends
  * on. These encode an architectural decision, not a formatting
- * preference: the hub is template-only (pekohub ADR-005 §2 / runtime
+ * preference: the hub is seed-only (pekohub ADR-005 §2 / runtime
  * ADR-056 D6), so the `extensions/` and `agents/` lanes must classify
- * as retired and never render as templates.
+ * as retired and never render as seeds.
  */
 
 describe('classifyRepo', () => {
-  it('recognises the current template lane', () => {
+  it('recognises the current seed lane', () => {
     const ref = classifyRepo('peko/principals/my-peko');
     expect(ref).toEqual({
       repo: 'peko/principals/my-peko',
       namespace: 'peko/principals',
       name: 'my-peko',
       lane: 'principals',
-      isTemplate: true,
+      isSeed: true,
       isRetired: false,
     });
   });
 
-  it('keeps pre-ADR-005 two-segment paths readable as templates', () => {
+  it('keeps pre-ADR-005 two-segment paths readable as seeds', () => {
     const ref = classifyRepo('alice/my-peko');
     expect(ref?.lane).toBeNull();
     expect(ref?.namespace).toBe('alice');
-    expect(ref?.isTemplate).toBe(true);
+    expect(ref?.isSeed).toBe(true);
     expect(ref?.isRetired).toBe(false);
   });
 
@@ -34,7 +34,7 @@ describe('classifyRepo', () => {
     const ref = classifyRepo(`peko/${lane}/legacy-thing`);
     expect(ref?.lane).toBe(lane);
     expect(ref?.isRetired).toBe(true);
-    expect(ref?.isTemplate).toBe(false);
+    expect(ref?.isSeed).toBe(false);
   });
 
   it('rejects paths that are not namespace/name', () => {
@@ -49,13 +49,13 @@ describe('classifyRepo', () => {
     const ref = classifyRepo('peko/principals/team/foo');
     expect(ref?.lane).toBeNull();
     expect(ref?.namespace).toBe('peko/principals/team');
-    expect(ref?.isTemplate).toBe(true);
+    expect(ref?.isSeed).toBe(true);
   });
 });
 
 describe('laneLabel', () => {
-  it('calls the principals lane "template" for users', () => {
-    expect(laneLabel(TEMPLATE_LANE)).toBe('template');
+  it('calls the principals lane "seed" for users', () => {
+    expect(laneLabel(SEED_LANE)).toBe('seed');
   });
 
   it('labels lane-less paths as legacy paths', () => {

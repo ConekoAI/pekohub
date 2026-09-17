@@ -28,7 +28,7 @@ import { formatDate, relativeTime } from '~/lib/format';
  *
  * The pre-pivot "my bundles" section is gone: bundles/packages were a
  * pre-ADR-056 concept and registry browsing now lives under
- * `/templates`, filtered to the template lane.
+ * `/seeds`, filtered to the seed lane.
  */
 export const Route = createFileRoute('/profile')({
   component: ProfilePage,
@@ -44,7 +44,7 @@ function ProfilePage() {
         <h1 className="display text-2xl sm:text-[28px]">Profile</h1>
         <p className="lede mt-2 max-w-2xl">
           Your hub identity, the runtimes registered to it, and the keys your CLI uses to push
-          templates and announce pekos.
+          seeds and announce pekos.
         </p>
       </div>
 
@@ -278,7 +278,7 @@ function ApiKeysPanel() {
         <p className="eyebrow mb-2">credentials</p>
         <h2 className="display text-xl">API keys</h2>
         <p className="lede mt-1.5 max-w-2xl">
-          Used by the CLI to push templates and by CI to publish. Keys are shown once — the hub only
+          Used by the CLI to push seeds and by CI to publish. Keys are shown once — the hub only
           keeps a hash.
         </p>
       </div>

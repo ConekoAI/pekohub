@@ -23,7 +23,7 @@ const DISCOVERY_HIT = {
   featured: false,
 };
 
-function templateDetail(namespace: string, name: string) {
+function seedDetail(namespace: string, name: string) {
   const version = {
     version: '1.0.0',
     digest: 'sha256:abc123def4567890',
@@ -39,18 +39,18 @@ function templateDetail(namespace: string, name: string) {
     versions: [version],
     metadata: {
       name,
-      description: 'A test template',
+      description: 'A test seed',
       author: 'Test Author',
       license: 'MIT',
       tags: ['test'],
       bundleType: 'principal',
       homepage: null,
       repository: null,
-      readme: '# Test template\n\nGround it with `peko create -f`.',
+      readme: '# Test seed\n\nGround it with `peko create -s`.',
       version: '1.0.0',
       deprecated: false,
     },
-    readme: '# Test template\n\nGround it with `peko create -f`.',
+    readme: '# Test seed\n\nGround it with `peko create -s`.',
     pullCount: { daily: 5, weekly: 20, monthly: 100, allTime: 500 },
     installCommand: `peko pull pekohub.ai/${namespace}/${name}:1.0.0`,
   };
@@ -80,7 +80,7 @@ export const handlers = [
 
   http.post('/v1/auth/logout', () => HttpResponse.json({ success: true })),
 
-  // ── Search (template directory with a query) ────────────────────────────
+  // ── Search (seed directory with a query) ────────────────────────────
   http.get('/v1/search', ({ request }) => {
     const url = new URL(request.url);
     return HttpResponse.json({
@@ -89,7 +89,7 @@ export const handlers = [
           namespace: 'peko/principals',
           name: 'my-peko',
           version: '1.0.0',
-          description: 'A test peko template',
+          description: 'A test peko seed',
           author: 'Test Author',
           bundleType: 'principal',
           tags: ['test', 'peko'],
@@ -104,9 +104,9 @@ export const handlers = [
     });
   }),
 
-  // ── OCI catalog (template directory without a query) ────────────────────
+  // ── OCI catalog (seed directory without a query) ────────────────────
   // One path per lane class so the retired-lane filter is exercised: a
-  // current template, a pre-ADR-005 row, and a retired lane.
+  // current seed, a pre-ADR-005 row, and a retired lane.
   http.get('/v2/_catalog', () =>
     HttpResponse.json({
       repositories: [
@@ -117,7 +117,7 @@ export const handlers = [
     }),
   ),
 
-  // ── Template detail (multi-segment namespace) ───────────────────────────
+  // ── Seed detail (multi-segment namespace) ───────────────────────────
   // Path-to-regexp's `*` matches a single segment, so multi-segment
   // repository paths (`peko/principals/foo`) need a regexp matcher.
   http.get(/\/v1\/bundles\/.+\/versions$/, ({ request }) => {
@@ -125,13 +125,13 @@ export const handlers = [
     return HttpResponse.json({
       namespace: repo.namespace,
       name: repo.name,
-      versions: templateDetail(repo.namespace, repo.name).versions,
+      versions: seedDetail(repo.namespace, repo.name).versions,
     });
   }),
 
   http.get(/\/v1\/bundles\/.+/, ({ request }) => {
     const repo = repoFromUrl(request.url);
-    return HttpResponse.json(templateDetail(repo.namespace, repo.name));
+    return HttpResponse.json(seedDetail(repo.namespace, repo.name));
   }),
 
   // ── Discovery ───────────────────────────────────────────────────────────

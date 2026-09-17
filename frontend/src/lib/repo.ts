@@ -2,21 +2,23 @@
  * Registry repository-path helpers.
  *
  * PekoHub is an OCI Distribution v1.1 registry whose repository paths
- * are multi-segment. Per pekohub ADR-005 §2 the template paths are
+ * are multi-segment. Per pekohub ADR-005 §2 the seed paths are
  * `peko/principals/<name>`; pre-ADR-005 rows use a two-segment
- * `namespace/name` path and stay readable.
+ * `namespace/name` path and stay readable. The `principals` lane
+ * segment is the **wire** vocabulary and is unchanged by ADR-060 —
+ * only the user-facing term moved from "template" to "seed".
  *
- * The hub is **template-only** (runtime ADR-056 D6): a pushed artifact
+ * The hub is **seed-only** (runtime ADR-056 D6): a pushed artifact
  * is DNA — a stripped `principal.toml` — never a full-existence
  * snapshot and never a capability package. The retired `extensions/`
  * and `agents/` lanes predate runtime ADR-047 §5 / ADR-050 (where
  * capabilities became plain workspace files) and runtime ADR-037
  * (which superseded the `.agent` bundle); they are surfaced as legacy
- * and filtered out of the template directory.
+ * and filtered out of the seed directory.
  */
 
-/** The only lane a current runtime pushes templates under. */
-export const TEMPLATE_LANE = 'principals';
+/** The only lane a current runtime pushes seeds under. */
+export const SEED_LANE = 'principals';
 
 /** Lanes retired by runtime ADR-037 / ADR-047 §5 / ADR-050. */
 export const RETIRED_LANES = ['extensions', 'agents', 'teams'] as const;
@@ -30,8 +32,8 @@ export interface RepoRef {
   name: string;
   /** Lane segment when the path follows `peko/<lane>/<name>`. */
   lane: string | null;
-  /** True when the artifact is a current template (or a pre-ADR-005 row). */
-  isTemplate: boolean;
+  /** True when the artifact is a current seed (or a pre-ADR-005 row). */
+  isSeed: boolean;
   /** True when the lane was retired by a runtime ADR. */
   isRetired: boolean;
 }
@@ -54,14 +56,14 @@ export function classifyRepo(repo: string): RepoRef | null {
     namespace,
     name,
     lane,
-    isTemplate: !isRetired,
+    isSeed: !isRetired,
     isRetired,
   };
 }
 
-/** Human label for a lane. `principals` reads as "template" in the UI. */
+/** Human label for a lane. `principals` reads as "seed" in the UI. */
 export function laneLabel(lane: string | null): string {
-  if (lane === TEMPLATE_LANE) return 'template';
+  if (lane === SEED_LANE) return 'seed';
   if (lane === null) return 'legacy path';
   return lane;
 }

@@ -2,9 +2,9 @@ import { z } from 'zod';
 import { BundleTypes } from './constants.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Template registry schemas
+// Seed registry schemas
 //
-// PekoHub's registry is **template-only** (peko-runtime ADR-056 D6): a
+// PekoHub's registry is **seed-only** (peko-runtime ADR-056 D6): a
 // push carries a stripped `principal.toml` — DNA — and never an
 // existence, a key, or a capability package.
 //
@@ -17,8 +17,8 @@ import { BundleTypes } from './constants.js';
 //     metadata for authoring agent/extension bundles, retired with the
 //     `.agent`/`.ext` formats (ADR-037).
 //   - `hooks` / `compatibility`: an extension's hook bindings and the
-//     runtime version matrix it targeted. Templates declare neither.
-//   - `forkedFrom`: forking a template is meaningless — DNA is
+//     runtime version matrix it targeted. Seeds declare neither.
+//   - `forkedFrom`: forking a seed is meaningless — DNA is
 //     re-pushed from a workspace, not copied out of the registry.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -26,7 +26,7 @@ const nullishToUndefined = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess((val) => (val === null ? undefined : val), schema);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Template metadata (Pekohub-specific metadata embedded in OCI manifest)
+// Seed metadata (Pekohub-specific metadata embedded in OCI manifest)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const BundleMetadata = z.object({
@@ -39,7 +39,7 @@ export const BundleMetadata = z.object({
    * Wire value for the artifact kind. `principal` is the only member of
    * `BundleTypes` — the runtime's push path hard-codes it (peko-runtime
    * `peko-rs/core/src/registry/client.rs`) and the UI calls the artifact
-   * a template.
+   * a seed.
    */
   bundleType: z.enum(BundleTypes),
   homepage: z.string().url().optional().nullable(),
@@ -69,7 +69,7 @@ export const SearchQuery = z.object({
   filters: z
     .object({
       // Only `principal` exists, so this filter is a guard rather than a
-      // selector: it lets the SPA assert "templates only" at the query
+      // selector: it lets the SPA assert "seeds only" at the query
       // layer even if a legacy row is still indexed.
       bundleType: z.enum(BundleTypes).optional(),
     })
@@ -122,8 +122,8 @@ export const BundleDetail = z.object({
   }),
   /**
    * `peko pull <host>/<repo>:<tag>` — the pull half of the flow. The
-   * pulled artifact is a bare `.template.toml`, so grinding it is a
-   * second step: `peko create <name> -f <file>` (ADR-056 D6).
+   * pulled artifact is a bare `.seed.toml`, so grinding it is a
+   * second step: `peko create <name> -s <file>` (ADR-056 D6).
    */
   installCommand: z.string(),
 });
@@ -167,7 +167,7 @@ export type UserProfile = z.infer<typeof UserProfile>;
 //
 // Package vs live-instance note: this endpoint surfaces a *live
 // instance* (a running actor on a specific runtime, owned by one
-// user). It is NOT a template — a template is DNA that spawns a fresh
+// user). It is NOT a seed — a seed is DNA that spawns a fresh
 // identity, never a live actor. Keep the `liveInstance` wrapper
 // self-documenting so the two concepts don't get conflated by callers.
 export const PublicProfile = z.object({

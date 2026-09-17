@@ -92,14 +92,14 @@ export const refreshTokens = pgTable(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Bundles (templates)
+// Bundles (seeds)
 //
-// One row per registry repository. The hub is template-only: a row is a
-// pushed *template* — a stripped `principal.toml` carried as a
+// One row per registry repository. The hub is seed-only: a row is a
+// pushed *seed* — a stripped `principal.toml` carried as a
 // zero-layer OCI manifest (peko-runtime ADR-056 D6) — never an
 // existence and never a capability package.
 //
-// Removed by the template-only cut (ADR-005 realignment): the
+// Removed by the seed-only cut (ADR-005 realignment): the
 // extension-era package metadata `extension_type`, `categories`,
 // `model_providers`, `required_mcp_servers`, `hooks`, `compatibility`,
 // and the fork lineage `forked_from`. Capabilities became workspace

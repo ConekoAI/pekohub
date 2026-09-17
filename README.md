@@ -4,7 +4,7 @@ Public registry, relay, and discovery hub for [peko-runtime](https://github.com/
 
 PekoHub is three things in one server:
 
-1. **OCI Distribution Spec v1.1 template registry** (multi-segment repo paths like `peko/principals/<name>`; a push is a zero-layer manifest whose config blob is a stripped `principal.toml` — see ADR-005 and runtime ADR-056 D6). **Template-only:** the hub carries DNA, never an existence and never a capability package.
+1. **OCI Distribution Spec v1.1 seed registry** (multi-segment repo paths like `peko/principals/<name>`; a push is a zero-layer manifest whose config blob is a stripped `principal.toml` — see ADR-005 and runtime ADR-056 D6). **Seed-only:** the hub carries DNA, never an existence and never a capability package.
 2. **Tunnel relay** that proxies chat traffic from public callers to runtime-owned pekos.
 3. **Discovery + share directory** so users can find and chat with exposed pekos — anonymously in the browser, or via `peko-desktop` after a share link.
 

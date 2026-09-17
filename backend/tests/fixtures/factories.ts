@@ -16,7 +16,7 @@ export interface TestBundle {
   id: number;
   namespace: string;
   name: string;
-  // Template-only registry: `principal` is the sole kind (ADR-005
+  // Seed-only registry: `principal` is the sole kind (ADR-005
   // realignment / runtime ADR-056 D6).
   bundleType: "principal";
   // ADR-056: publisher ownership (nullable for legacy rows).

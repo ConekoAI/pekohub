@@ -739,7 +739,7 @@ describe("OCI Distribution Spec Routes", () => {
     // runtime emits `dev.pekohub.principalName` in the OCI manifest
     // annotations; PekoHub validates it here (without parsing the TOML
     // config blob) before persisting. There is no extension counterpart:
-    // templates carry no extension identity (ADR-047 §5 / ADR-050).
+    // seeds carry no extension identity (ADR-047 §5 / ADR-050).
     it("rejects manifest with unsafe principal name annotation", async () => {
       const manifest = {
         schemaVersion: 2,
@@ -797,7 +797,7 @@ describe("OCI Distribution Spec Routes", () => {
       // surface is gone runtime-side, so such a client cannot work.
       expect(res.statusCode).toBe(410);
       const body = JSON.parse(res.body);
-      expect(body.error).toContain("template-only");
+      expect(body.error).toContain("seed-only");
     });
 
     it("creates bundle and version on first push", async () => {
@@ -884,7 +884,7 @@ describe("OCI Distribution Spec Routes", () => {
       expect(body.errors[0].code).toBe("MANIFEST_INVALID");
     });
 
-    it("creates a template with only template metadata from flat annotations", async () => {
+    it("creates a seed with only seed metadata from flat annotations", async () => {
       const manifest = {
         schemaVersion: 2,
         mediaType: "application/vnd.oci.image.manifest.v1+json",
@@ -896,7 +896,7 @@ describe("OCI Distribution Spec Routes", () => {
         layers: [],
         annotations: {
           "org.peko.kind": "principal",
-          "org.opencontainers.image.description": "A research peko template",
+          "org.opencontainers.image.description": "A research peko seed",
           "org.opencontainers.image.authors": "alice",
           "dev.pekohub.tags": JSON.stringify(["research", "notes"]),
           "dev.pekohub.readme": "# Ada",
@@ -915,7 +915,7 @@ describe("OCI Distribution Spec Routes", () => {
             namespace: "peko/principals",
             name: "ada",
             bundleType: "principal",
-            description: "A research peko template",
+            description: "A research peko seed",
             author: "alice",
             tags: ["research", "notes"],
             readme: "# Ada",

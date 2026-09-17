@@ -12,7 +12,7 @@ import Fastify, { type FastifyInstance } from "fastify";
  * from its attributes, and it *fails the whole add task* when two
  * attributes end in `id`. Spreading the caller's `objectID` into the
  * document alongside the canonical `id` breaks indexing silently — the
- * route returns 201, the add task dies, and the template never becomes
+ * route returns 201, the add task dies, and the seed never becomes
  * searchable. (Caught live, not by the mocked suites.)
  */
 
@@ -50,13 +50,13 @@ describe("search plugin: indexed document shape", () => {
     if (!app) app = await buildApp();
   });
 
-  it("indexes a template with exactly one `*id` attribute", async () => {
+  it("indexes a seed with exactly one `*id` attribute", async () => {
     await app.search.indexBundle({
       objectID: "peko-principals-ada-1.0.0",
       namespace: "peko/principals",
       name: "ada",
       version: "1.0.0",
-      description: "A research peko template",
+      description: "A research peko seed",
       author: "alice",
       bundleType: "principal",
       tags: ["research"],
@@ -78,7 +78,7 @@ describe("search plugin: indexed document shape", () => {
     const idFields = Object.keys(doc).filter((key) => key.endsWith("id"));
     expect(idFields).toEqual(["id"]);
 
-    // Template metadata survives intact.
+    // Seed metadata survives intact.
     expect(doc).toMatchObject({
       namespace: "peko/principals",
       name: "ada",

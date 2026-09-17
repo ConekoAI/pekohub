@@ -15,8 +15,9 @@ import { Route as PekosRouteImport } from './routes/pekos'
 import { Route as DiscoverRouteImport } from './routes/discover'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as TemplatesIndexRouteImport } from './routes/templates/index'
-import { Route as TemplatesSplatRouteImport } from './routes/templates/$'
+import { Route as SeedsIndexRouteImport } from './routes/seeds/index'
+import { Route as TemplatesSplatRouteImport } from './routes/templates_.$'
+import { Route as SeedsSplatRouteImport } from './routes/seeds/$'
 import { Route as BundlesSplatRouteImport } from './routes/bundles_.$'
 import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
 import { Route as PekoOwnerPekoNameRouteImport } from './routes/peko.$owner.$pekoName'
@@ -52,14 +53,19 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const TemplatesIndexRoute = TemplatesIndexRouteImport.update({
-  id: '/templates/',
-  path: '/templates/',
+const SeedsIndexRoute = SeedsIndexRouteImport.update({
+  id: '/seeds/',
+  path: '/seeds/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TemplatesSplatRoute = TemplatesSplatRouteImport.update({
-  id: '/templates/$',
+  id: '/templates_/$',
   path: '/templates/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SeedsSplatRoute = SeedsSplatRouteImport.update({
+  id: '/seeds/$',
+  path: '/seeds/$',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BundlesSplatRoute = BundlesSplatRouteImport.update({
@@ -92,8 +98,9 @@ export interface FileRoutesByFullPath {
   '/search': typeof SearchRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/bundles/$': typeof BundlesSplatRoute
+  '/seeds/$': typeof SeedsSplatRoute
   '/templates/$': typeof TemplatesSplatRoute
-  '/templates/': typeof TemplatesIndexRoute
+  '/seeds/': typeof SeedsIndexRoute
   '/p/$owner/$principalName': typeof POwnerPrincipalNameRoute
   '/peko/$owner/$pekoName': typeof PekoOwnerPekoNameRoute
 }
@@ -106,8 +113,9 @@ export interface FileRoutesByTo {
   '/search': typeof SearchRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/bundles/$': typeof BundlesSplatRoute
+  '/seeds/$': typeof SeedsSplatRoute
   '/templates/$': typeof TemplatesSplatRoute
-  '/templates': typeof TemplatesIndexRoute
+  '/seeds': typeof SeedsIndexRoute
   '/p/$owner/$principalName': typeof POwnerPrincipalNameRoute
   '/peko/$owner/$pekoName': typeof PekoOwnerPekoNameRoute
 }
@@ -121,8 +129,9 @@ export interface FileRoutesById {
   '/search': typeof SearchRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/bundles_/$': typeof BundlesSplatRoute
-  '/templates/$': typeof TemplatesSplatRoute
-  '/templates/': typeof TemplatesIndexRoute
+  '/seeds/$': typeof SeedsSplatRoute
+  '/templates_/$': typeof TemplatesSplatRoute
+  '/seeds/': typeof SeedsIndexRoute
   '/p/$owner/$principalName': typeof POwnerPrincipalNameRoute
   '/peko/$owner/$pekoName': typeof PekoOwnerPekoNameRoute
 }
@@ -137,8 +146,9 @@ export interface FileRouteTypes {
     | '/search'
     | '/auth/callback'
     | '/bundles/$'
+    | '/seeds/$'
     | '/templates/$'
-    | '/templates/'
+    | '/seeds/'
     | '/p/$owner/$principalName'
     | '/peko/$owner/$pekoName'
   fileRoutesByTo: FileRoutesByTo
@@ -151,8 +161,9 @@ export interface FileRouteTypes {
     | '/search'
     | '/auth/callback'
     | '/bundles/$'
+    | '/seeds/$'
     | '/templates/$'
-    | '/templates'
+    | '/seeds'
     | '/p/$owner/$principalName'
     | '/peko/$owner/$pekoName'
   id:
@@ -165,8 +176,9 @@ export interface FileRouteTypes {
     | '/search'
     | '/auth/callback'
     | '/bundles_/$'
-    | '/templates/$'
-    | '/templates/'
+    | '/seeds/$'
+    | '/templates_/$'
+    | '/seeds/'
     | '/p/$owner/$principalName'
     | '/peko/$owner/$pekoName'
   fileRoutesById: FileRoutesById
@@ -180,8 +192,9 @@ export interface RootRouteChildren {
   SearchRoute: typeof SearchRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
   BundlesSplatRoute: typeof BundlesSplatRoute
+  SeedsSplatRoute: typeof SeedsSplatRoute
   TemplatesSplatRoute: typeof TemplatesSplatRoute
-  TemplatesIndexRoute: typeof TemplatesIndexRoute
+  SeedsIndexRoute: typeof SeedsIndexRoute
   POwnerPrincipalNameRoute: typeof POwnerPrincipalNameRoute
   PekoOwnerPekoNameRoute: typeof PekoOwnerPekoNameRoute
 }
@@ -230,18 +243,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/templates/': {
-      id: '/templates/'
-      path: '/templates'
-      fullPath: '/templates/'
-      preLoaderRoute: typeof TemplatesIndexRouteImport
+    '/seeds/': {
+      id: '/seeds/'
+      path: '/seeds'
+      fullPath: '/seeds/'
+      preLoaderRoute: typeof SeedsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/templates/$': {
-      id: '/templates/$'
+    '/templates_/$': {
+      id: '/templates_/$'
       path: '/templates/$'
       fullPath: '/templates/$'
       preLoaderRoute: typeof TemplatesSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/seeds/$': {
+      id: '/seeds/$'
+      path: '/seeds/$'
+      fullPath: '/seeds/$'
+      preLoaderRoute: typeof SeedsSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/bundles_/$': {
@@ -284,8 +304,9 @@ const rootRouteChildren: RootRouteChildren = {
   SearchRoute: SearchRoute,
   AuthCallbackRoute: AuthCallbackRoute,
   BundlesSplatRoute: BundlesSplatRoute,
+  SeedsSplatRoute: SeedsSplatRoute,
   TemplatesSplatRoute: TemplatesSplatRoute,
-  TemplatesIndexRoute: TemplatesIndexRoute,
+  SeedsIndexRoute: SeedsIndexRoute,
   POwnerPrincipalNameRoute: POwnerPrincipalNameRoute,
   PekoOwnerPekoNameRoute: PekoOwnerPekoNameRoute,
 }

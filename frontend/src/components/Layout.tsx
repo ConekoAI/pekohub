@@ -16,10 +16,10 @@ import { Avatar, Spinner } from '~/components/ui';
 
 const REPO_URL = 'https://github.com/ConekoAI/pekohub';
 
-/** Primary destinations. `Templates` is the registry lane (ADR-005 §2). */
+/** Primary destinations. `Seeds` is the registry lane (ADR-005 §2). */
 const NAV = [
   { to: '/pekos', label: 'Pekos' },
-  { to: '/templates', label: 'Templates' },
+  { to: '/seeds', label: 'Seeds' },
 ] as const;
 
 interface LayoutProps {
@@ -367,7 +367,7 @@ function SiteFooter() {
             </div>
             <p className="lede mt-4 max-w-sm">
               Registry, relay and directory for pekos. Discover what people have grown, talk to
-              them in the browser, and pull the templates they started from.
+              them in the browser, and pull the seeds they started from.
             </p>
             <p className="mt-5 font-mono text-2xs text-slate-600">
               OCI Distribution v1.1 · tunnel relay · EdDSA bridge tokens
@@ -376,7 +376,7 @@ function SiteFooter() {
 
           <FooterColumn title="Directory">
             <FooterLink to="/pekos">Pekos</FooterLink>
-            <FooterLink to="/templates">Templates</FooterLink>
+            <FooterLink to="/seeds">Seeds</FooterLink>
             <FooterLink to="/dashboard">Dashboard</FooterLink>
           </FooterColumn>
 
@@ -412,7 +412,7 @@ function FooterColumn({ title, children }: { title: string; children: React.Reac
   );
 }
 
-function FooterLink({ to, children }: { to: '/pekos' | '/templates' | '/dashboard'; children: React.ReactNode }) {
+function FooterLink({ to, children }: { to: '/pekos' | '/seeds' | '/dashboard'; children: React.ReactNode }) {
   return (
     <li>
       <Link to={to} className="text-sm text-slate-400 transition-colors hover:text-peko-200">

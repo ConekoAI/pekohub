@@ -19,8 +19,8 @@ export function sanitizeObjectID(id: string): string {
 
 export interface SearchService {
   /**
-   * Index one template version. The document is exactly
-   * `SearchResultItem` — templates carry no extension-era metadata
+   * Index one seed version. The document is exactly
+   * `SearchResultItem` — seeds carry no extension-era metadata
    * (hook points, compatibility matrix, model/MCP requirements), so
    * there is nothing to strip.
    */
@@ -39,12 +39,12 @@ export interface SearchService {
     perPage: number;
   }>;
   /**
-   * Remove template documents from the index.
+   * Remove seed documents from the index.
    *
    * One document exists per pushed version (`<namespace>-<name>-<version>`),
    * so deletion is a list, not a prefix: the previous
    * `deleteBundle("${namespace}-${name}")` never matched a real document id
-   * and left deleted templates searchable forever.
+   * and left deleted seeds searchable forever.
    */
   deleteBundleDocuments(objectIDs: string[]): Promise<void>;
   indexInstance(doc: {
@@ -102,7 +102,7 @@ async function searchPlugin(fastify: FastifyInstance) {
         "tags",
         "author",
       ],
-      // Template metadata only. The extension-era facets
+      // Seed metadata only. The extension-era facets
       // (`extensionType`, `hookPoints`, `categories`, `modelProviders`)
       // lost their producers when capabilities moved to workspace files
       // (runtime ADR-047 §5 / ADR-050).
@@ -161,7 +161,7 @@ async function searchPlugin(fastify: FastifyInstance) {
       // primary key from the attributes, and two fields ending in `id`
       // (`objectID` plus the canonical `id`) make that inference fail —
       // the task dies with "found 2 fields ending with `id`" and the
-      // template silently never becomes searchable.
+      // seed silently never becomes searchable.
       const { objectID, ...rest } = doc;
       await bundlesIndex.addDocuments([
         { ...rest, id: sanitizeObjectID(objectID) },

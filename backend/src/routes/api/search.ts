@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { SearchQuery, SearchResponse } from "@pekohub/shared";
 
 /**
- * Custom API: Full-text search over templates.
+ * Custom API: Full-text search over seeds.
  * GET /api/v1/search?q=...&page=...&perPage=...&filters.bundleType=principal
  *
  * The only facet left is `bundleType`, which has exactly one legal value

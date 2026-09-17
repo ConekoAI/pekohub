@@ -15,18 +15,18 @@ import {
 } from 'lucide-react';
 import { api } from '~/lib/api';
 import { useAuth } from '~/hooks/useAuth';
-import { useTemplate, useTemplateVersions } from '~/hooks/useTemplate';
+import { useSeed, useSeedVersions } from '~/hooks/useSeed';
 import { classifyRepo, laneLabel, splitInstallRef } from '~/lib/repo';
 import { compactNumber, formatBytes, formatDate, relativeTime, shortDigest } from '~/lib/format';
 import { PageShell } from '~/components/PageShell';
 import { Badge, CopyButton, EmptyState, ErrorNote, Spinner, Stat } from '~/components/ui';
 
 /**
- * Template detail.
+ * Seed detail.
  *
- * Read-mostly: a template's identity, its version history, its README
+ * Read-mostly: a seed's identity, its version history, its README
  * and the exact commands needed to use it. Publisher actions
- * (deprecate / delete a version, delete the template) are offered to
+ * (deprecate / delete a version, delete the seed) are offered to
  * signed-in users and authorized server-side by publisher key.
  *
  * Deliberately absent: the pre-pivot extension surface (hook points,
@@ -34,50 +34,50 @@ import { Badge, CopyButton, EmptyState, ErrorNote, Spinner, Stat } from '~/compo
  * workspace files now (runtime ADR-047 §5, ADR-050) and never travelled
  * through the registry as a package.
  *
- * Routing note: this lives in the `templates/` directory alongside
- * `index.tsx` rather than as a flat `templates_.$.tsx`. A splat matches
- * zero segments, so a flat `$` route would also match bare `/templates`
+ * Routing note: this lives in the `seeds/` directory alongside
+ * `index.tsx` rather than as a flat `seeds_.$.tsx`. A splat matches
+ * zero segments, so a flat `$` route would also match bare `/seeds`
  * and shadow the directory listing.
  */
-export const Route = createFileRoute('/templates/$')({
-  component: TemplateDetailPage,
+export const Route = createFileRoute('/seeds/$')({
+  component: SeedDetailPage,
 });
 
-function TemplateDetailPage() {
+function SeedDetailPage() {
   const { _splat } = Route.useParams();
   const segments = (_splat ?? '').split('/').filter(Boolean);
   const name = segments[segments.length - 1] ?? '';
   const namespace = segments.slice(0, -1).join('/');
 
-  const template = useTemplate(namespace, name);
+  const seed = useSeed(namespace, name);
 
   if (!namespace || !name) throw notFound();
 
-  if (template.isLoading) {
+  if (seed.isLoading) {
     return (
       <PageShell width="default">
         <div className="flex items-center justify-center gap-2.5 py-32 text-sm text-slate-500">
           <Spinner className="h-4 w-4" />
-          Loading template…
+          Loading seed…
         </div>
       </PageShell>
     );
   }
 
-  if (template.isError || !template.data) throw notFound();
+  if (seed.isError || !seed.data) throw notFound();
 
   return (
     <PageShell width="default">
-      <TemplateBody
-        namespace={template.data.namespace}
-        name={template.data.name}
-        data={template.data}
+      <SeedBody
+        namespace={seed.data.namespace}
+        name={seed.data.name}
+        data={seed.data}
       />
     </PageShell>
   );
 }
 
-function TemplateBody({
+function SeedBody({
   namespace,
   name,
   data,
@@ -91,12 +91,12 @@ function TemplateBody({
   const repo = `${namespace}/${name}`;
   const ref = classifyRepo(repo);
 
-  const versions = useTemplateVersions(namespace, name);
+  const versions = useSeedVersions(namespace, name);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: ['template', namespace, name] });
+    queryClient.invalidateQueries({ queryKey: ['seed', namespace, name] });
 
   const onDeprecate = async (version: string, deprecated: boolean) => {
     setBusy(`deprecate:${version}`);
@@ -125,15 +125,15 @@ function TemplateBody({
     }
   };
 
-  const onDeleteTemplate = async () => {
+  const onDeleteSeed = async () => {
     if (!window.confirm(`Delete ${repo} and every version? This cannot be undone.`)) return;
-    setBusy('delete:template');
+    setBusy('delete:seed');
     setError(null);
     try {
       await api.deleteBundle(namespace, name);
       await invalidate();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not delete the template');
+      setError(err instanceof Error ? err.message : 'Could not delete the seed');
     } finally {
       setBusy(null);
     }
@@ -142,22 +142,22 @@ function TemplateBody({
   const latest = data.versions[0]?.version ?? data.metadata.version ?? 'latest';
   const parsedRef = splitInstallRef(data.installCommand);
   const pullRef = parsedRef ? `${parsedRef.repo}:${parsedRef.tag ?? latest}` : data.installCommand;
-  const createCommand = `peko create my-peko -f ${name}.template.toml`;
+  const createCommand = `peko create my-peko -s ${name}.seed.toml`;
   const isDeprecated = data.metadata.deprecated === true;
 
   return (
     <div className="animate-fade-up">
       <Link
-        to="/templates"
+        to="/seeds"
         className="inline-flex items-center gap-1.5 font-mono text-2xs text-slate-500 transition-colors hover:text-peko-300"
       >
         <ArrowLeft className="h-3 w-3" />
-        all templates
+        all seeds
       </Link>
 
       <header className="mt-6">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge tone="iris">template</Badge>
+          <Badge tone="iris">seed</Badge>
           {ref && <Badge tone="neutral">{laneLabel(ref.lane)}</Badge>}
           {isDeprecated && (
             <Badge tone="warn">
@@ -220,7 +220,7 @@ function TemplateBody({
           <h2 className="text-sm font-semibold text-slate-200">How to use it</h2>
         </div>
         <p className="mt-2 text-[13px] leading-relaxed text-slate-400">
-          Pull the template, then ground it. A pulled template carries no identity — it mints a
+          Pull the seed, then ground it. A pulled seed carries no identity — it mints a
           fresh DID when you create a peko from it.
         </p>
 
@@ -369,16 +369,16 @@ function TemplateBody({
             <div className="flex items-center gap-2.5">
               <FileCode2 className="h-4 w-4 text-rose-300" />
               <p className="text-[13px] text-rose-200/80">
-                Removing the template deletes every version and its orphaned blobs.
+                Removing the seed deletes every version and its orphaned blobs.
               </p>
             </div>
             <button
-              onClick={() => void onDeleteTemplate()}
+              onClick={() => void onDeleteSeed()}
               disabled={busy !== null}
               className="btn-danger btn-sm"
             >
-              {busy === 'delete:template' ? <Spinner className="h-3 w-3" /> : <Trash2 className="h-3 w-3" />}
-              Delete template
+              {busy === 'delete:seed' ? <Spinner className="h-3 w-3" /> : <Trash2 className="h-3 w-3" />}
+              Delete seed
             </button>
           </div>
         )}
