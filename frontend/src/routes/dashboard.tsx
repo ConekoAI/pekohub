@@ -6,7 +6,6 @@ import {
   CircleDot,
   EyeOff,
   Globe,
-  LinkIcon,
   Lock,
   PowerOff,
   RefreshCw,
@@ -40,7 +39,7 @@ import { relativeTime } from '~/lib/format';
 type Exposure = OwnedInstanceRecord['exposure'];
 type Status = OwnedInstanceRecord['status'];
 
-const EXPOSURE_ORDER: Exposure[] = ['public', 'unlisted', 'private', 'unexposed'];
+const EXPOSURE_ORDER: Exposure[] = ['public', 'private', 'local_only'];
 
 const EXPOSURE_META: Record<
   Exposure,
@@ -52,20 +51,14 @@ const EXPOSURE_META: Record<
     icon: Globe,
     tone: 'peko',
   },
-  unlisted: {
-    label: 'Unlisted',
-    blurb: 'Chat-able by anyone with the link, never indexed.',
-    icon: LinkIcon,
-    tone: 'iris',
-  },
   private: {
     label: 'Private',
     blurb: 'Only subjects listed in the runtime’s permissions may chat.',
     icon: Lock,
     tone: 'neutral',
   },
-  unexposed: {
-    label: 'Unexposed',
+  local_only: {
+    label: 'Local only',
     blurb: 'Not reachable through the hub at all.',
     icon: EyeOff,
     tone: 'danger',
@@ -155,13 +148,13 @@ function DashboardPage() {
             title="No pekos announced yet"
             body={
               <>
-                Start a runtime, create a peko, then set its exposure. It appears here as soon as the
-                runtime announces itself over the tunnel.
+                Start a runtime, create a peko, then register it with the hub. It appears here after
+                registration succeeds.
               </>
             }
             action={
               <code className="code-block text-xs">
-                {'exposure = "public"  # in the peko’s principal.toml'}
+                {'peko register <name> --public'}
               </code>
             }
           />
@@ -211,7 +204,7 @@ function InstanceCard({
   const shareUrl = ownerHandle
     ? `${window.location.origin}/peko/${ownerHandle}/${instance.name}`
     : null;
-  const live = instance.exposure === 'public' || instance.exposure === 'unlisted';
+  const live = instance.exposure === 'public';
 
   return (
     <article className="card card-hover flex flex-col p-5">

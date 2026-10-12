@@ -635,6 +635,7 @@ function canonicalPrincipalPopPayload(
 function makeAnnounce(overrides: Partial<InstanceAnnouncePayload> = {}): InstanceAnnouncePayload {
   return {
     id: "inst-pop-1",
+    localId: "prin_test", identityKey: "test-key", registrationId: "registration-test",
     type: "principal",
     name: "helper",
     status: "online",
@@ -657,6 +658,7 @@ describe("TunnelManager instance_announce principalPop (ADR-058 D4)", () => {
     vi.spyOn(manager as any, "resolveRuntimeOwner").mockResolvedValue(
       "owner-user-id",
     );
+    vi.spyOn(instanceService, "registerIdentity").mockResolvedValue("12345678-1234-4234-8234-123456789abc");
     const upsertSpy = vi
       .spyOn(instanceService, "upsertFromAnnounce")
       .mockResolvedValue(null as any);
@@ -751,7 +753,7 @@ describe("TunnelManager instance_announce principalPop (ADR-058 D4)", () => {
     upsertSpy.mockRestore();
   });
 
-  it("accepts a legacy (non-did:key) principalDid as unverified", async () => {
+  it("rejects retired non-signing principal identities", async () => {
     const runtime = makeRuntimeIdentity();
     const { socket, upsertSpy } = await setup(runtime);
 
@@ -761,15 +763,11 @@ describe("TunnelManager instance_announce principalPop (ADR-058 D4)", () => {
     });
     await settle();
 
-    expect(upsertSpy).toHaveBeenCalledTimes(1);
-    expect(upsertSpy.mock.calls[0][0]).toMatchObject({
-      principalDid: "did:peko:principal:abc123",
-      principalDidVerified: false,
-    });
+    expect(upsertSpy).not.toHaveBeenCalled();
     upsertSpy.mockRestore();
   });
 
-  it("leaves the DID and verified flag alone when the announce omits principalDid", async () => {
+  it("rejects registration without a signing identity", async () => {
     const runtime = makeRuntimeIdentity();
     const { socket, upsertSpy } = await setup(runtime);
 
@@ -779,10 +777,7 @@ describe("TunnelManager instance_announce principalPop (ADR-058 D4)", () => {
     });
     await settle();
 
-    expect(upsertSpy).toHaveBeenCalledTimes(1);
-    const input = upsertSpy.mock.calls[0][0];
-    expect(input.principalDid).toBeUndefined();
-    expect(input.principalDidVerified).toBeUndefined();
+    expect(upsertSpy).not.toHaveBeenCalled();
     upsertSpy.mockRestore();
   });
 });

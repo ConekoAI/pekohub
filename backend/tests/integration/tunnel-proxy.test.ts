@@ -4,6 +4,7 @@ import { createTestDb, resetTables } from "../fixtures/db.js";
 import { createUser, createInstance } from "../fixtures/factories.js";
 import { authHeaders } from "../fixtures/auth.js";
 import {
+  principalAnnouncement,
   MockWebSocket,
   completeHandshake,
   seedRuntime,
@@ -375,7 +376,7 @@ describe("Tunnel Proxy Integration", () => {
       const instanceId = "a1b2c3d4-e5f6-47a8-b9c0-d1e2f3a4b5c6";
       socket.triggerMessage({
         type: "instance_announce",
-        payload: {
+        payload: principalAnnouncement(did, undefined, {
           id: instanceId,
           type: "principal",
           name: "announced-agent",
@@ -383,7 +384,7 @@ describe("Tunnel Proxy Integration", () => {
           exposure: "public",
           runtimeDisplayName: "Test Runtime",
           capabilities: ["chat"],
-        },
+        }),
       });
 
       await new Promise((r) => setTimeout(r, 200));

@@ -95,6 +95,7 @@ describe("Instance API", () => {
       const instance = await createInstance(testDb.client, {
         ownerSubject: { kind: "user", id: String(user.id) },
         name: "my-principal",
+        exposure: "private",
       });
 
       const response = await app.inject({
@@ -270,7 +271,7 @@ describe("Instance API", () => {
           type: "principal",
           name: "new-agent",
           runtime_id: "runtime-abc",
-          exposure: "public",
+          exposure: "local_only",
         },
       });
 
@@ -279,7 +280,7 @@ describe("Instance API", () => {
       expect(body.name).toBe("new-agent");
       expect(body.type).toBe("principal");
       expect(body.runtimeId).toBe("runtime-abc");
-      expect(body.exposure).toBe("public");
+      expect(body.exposure).toBe("local_only");
     });
 
     it("should return 401 when not authenticated", async () => {
@@ -305,6 +306,7 @@ describe("Instance API", () => {
       const instance = await createInstance(testDb.client, {
         ownerSubject: { kind: "user", id: String(user.id) },
         name: "old-name",
+        exposure: "private",
       });
 
       const response = await app.inject({
@@ -327,6 +329,7 @@ describe("Instance API", () => {
       const headers = await authHeaders(other);
       const instance = await createInstance(testDb.client, {
         name: "my-principal",
+        exposure: "private",
       });
 
       const response = await app.inject({
@@ -373,6 +376,7 @@ describe("Instance API", () => {
       const headers = await authHeaders(other);
       const instance = await createInstance(testDb.client, {
         name: "my-principal",
+        exposure: "private",
       });
 
       const response = await app.inject({
@@ -519,6 +523,7 @@ describe("Instance API", () => {
       const instance = await createInstance(testDb.client, {
         ownerSubject: { kind: "user", id: String(user.id) },
         name: "my-principal",
+        exposure: "private",
       });
 
       const response = await app.inject({
@@ -553,26 +558,26 @@ describe("Instance API", () => {
       expect(body.instance.publishedAt).toBeDefined();
     });
 
-    it("should reject invalid exposure transition", async () => {
+    it("should reject retired visibility states", async () => {
       const app = await buildTestApp({ testDb });
       const user = await createUser(testDb.client, { namespace: "alice" });
       const headers = await authHeaders(user);
       const instance = await createInstance(testDb.client, {
         ownerSubject: { kind: "user", id: String(user.id) },
         name: "my-principal",
-        exposure: "public",
+        exposure: "private",
       });
 
       const response = await app.inject({
         method: "PATCH",
         url: `/v1/instances/${instance.id}/exposure`,
         headers,
-        payload: { exposure: "public" },
+        payload: { exposure: "unlisted" },
       });
 
       expect(response.statusCode).toBe(400);
       const body = JSON.parse(response.payload);
-      expect(body.error).toContain("Invalid exposure transition");
+      expect(body.error).toBe("Invalid request body");
     });
 
     it("should return 403 for non-owner", async () => {
@@ -582,6 +587,7 @@ describe("Instance API", () => {
       const headers = await authHeaders(other);
       const instance = await createInstance(testDb.client, {
         name: "my-principal",
+        exposure: "private",
       });
 
       const response = await app.inject({
@@ -724,7 +730,7 @@ describe("Instance API", () => {
       await createInstance(testDb.client, {
         ownerSubject: { kind: "user", id: String(user.id) },
         name: "unlisted-principal",
-        exposure: "unlisted",
+        exposure: "public",
         publicName: "Alice Private Share",
         description: "Share-via-URL",
         status: "online",
@@ -747,7 +753,7 @@ describe("Instance API", () => {
       await createInstance(testDb.client, {
         ownerSubject: { kind: "user", id: String(user.id) },
         name: "hidden-principal",
-        exposure: "unexposed",
+        exposure: "local_only",
       });
 
       const response = await app.inject({

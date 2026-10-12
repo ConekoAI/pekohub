@@ -39,7 +39,7 @@ describe("Agent directory API", () => {
 
   const REAL_DID = "did:peko:principal:abc123def456";
 
-  describe("GET /v1/principals/by-did/:did", () => {
+  describe("GET /v1/principals/by-hub-id/:did", () => {
     it("returns 200 with the resolution on a hit (owner is the caller)", async () => {
       const app = await buildTestApp({ testDb });
       const owner = await createUser(testDb.client, { namespace: "alice" });
@@ -54,7 +54,7 @@ describe("Agent directory API", () => {
 
       const response = await app.inject({
         method: "GET",
-        url: `/v1/principals/by-did/${encodeURIComponent(REAL_DID)}`,
+        url: `/v1/principals/by-hub-id/${instance.hubId}`,
         headers,
       });
 
@@ -63,6 +63,10 @@ describe("Agent directory API", () => {
       expect(body).toEqual({
         runtimeId: instance.runtimeId,
         instanceId: instance.id,
+        name: instance.name,
+        hubId: instance.hubId,
+        localId: instance.localId,
+        identityKey: REAL_DID,
         principalDid: REAL_DID,
         ownerSubject: { kind: "user", id: String(owner.id) },
         exposure: "private",
@@ -76,21 +80,21 @@ describe("Agent directory API", () => {
 
       const response = await app.inject({
         method: "GET",
-        url: `/v1/principals/by-did/${encodeURIComponent(REAL_DID)}`,
+        url: `/v1/principals/by-hub-id/${"12345678-1234-4234-8234-123456789abc"}`,
         headers,
       });
 
       expect(response.statusCode).toBe(404);
     });
 
-    it("returns 403 on a denied caller (existence vs permission is preserved)", async () => {
+    it("routes a registered private actor for another authenticated account", async () => {
       const app = await buildTestApp({ testDb });
       const owner = await createUser(testDb.client, { namespace: "alice" });
       const other = await createUser(testDb.client, { namespace: "bob" });
       const otherHeaders = await authHeaders(other);
 
-      // A private agent owned by alice — bob must not see it.
-      await createInstance(testDb.client, {
+      // Hub administration ownership is separate from runtime chat permissions.
+      const instance = await createInstance(testDb.client, {
         ownerSubject: { kind: "user", id: String(owner.id) },
         name: "secret",
         exposure: "private",
@@ -99,11 +103,11 @@ describe("Agent directory API", () => {
 
       const response = await app.inject({
         method: "GET",
-        url: `/v1/principals/by-did/${encodeURIComponent(REAL_DID)}`,
+        url: `/v1/principals/by-hub-id/${instance.hubId}`,
         headers: otherHeaders,
       });
 
-      expect(response.statusCode).toBe(403);
+      expect(response.statusCode).toBe(200);
     });
 
     it("returns 200 on a public agent for any caller (exposure short-circuits)", async () => {
@@ -111,7 +115,7 @@ describe("Agent directory API", () => {
       const owner = await createUser(testDb.client, { namespace: "alice" });
       const headers = await authHeaders(owner);
 
-      await createInstance(testDb.client, {
+      const instance = await createInstance(testDb.client, {
         ownerSubject: { kind: "user", id: String(owner.id) },
         name: "public-principal",
         exposure: "public",
@@ -120,7 +124,7 @@ describe("Agent directory API", () => {
 
       const response = await app.inject({
         method: "GET",
-        url: `/v1/principals/by-did/${encodeURIComponent(REAL_DID)}`,
+        url: `/v1/principals/by-hub-id/${instance.hubId}`,
         headers,
       });
 
@@ -134,7 +138,7 @@ describe("Agent directory API", () => {
       const app = await buildTestApp({ testDb });
       const owner = await createUser(testDb.client, { namespace: "alice" });
 
-      await createInstance(testDb.client, {
+      const instance = await createInstance(testDb.client, {
         ownerSubject: { kind: "user", id: String(owner.id) },
         name: "public-principal",
         exposure: "public",
@@ -143,7 +147,7 @@ describe("Agent directory API", () => {
 
       const response = await app.inject({
         method: "GET",
-        url: `/v1/principals/by-did/${encodeURIComponent(REAL_DID)}`,
+        url: `/v1/principals/by-hub-id/${instance.hubId}`,
       });
 
       expect(response.statusCode).toBe(200);
@@ -156,7 +160,7 @@ describe("Agent directory API", () => {
 
       const response = await app.inject({
         method: "GET",
-        url: "/v1/principals/by-did/not-a-did",
+        url: "/v1/principals/by-hub-id/not-a-did",
         headers,
       });
 
@@ -189,6 +193,10 @@ describe("Agent directory API", () => {
       expect(body).toEqual({
         runtimeId: instance.runtimeId,
         instanceId: instance.id,
+        name: instance.name,
+        hubId: instance.hubId,
+        localId: instance.localId,
+        identityKey: REAL_DID,
         principalDid: REAL_DID,
         ownerSubject: { kind: "user", id: String(owner.id) },
         exposure: "private",
@@ -215,7 +223,7 @@ describe("Agent directory API", () => {
       const headers = await authHeaders(owner);
 
       // Owner exists, but no instance with that name.
-      await createInstance(testDb.client, {
+      const instance = await createInstance(testDb.client, {
         ownerSubject: { kind: "user", id: String(owner.id) },
         name: "different-name",
       });
@@ -229,13 +237,13 @@ describe("Agent directory API", () => {
       expect(response.statusCode).toBe(404);
     });
 
-    it("returns 403 on a denied caller", async () => {
+    it("routes private handles for authenticated accounts with runtime grants", async () => {
       const app = await buildTestApp({ testDb });
       const owner = await createUser(testDb.client, { namespace: "alice" });
       const other = await createUser(testDb.client, { namespace: "bob" });
       const otherHeaders = await authHeaders(other);
 
-      await createInstance(testDb.client, {
+      const instance = await createInstance(testDb.client, {
         ownerSubject: { kind: "user", id: String(owner.id) },
         name: "secret",
         exposure: "private",
@@ -247,7 +255,7 @@ describe("Agent directory API", () => {
         headers: otherHeaders,
       });
 
-      expect(response.statusCode).toBe(403);
+      expect(response.statusCode).toBe(200);
     });
   });
 });

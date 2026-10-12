@@ -233,6 +233,14 @@ export const pullStats = pgTable(
 // Instances (Remote Instance Management)
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Stable Hub actor identity, independent of runtime deployments.
+export const hubPrincipals = pgTable("hub_principals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  signingDid: varchar("signing_did", { length: 512 }).notNull().unique(),
+  identityKey: varchar("identity_key", { length: 512 }).notNull().unique(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const instances = pgTable(
   "instances",
   {
@@ -252,7 +260,7 @@ export const instances = pgTable(
     status: varchar("status", { length: 20 }).notNull().default("offline"),
     exposure: varchar("exposure", { length: 20 })
       .notNull()
-      .default("unexposed"),
+      .default("local_only"),
     // Post-H4: the typed `allowed_principals` JSONB column is gone.
     // The runtime's `PrincipalConfig.permissions` is the canonical
     // ACL surface (R4); pekohub only knows public vs private exposure.
@@ -289,6 +297,8 @@ export const instances = pgTable(
     // `did:peko:principal:<keyhash>` post-#82. Post-ADR-056-D7 the
     // column is indexed but NOT unique — see the index note below.
     principalDid: varchar("principal_did", { length: 512 }),
+    hubId: uuid("hub_id").references(() => hubPrincipals.id),
+    localId: varchar("local_id", { length: 255 }),
     // ADR-058 D4: true only when the announcing runtime proved
     // possession of the principal DID's key via `principalPop`
     // (did:key principals). Legacy (non-did:key) ids and all rows

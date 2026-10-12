@@ -16,6 +16,7 @@ describe('Subject', () => {
     const cases: Array<[string, Subject]> = [
       ['user:alice', { kind: 'user', id: 'alice' }],
       ['principal:helper', { kind: 'principal', id: 'helper' }],
+      ['visitor:anonymous', { kind: 'visitor', id: 'anonymous' }],
       ['public', { kind: 'public' }],
     ];
     for (const [wire, parsed] of cases) {
@@ -70,6 +71,7 @@ describe('Subject', () => {
     it('true for user and principal (they carry per-session identity)', () => {
       expect(isSessionPeer({ kind: 'user', id: 'alice' })).toBe(true);
       expect(isSessionPeer({ kind: 'principal', id: 'helper' })).toBe(true);
+      expect(isSessionPeer({ kind: 'visitor', id: 'anonymous' })).toBe(true);
     });
     it('false for public (no identity)', () => {
       expect(isSessionPeer({ kind: 'public' })).toBe(false);

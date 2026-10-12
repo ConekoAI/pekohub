@@ -9,11 +9,31 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
  * pekohub process is required.
  */
 
-import { api, setAuthToken } from '~/lib/api';
+import { api, clearAuthToken, setAuthToken } from '~/lib/api';
 
 const TOKEN = 'test-token-abc';
 
 describe('dashboard api helpers', () => {
+  it('public chat uses the signed-in identity and keeps cookies for anonymous visits', async () => {
+    await api.publicChat('alice', 'helper', { message: 'hi' });
+    const call = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(call[1].headers.Authorization).toBe(`Bearer ${TOKEN}`);
+    expect(call[1].credentials).toBe('include');
+    clearAuthToken();
+    await api.publicChat('alice', 'helper', { message: 'anonymous' });
+    expect((fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[1][1].headers.Authorization).toBeUndefined();
+  });
+
+  it('refreshes an expired account before retrying public chat', async () => {
+    const mock = vi.fn()
+      .mockResolvedValueOnce({ status: 401 })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ token: 'fresh-account-token' }) })
+      .mockResolvedValueOnce({ ok: true, status: 200 });
+    vi.stubGlobal('fetch', mock);
+    expect((await api.publicChat('alice', 'helper', { message: 'hi' })).status).toBe(200);
+    expect(mock.mock.calls[1][0]).toBe('/v1/auth/refresh');
+    expect(mock.mock.calls[2][1].headers.Authorization).toBe('Bearer fresh-account-token');
+  });
   beforeEach(() => {
     setAuthToken(TOKEN);
     vi.stubGlobal(

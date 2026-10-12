@@ -13,7 +13,7 @@ import type { TestDb } from "../fixtures/db.js";
  * `/v1/public/pekos/*` and `/v1/me/accessible-pekos` paths serve the
  * same behavior (visitor cookie, liveInstance shape, ToS gate).
  *
- * Machine/wire surfaces stay "principal": `/v1/principals/by-did`
+ * Machine/wire surfaces stay "principal": `/v1/principals/by-hub-id`
  * must remain byte-stable (the runtime's cross-runtime
  * `principal_send` resolver consumes it).
  */
@@ -89,6 +89,8 @@ describe("ADR-059 public peko rename", () => {
     expect(body).toEqual({
       liveInstance: {
         id: instance.id,
+        hubId: instance.hubId,
+        localId: instance.localId,
         publicName: "Greeter",
         description: "Says hi",
         owner: {
@@ -151,7 +153,7 @@ describe("ADR-059 public peko rename", () => {
     });
   });
 
-  it("keeps /v1/principals/by-did byte-stable (machine wire surface)", async () => {
+  it("returns both actor IDs and the signing credential separately", async () => {
     const app = await buildTestApp({ testDb });
     const user = await createUser(testDb.client, { namespace: "alice" });
     const headers = await authHeaders(user);
@@ -167,7 +169,7 @@ describe("ADR-059 public peko rename", () => {
 
     const res = await app.inject({
       method: "GET",
-      url: `/v1/principals/by-did/${encodeURIComponent(did)}`,
+      url: `/v1/principals/by-hub-id/${instance.hubId}`,
       headers,
     });
     expect(res.statusCode).toBe(200);
@@ -177,6 +179,10 @@ describe("ADR-059 public peko rename", () => {
       runtimeId: "did:key:zResolverRuntime",
       instanceId: instance.id,
       principalDid: did,
+      name: instance.name,
+      hubId: instance.hubId,
+      localId: instance.localId,
+      identityKey: did,
       ownerSubject: { kind: "user", id: String(user.id) },
       exposure: "public",
     });

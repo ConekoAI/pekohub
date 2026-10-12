@@ -22,7 +22,7 @@ import { verifyDidKeySignature, verifyDidKeyJws, TunnelAuthError } from "./tunne
 import { instanceService, type InstanceStatus } from "./instances.js";
 import { metrics, CounterName } from "./metrics.js";
 import { db } from "../db/index.js";
-import { runtimes, instances } from "../db/schema.js";
+import { runtimes, instances, hubPrincipals } from "../db/schema.js";
 import { eq, inArray, and } from "drizzle-orm";
 
 const HELLO_TIMEOUT_MS = 10_000;
@@ -543,6 +543,8 @@ export class TunnelManager {
         break;
       }
 
+      case "principal_registration_rejected":
+      case "principal_registered": return; // Hub-to-runtime receipt; never accepted from a runtime.
       default: {
         // Exhaustiveness fallback: any unhandled runtime-originated
         // type lands here. If the union grows, this branch is the
@@ -739,6 +741,10 @@ export class TunnelManager {
     runtimeId: string,
     payload: InstanceAnnouncePayload,
   ): Promise<void> {
+    const reject = (message: string) => {
+      const connection=this.connections.get(runtimeId);
+      if (payload.registrationId && connection) this.sendMessage(connection.socket, {type: "principal_registration_rejected", registrationId: payload.registrationId, message});
+    };
     // The handshake allowlist (beginHandshake) guarantees a row
     // exists for this DID by the time we reach this code path.
     // resolveRuntimeOwner is a single indexed PK lookup so we keep
@@ -750,39 +756,38 @@ export class TunnelManager {
         { runtimeId, instanceId: payload.id },
         "Allowlisted runtime missing from runtimes table; skipping instance upsert",
       );
+      reject("Runtime owner is unavailable");
       return;
     }
 
-    // ADR-058 D4: a did:key `principalDid` is only stored once the
-    // principal proves key possession via `principalPop`. A legacy
-    // (non-did:key) id is accepted but recorded as UNVERIFIED. When
-    // the announce omits `principalDid` entirely, leave both the DID
-    // and the verified flag alone (`undefined` = don't touch).
-    let principalDidVerified: boolean | undefined;
-    if (payload.principalDid !== undefined && payload.principalDid !== null) {
-      if (payload.principalDid.startsWith("did:key:")) {
-        if (!(await this.verifyPrincipalPop(runtimeId, payload))) {
-          // Reject the announce: storing a principalDid the announcer
-          // cannot prove ownership of is directory poisoning.
-          return;
-        }
-        principalDidVerified = true;
-      } else {
-        principalDidVerified = false;
-        this.fastify.log.info(
-          { runtimeId, instanceId: payload.id, principalDid: payload.principalDid },
-          "Announce stored with unverified (legacy, non-did:key) principalDid",
-        );
-      }
+    if (payload.exposure === "local_only" || !payload.localId || !payload.identityKey || !payload.principalDid?.startsWith("did:key:")) {
+      reject("Registration requires local ID, immutable identity key, signing DID, and private or public visibility");
+      return;
     }
-
+    if (!(await this.verifyPrincipalPop(runtimeId, payload))) {
+      reject("Principal signing proof is invalid");
+      return;
+    }
+    if (!payload.registrationId) {
+      const known = await db.query.hubPrincipals.findFirst({where: eq(hubPrincipals.signingDid, payload.principalDid)});
+      if (!known) { reject("Initial registration requires an explicit request ID"); return; }
+    }
+    let hubId: string;
+    try {
+      hubId = await instanceService.registerIdentity(payload.principalDid, payload.identityKey);
+    } catch (err) {
+      reject("Signing identity and immutable actor key belong to different principals");
+      this.fastify.log.warn({ err, runtimeId }, "Principal identity registration rejected");
+      return;
+    }
+    const principalDidVerified = true;
     // ADR-056 D7: at most one publicly exposed instance per
     // principal DID network-wide. A runtime announcing a public /
     // unlisted instance for a DID that ANOTHER instance already
     // serves publicly is rejected — the same rule the exposure PATCH
     // enforces on the HTTP side.
     if (
-      (payload.exposure === "public" || payload.exposure === "unlisted") &&
+      (payload.exposure === "public") &&
       payload.principalDid
     ) {
       const conflict = await instanceService.findPublicExposureConflict(
@@ -794,12 +799,15 @@ export class TunnelManager {
           {
             runtimeId,
             instanceId: payload.id,
-            principalDid: payload.principalDid,
+            hubId,
+        localId: payload.localId,
+        principalDid: payload.principalDid,
             conflictingInstanceId: conflict.id,
             conflictingInstanceName: conflict.name,
           },
           "Announce rejected: another instance is already publicly exposed for this principal DID (ADR-056 D7)",
         );
+        reject("Another runtime already serves this principal publicly");
         return;
       }
     }
@@ -834,8 +842,15 @@ export class TunnelManager {
         // `principalPop` on this announce. `undefined` when the
         // announce carries no DID — same leave-alone semantics.
         principalDidVerified,
+        hubId,
+        localId: payload.localId,
       });
+      if (hubId && payload.localId && payload.principalDid) {
+        const connection = this.connections.get(runtimeId);
+        if (connection) this.sendMessage(connection.socket, { type: "principal_registered", registrationId: payload.registrationId, localId: payload.localId, hubId, signingDid: payload.principalDid });
+      }
     } catch (err) {
+      reject("Registration could not be persisted");
       this.fastify.log.warn(
         { err, runtimeId, instanceId: payload.id },
         "Failed to upsert instance from announce",

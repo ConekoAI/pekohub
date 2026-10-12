@@ -97,7 +97,7 @@ const CreateBodySchema = z.object({
   runtime_display_name: z.string().max(255).optional(),
   bundle_ref: z.string().max(255).optional(),
   status: z.enum(["online", "offline", "busy", "error"]).optional(),
-  exposure: z.enum(["private", "public", "unexposed", "unlisted"]).optional(),
+  exposure: z.enum(["private", "public", "local_only"]).optional(),
   // Post-H4: allowedPrincipals request field is gone. The runtime
   // owns the ACL surface (R4); pekohub only knows the public-vs-
   // private exposure switch.
@@ -129,7 +129,7 @@ const UpdateBodySchema = z.object({
   name: z.string().min(1).max(255).optional(),
   runtime_display_name: z.string().max(255).optional(),
   status: z.enum(["online", "offline", "busy", "error"]).optional(),
-  exposure: z.enum(["private", "public", "unexposed", "unlisted"]).optional(),
+  exposure: z.enum(["private", "public", "local_only"]).optional(),
   // Post-H4: allowedPrincipals update field is gone.
   metadata: z.record(z.unknown()).optional(),
 
@@ -155,7 +155,7 @@ const UpdateBodySchema = z.object({
 });
 
 const UpdateExposureBodySchema = z.object({
-  exposure: z.enum(["private", "public", "unexposed", "unlisted"]),
+  exposure: z.enum(["private", "public", "local_only"]),
   // Post-H4: allowedPrincipals removed from the exposure PATCH
   // request. The runtime owns the ACL surface (R4).
   public_profile: z
@@ -250,7 +250,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     // non-null caller; for public, anonymous is fine.
     const caller = await extractCallerSubject(fastify, request);
     if (
-      (instance.exposure === "private" || instance.exposure === "unexposed") &&
+      (instance.exposure === "private" || instance.exposure === "local_only") &&
       caller === null
     ) {
       if (instance.exposure === "private") {
@@ -293,6 +293,9 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           });
       }
 
+      if (body.data.exposure && body.data.exposure !== "local_only") {
+        return reply.status(400).send({error: "Register the principal from its runtime before enabling Hub access"});
+      }
       const instance = await instanceService.create({
         id: body.data.id,
         type: body.data.type,
@@ -372,6 +375,9 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           });
       }
 
+      if (body.data.exposure && body.data.exposure !== "local_only" && !instance.hubId) {
+        return reply.status(400).send({error: "Register the principal from its runtime before enabling Hub access"});
+      }
       const updated = await instanceService.update(id, {
         name: body.data.name,
         runtimeDisplayName: body.data.runtime_display_name,
@@ -456,27 +462,15 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       const { exposure, public_profile } = body.data;
       const from = instance.exposure;
 
-      // Validate transition
-      const validTransitions: Record<string, string[]> = {
-        unexposed: ["private", "public", "unlisted"],
-        private: ["public", "unexposed", "unlisted"],
-        public: ["private", "unexposed", "unlisted"],
-        unlisted: ["private", "unexposed", "public"],
-      };
-      if (!validTransitions[from]?.includes(exposure)) {
-        return reply
-          .status(400)
-          .send({
-            error: `Invalid exposure transition: ${from} -> ${exposure}`,
-          });
+      if (exposure !== "local_only" && !instance.hubId) {
+        return reply.status(400).send({ error: "Register the principal from its runtime before enabling Hub access" });
       }
-
       // ADR-056 D7: at most one publicly exposed instance per
       // principal DID network-wide. Only enforced when the instance
       // carries a DID — DID-less rows have no network identity to
       // collide on.
       if (
-        (exposure === "public" || exposure === "unlisted") &&
+        (exposure === "public") &&
         instance.principalDid
       ) {
         const conflict = await instanceService.findPublicExposureConflict(
@@ -666,13 +660,13 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     const caller = await extractCallerSubject(fastify, request);
     if (
       (instance.exposure === "private" ||
-        instance.exposure === "unexposed") &&
+        instance.exposure === "local_only") &&
       caller === null
     ) {
       return reply.status(401).send({ error: "Authentication required" });
     }
     if (!(await instanceService.canChat(instance, caller))) {
-      if (instance.status === "offline" || instance.exposure === "unexposed") {
+      if (instance.status === "offline" || instance.exposure === "local_only") {
         return reply.status(503).send({ error: "Service Unavailable" });
       }
       return reply.status(403).send({ error: "Forbidden" });
@@ -687,7 +681,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
 
     // ToS check for public-facing instances
     if (
-      (instance.exposure === "public" || instance.exposure === "unlisted") &&
+      (instance.exposure === "public") &&
       instance.tosRequired &&
       !body.data.tos_acknowledged
     ) {
@@ -723,13 +717,13 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
 
     const caller = await extractCallerSubject(fastify, request);
     if (
-      (instance.exposure === "private" || instance.exposure === "unexposed") &&
+      (instance.exposure === "private" || instance.exposure === "local_only") &&
       caller === null
     ) {
       return reply.status(401).send({ error: "Authentication required" });
     }
     if (!(await instanceService.canChat(instance, caller))) {
-      if (instance.status === "offline" || instance.exposure === "unexposed") {
+      if (instance.status === "offline" || instance.exposure === "local_only") {
         return reply.status(503).send({ error: "Service Unavailable" });
       }
       return reply.status(403).send({ error: "Forbidden" });

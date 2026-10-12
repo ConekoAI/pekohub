@@ -3,7 +3,7 @@ import { db } from "../../db/index.js";
 import { instances, users } from "../../db/schema.js";
 import { eq, and, sql, desc, inArray } from "drizzle-orm";
 import { z } from "zod";
-import type { InstanceStatus } from "../../services/instances.js";
+import { instanceService, AmbiguousPrincipalReference, type InstanceStatus } from "../../services/instances.js";
 import { readOrSetVisitor } from "../../services/visitor-cookie.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -44,23 +44,14 @@ export default async function publicPekoRoutes(fastify: FastifyInstance) {
       return reply.status(404).send({ error: "Owner not found" });
     }
 
-    // Post-H1: typed `owner_subject` JSONB. The runtime emits
-    // `{kind:"user",id:"<user.id>"}` on `instance_announce`, so we
-    // match exact JSONB equality on the user-owned subset.
-    const ownerSubjectLiteral = JSON.stringify({
-      kind: "user",
-      id: String(ownerRow.id),
-    });
-    const instance = await db.query.instances.findFirst({
-      where: and(
-        sql`${instances.ownerSubject} = ${ownerSubjectLiteral}::jsonb`,
-        eq(instances.name, pekoName),
-        // Public URL serves both `public` and `unlisted`. Discovery
-        // (separate endpoint below) still fences strictly to public
-        // so unlisted doesn't appear in search.
-        inArray(instances.exposure, ["public", "unlisted"]),
-      ),
-    });
+    // Use the same owner/name resolver as directory lookup and chat.
+    let instance;
+    try { instance = await instanceService.getByHandle(owner, pekoName); }
+    catch (error) {
+      if (error instanceof AmbiguousPrincipalReference) return reply.status(409).send({ error: error.message });
+      throw error;
+    }
+    if (instance && instance.exposure !== "public") instance = null;
 
     if (!instance) {
       return reply.status(404).send({ error: "Peko not found" });
@@ -69,6 +60,8 @@ export default async function publicPekoRoutes(fastify: FastifyInstance) {
     return {
       liveInstance: {
         id: instance.id,
+        localId: instance.localId,
+        hubId: instance.hubId,
         publicName: instance.publicName ?? instance.name,
         description: instance.description,
         owner: {
@@ -119,17 +112,13 @@ export default async function publicPekoRoutes(fastify: FastifyInstance) {
         return reply.status(404).send({ error: "Owner not found" });
       }
 
-      const instance = await db.query.instances.findFirst({
-        where: and(
-          // Post-H1: typed `owner_subject` JSONB exact match — see
-          // the same shape above in `/public/pekos/:owner/:name`.
-          sql`${instances.ownerSubject} = ${JSON.stringify({ kind: "user", id: String(ownerRow.id) })}::jsonb`,
-          eq(instances.name, pekoName),
-          // Public URL serves both `public` and `unlisted`. See the
-          // matching filter in the GET endpoint above.
-          inArray(instances.exposure, ["public", "unlisted"]),
-        ),
-      });
+      let instance;
+      try { instance = await instanceService.getByHandle(owner, pekoName); }
+      catch (error) {
+        if (error instanceof AmbiguousPrincipalReference) return reply.status(409).send({ error: error.message });
+        throw error;
+      }
+      if (instance && instance.exposure !== "public") instance = null;
 
       if (!instance) {
         return reply.status(404).send({ error: "Peko not found" });
@@ -167,7 +156,18 @@ export default async function publicPekoRoutes(fastify: FastifyInstance) {
       // rejects the proxied request with 403 — the historical
       // blocker that prevented anonymous public chat from ever
       // reaching the principal.
-      const visitorId = readOrSetVisitor(request, reply, fastify.config.JWT_SECRET);
+      let caller: { kind: "user"; id: string } | null = null;
+      if (request.headers.authorization) {
+        try {
+          const user = await fastify.authenticate(request);
+          caller = { kind: "user", id: user.id };
+        } catch {
+          return reply.status(401).send({ error: "Invalid authorization" });
+        }
+      }
+      const visitorId = caller === null
+        ? readOrSetVisitor(request, reply, fastify.config.JWT_SECRET)
+        : null;
 
       // Proxy through tunnel as an SSE stream
       await fastify.tunnelRouter.proxyStream(
@@ -177,7 +177,7 @@ export default async function publicPekoRoutes(fastify: FastifyInstance) {
         body.data,
         { "content-type": "application/json" },
         reply,
-        null, // public endpoint — no authenticated user
+        caller, // authenticated account or explicit anonymous visitor
         visitorId,
         { daily: instance.dailyQuota, weekly: instance.weeklyQuota },
       );
