@@ -1,5 +1,5 @@
 import { db } from "../db/index.js";
-import { instances, runtimes, users } from "../db/schema.js";
+import { instances, runtimes, users, hubPrincipals } from "../db/schema.js";
 import { eq, and, sql, desc, count, gte, lt, ne, inArray } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import {
@@ -88,10 +88,10 @@ export async function subjectCanAccess(
 export type InstanceType = "principal";
 export type InstanceStatus = "online" | "offline" | "busy" | "error";
 export type InstanceExposure =
-  | "unexposed"
+  | "local_only"
   | "private"
   | "public"
-  | "unlisted";
+  | "public";
 
 export type PublicCategory =
   | "productivity"
@@ -145,11 +145,13 @@ export interface InstanceRecord {
   // Transport preference for cross-runtime principal_send.
 
   // ADR-041: per-Principal DID, set by the runtime on
-  // `instance_announce`. The by-did resolver
-  // (`GET /v1/principals/by-did/:did`) hits the unique index on this
-  // column. Nullable for pre-#82 peers; the by-did endpoint 404s
+  // `instance_announce`. The by-hub-id resolver
+  // (`GET /v1/principals/by-hub-id/:did`) hits the unique index on this
+  // column. Nullable for pre-#82 peers; the by-hub-id endpoint 404s
   // when null.
   principalDid: string | null;
+  hubId: string | null;
+  localId: string | null;
   // ADR-058 D4: whether `principalDid` was proven via `principalPop`
   // on announce (did:key principals). False for legacy ids and rows
   // that predate the column.
@@ -184,6 +186,8 @@ export interface CreateInstanceInput {
 
   // ADR-041: per-Principal DID, set on `instance_announce`. Unique
   // when present.
+  hubId?: string | null;
+  localId?: string | null;
   principalDid?: string | null;
   // ADR-058 D4: PoP verification result for `principalDid`. Only
   // meaningful when `principalDid` is set on the same call; the
@@ -220,6 +224,8 @@ export interface UpdateInstanceInput {
   // `principal_send`
   // resolver ([peko-runtime#29]). Setting to `null` clears the column
   // (e.g. if a runtime downgrades to pre-#34).
+  hubId?: string | null;
+  localId?: string | null;
   principalDid?: string | null;
   // ADR-058 D4: PoP verification result paired with `principalDid`.
   // `undefined` leaves the existing flag alone (same leave-alone
@@ -242,10 +248,25 @@ export interface ListInstancesResult {
   total: number;
 }
 
+export class AmbiguousPrincipalReference extends Error {
+  constructor() { super("Principal handle is ambiguous; use its DID"); }
+}
+
+/** Route to the exposed host before private migration replicas. No implicit DB order. */
+function resolutionOrder() {
+  return [
+    sql`CASE WHEN ${instances.exposure} IN ('public', 'public') THEN 0 ELSE 1 END`,
+    desc(instances.principalDidVerified),
+    sql`${instances.lastSeenAt} DESC NULLS LAST`,
+    desc(instances.createdAt),
+    desc(instances.id),
+  ];
+}
+
 // ── Principal directory resolution (ADR-041, issue #14) ────────────────────
 
 /**
- * The payload returned by `GET /v1/principals/by-did/:did` and
+ * The payload returned by `GET /v1/principals/by-hub-id/:did` and
  * `GET /v1/principals/by-handle/:owner/:principal_name` on a hit. This is the
  * minimum the runtime's cross-runtime `principal_send` needs to
  * dispatch: where to send, who the principal is, and what the
@@ -253,9 +274,13 @@ export interface ListInstancesResult {
  * decide whether to even attempt a tunnel open).
  */
 export interface PrincipalTargetResolution {
+  name: string;
   runtimeId: string;
   instanceId: string;
   principalDid: string;
+  hubId: string;
+  localId: string;
+  identityKey: string;
   ownerSubject: Subject;
   exposure: InstanceExposure;
 }
@@ -273,7 +298,7 @@ export interface PrincipalTargetResolution {
  *                distinction is preserved for legitimate callers per
  *                the issue's acceptance criteria.
  */
-export type PrincipalTargetResolutionStatus = "hit" | "miss" | "denied";
+export type PrincipalTargetResolutionStatus = "hit" | "miss" | "denied" | "ambiguous";
 
 export interface PrincipalTargetResolutionResult {
   status: PrincipalTargetResolutionStatus;
@@ -375,7 +400,7 @@ export class InstanceService {
         runtimeDisplayName: input.runtimeDisplayName ?? null,
         bundleRef: input.bundleRef ?? null,
         status: input.status ?? "offline",
-        exposure: input.exposure ?? "unexposed",
+        exposure: input.exposure ?? "local_only",
         capabilities: input.capabilities ?? [],
         metadata: input.metadata ?? {},
         lastSeenAt: input.status === "online" ? new Date() : null,
@@ -392,6 +417,8 @@ export class InstanceService {
         // create valid rows. Drizzle treats `undefined` as "don't
         // include in the INSERT", so the default `null` from the
         // schema applies.
+        hubId: input.hubId,
+        localId: input.localId,
         principalDid: input.principalDid ?? undefined,
         // ADR-058 D4: PoP verification flag. `undefined` → schema
         // default (false).
@@ -494,6 +521,8 @@ export class InstanceService {
     if (input.weeklyQuota !== undefined) values.weeklyQuota = input.weeklyQuota;
     if (input.publishedAt !== undefined) values.publishedAt = input.publishedAt;
     if (input.featured !== undefined) values.featured = input.featured;
+    if (input.hubId !== undefined) values.hubId = input.hubId;
+    if (input.localId !== undefined) values.localId = input.localId;
     if (input.principalDid !== undefined) values.principalDid = input.principalDid;
     if (input.principalDidVerified !== undefined)
       values.principalDidVerified = input.principalDidVerified;
@@ -529,15 +558,25 @@ export class InstanceService {
    *
    * Post-ADR-056-D7 the DID index is not unique (a transported
    * principal re-lands with the same DID under a new instance id);
-   * `findFirst` returns the most recently announced match, which is
-   * the row the exposure-layer singularity rule keeps publicly
-   * unambiguous. Returns `null` when no row matches. Caller
+   * Public/unlisted hosts take precedence over private replicas, followed
+   * by proof of identity and freshness; the final id tie-break is stable. Returns `null` when no row matches. Caller
    * distinguishes via the helper {@link resolvePrincipalTarget} when
    * it also needs the access check.
    */
+  async registerIdentity(signingDid: string, identityKey: string): Promise<string> {
+    await db.insert(hubPrincipals).values({ signingDid, identityKey }).onConflictDoNothing();
+    const actor = await db.query.hubPrincipals.findFirst({ where: eq(hubPrincipals.identityKey, identityKey) });
+    if (!actor || actor.signingDid !== signingDid) throw new Error("Actor identity key belongs to another principal");
+    return actor.id;
+  }
+  async getByHubId(id: string): Promise<InstanceRecord | null> {
+    const row = await db.query.instances.findFirst({ where: eq(instances.hubId, id), orderBy: resolutionOrder() });
+    return row ? this.toRecord(row) : null;
+  }
   async getByDid(did: string): Promise<InstanceRecord | null> {
     const row = await db.query.instances.findFirst({
       where: eq(instances.principalDid, did),
+      orderBy: resolutionOrder(),
     });
     return row ? this.toRecord(row) : null;
   }
@@ -561,7 +600,7 @@ export class InstanceService {
   ): Promise<InstanceRecord | null> {
     const conditions = [
       eq(instances.principalDid, principalDid),
-      inArray(instances.exposure, ["public", "unlisted"]),
+      eq(instances.exposure, "public"),
     ];
     if (excludeId) conditions.push(ne(instances.id, excludeId));
     const row = await db.query.instances.findFirst({
@@ -603,17 +642,22 @@ export class InstanceService {
       kind: "user",
       id: String(ownerRow.id),
     });
-    const row = await db.query.instances.findFirst({
+    const rows = await db.query.instances.findMany({
       where: and(
         sql`${instances.ownerSubject} = ${ownerSubjectLiteral}::jsonb`,
         eq(instances.name, principalName),
       ),
+      orderBy: resolutionOrder(),
     });
-    return row ? this.toRecord(row) : null;
+    const registered = rows.filter(r => r.hubId && r.localId && r.exposure !== "local_only");
+    const exposed = registered.filter(r => r.exposure === "public");
+    const candidates = exposed.length > 0 ? exposed : registered;
+    if (new Set(candidates.map(r => r.hubId ?? r.id)).size > 1) throw new AmbiguousPrincipalReference();
+    return candidates[0] ? this.toRecord(candidates[0]) : null;
   }
 
   /**
-   * Resolve a `TargetSpec` (by-did or by-handle) into a host. The
+   * Resolve a `TargetSpec` (by-hub-id or by-handle) into a host. The
    * cross-runtime `principal_send` ([peko-runtime#29]) calls this on the
    * hub to learn where to dispatch.
    *
@@ -632,27 +676,35 @@ export class InstanceService {
     spec: import("@pekohub/shared").TargetSpec,
     caller: CallerSubject,
   ): Promise<PrincipalTargetResolutionResult> {
-    const instance =
-      spec.kind === "by-did"
-        ? await this.getByDid(spec.did)
+    let instance: InstanceRecord | null;
+    try {
+      instance = spec.kind === "by-hub-id"
+        ? await this.getByHubId(spec.hubId)
         : await this.getByHandle(spec.owner, spec.principalName);
+    } catch (error) {
+      if (error instanceof AmbiguousPrincipalReference) return { status: "ambiguous" };
+      throw error;
+    }
 
     if (!instance) {
       return { status: "miss" };
     }
     if (!instance.principalDid) {
       // A null principal_did shouldn't be reachable through the
-      // by-did resolver (the lookup is an equality match on a
+      // by-hub-id resolver (the lookup is an equality match on a
       // non-null DID) — but the by-handle path can land here (e.g. a
       // pre-#34 runtime that announces without a principal_did). Treat
-      // as miss for the by-did path; the by-handle caller still gets
+      // as miss for the by-hub-id path; the by-handle caller still gets
       // a meaningful hit (the by-handle wire format doesn't promise
-      // a DID). We only return miss on by-did.
-      if (spec.kind === "by-did") {
+      // a DID). We only return miss on by-hub-id.
+      if (spec.kind === "by-hub-id") {
         return { status: "miss" };
       }
     }
 
+    if (!instance.hubId || !instance.localId) return { status: "miss" };
+    const actor = await db.query.hubPrincipals.findFirst({ where: eq(hubPrincipals.id, instance.hubId) });
+    if (!actor) return { status: "miss" };
     const owner = resolveOwnerSubject(instance);
     // An ownerless row is the same as a miss for access purposes —
     // there's no principal to grant access, and a public exposure
@@ -662,7 +714,8 @@ export class InstanceService {
       return { status: "miss" };
     }
 
-    if (instance.exposure === "public" || (await subjectCanAccess(owner, caller))) {
+    if (instance.exposure === "local_only") return { status: "denied" };
+    if (instance.exposure === "public" || (caller?.kind === "principal" || caller?.kind === "user") || (await subjectCanAccess(owner, caller))) {
       return {
         status: "hit",
         resolution: {
@@ -672,6 +725,10 @@ export class InstanceService {
           // can echo it back to its own audit log. If the by-handle
           // path found a pre-#34 row with no DID, we report an empty
           // string (the runtime can use the handle as fallback).
+          name: instance.name,
+          hubId: instance.hubId,
+          localId: instance.localId,
+          identityKey: actor.identityKey,
           principalDid: instance.principalDid ?? "",
           ownerSubject: owner,
           exposure: instance.exposure,
@@ -687,6 +744,9 @@ export class InstanceService {
   ): Promise<InstanceRecord> {
     const existing = input.id ? await this.getById(input.id) : null;
     if (existing) {
+      if (existing.runtimeId !== input.runtimeId || (existing.hubId && input.hubId && existing.hubId !== input.hubId)) {
+        throw new Error("Instance identity cannot be reassigned to another runtime or actor");
+      }
       const values: UpdateInstanceInput & { bundleRef?: string } = {
         name: input.name,
         runtimeDisplayName: input.runtimeDisplayName,
@@ -700,7 +760,9 @@ export class InstanceService {
       // `undefined` (pre-#82 runtime that doesn't send the field)
       // as "leave the existing value alone" — otherwise a downgrade
       // would silently clear the column.
-      if (input.principalDid !== undefined) values.principalDid = input.principalDid;
+      if (input.hubId !== undefined) values.hubId = input.hubId;
+    if (input.localId !== undefined) values.localId = input.localId;
+    if (input.principalDid !== undefined) values.principalDid = input.principalDid;
       // ADR-058 D4: the verified flag travels with the DID — the
       // tunnel manager recomputes it on every announce that carries
       // a `principalDid`, so a re-announce that fails PoP never
@@ -783,24 +845,24 @@ export class InstanceService {
     instance: InstanceRecord,
     caller: CallerSubject | string | null,
   ): Promise<boolean> {
-    if (instance.status === "offline" || instance.exposure === "unexposed") {
+    if (instance.status === "offline" || instance.exposure === "local_only") {
       return false;
     }
     // `public` and `unlisted` are both reachable via the public URL —
     // pekohub only forwards the request; the runtime runs the
     // defense-in-depth ACL in `check_request_allowed`. Discovery
     // remains strictly `public` only.
-    if (instance.exposure === "public" || instance.exposure === "unlisted") {
+    if (instance.exposure === "public") {
       return true;
     }
 
     const c = normalizeCaller(caller);
     if (c === null) return false;
 
-    const owner = resolveOwnerSubject(instance);
-    if (owner && (await subjectCanAccess(owner, c))) return true;
-
-    return false;
+    // Hub registration ownership governs administration. The recipient runtime
+    // owns chat grants, including grants to accounts other than the registrar.
+    if (resolveOwnerSubject(instance) === null) return false;
+    return c.kind === "user" || c.kind === "principal";
   }
 
   /**
@@ -879,6 +941,8 @@ export class InstanceService {
           (monetization.stripeProductId as string | null) ?? null,
       },
       // ADR-041: per-Principal DID from `instance_announce`.
+      hubId: row.hubId ?? null,
+      localId: row.localId ?? null,
       principalDid: row.principalDid ?? null,
       // ADR-058 D4: PoP verification flag for `principalDid`.
       principalDidVerified: row.principalDidVerified ?? false,

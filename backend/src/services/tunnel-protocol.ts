@@ -78,7 +78,7 @@ export interface StreamIterationPayload {
 // --- Instance lifecycle extensions (ADR-004, ADR-041) ---
 
 export type InstanceStatus = "online" | "offline" | "busy" | "error";
-export type InstanceExposure = "private" | "public" | "unexposed" | "unlisted";
+export type InstanceExposure = "private" | "public" | "local_only";
 export type InstanceType = "principal";
 
 export interface InstanceAnnouncePayload {
@@ -105,6 +105,9 @@ export interface InstanceAnnouncePayload {
   // (`GET /v1/principals/by-did/:did`). Optional so pre-#82
   // runtimes still announce cleanly. Omit to leave the existing
   // value alone in the service layer.
+  registrationId?: string;
+  localId?: string;
+  identityKey?: string;
   principalDid?: string;
   // ADR-058 D4: proof of possession for `principalDid`. A compact
   // JWS (EdDSA, embedded payload) over canonical JSON
@@ -324,6 +327,8 @@ export type TunnelMessage =
   | { type: "stream_end"; requestId: string }
   | { type: "stream_iteration"; requestId: string; iteration: number }
   | { type: "instance_announce"; payload: InstanceAnnouncePayload }
+  | { type: "principal_registration_rejected"; registrationId: string; message: string }
+  | { type: "principal_registered"; registrationId?: string; localId: string; hubId: string; signingDid: string }
   | { type: "instance_heartbeat"; payload: InstanceHeartbeatPayload }
   | { type: "instance_deregister"; payload: InstanceDeregisterPayload }
   | { type: "exposure_update"; payload: ExposureUpdatePayload }

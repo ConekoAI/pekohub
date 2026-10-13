@@ -36,7 +36,7 @@ describe("instanceService.canChat", () => {
   });
 
   it("returns false when instance is unexposed", async () => {
-    const instance = { ...baseInstance, exposure: "unexposed" as const };
+    const instance = { ...baseInstance, exposure: "local_only" as const };
     expect(await instanceService.canChat(instance, "1")).toBe(false);
   });
 
@@ -73,14 +73,14 @@ describe("instanceService.canChat", () => {
   // can chat against a private instance is if the runtime's
   // PrincipalConfig.permissions grants them. pekohub itself only
   // recognises the owner. We assert that a different user is denied.
-  it("returns false when private instance and user is not the owner (post-H4)", async () => {
+  it("forwards private chat by another account for runtime authorization", async () => {
     const instance = {
       ...baseInstance,
       status: "online" as const,
       exposure: "private" as const,
       ownerSubject: { kind: "user" as const, id: "1" } as Subject,
     };
-    expect(await instanceService.canChat(instance, "2")).toBe(false);
+    expect(await instanceService.canChat(instance, "2")).toBe(true);
   });
 
   it("returns true when busy status and public exposure", async () => {
@@ -131,7 +131,7 @@ describe("instanceService.canChat", () => {
     const instance = {
       ...baseInstance,
       status: "online" as const,
-      exposure: "unlisted" as const,
+      exposure: "public" as const,
     };
     expect(await instanceService.canChat(instance, "999")).toBe(true);
   });
@@ -140,7 +140,7 @@ describe("instanceService.canChat", () => {
     const instance = {
       ...baseInstance,
       status: "offline" as const,
-      exposure: "unlisted" as const,
+      exposure: "public" as const,
     };
     expect(await instanceService.canChat(instance, "999")).toBe(false);
   });

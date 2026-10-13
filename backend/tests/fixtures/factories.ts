@@ -40,6 +40,8 @@ export interface TestInstance {
   id: string;
   type: "principal";
   name: string;
+  hubId: string | null;
+  localId: string | null;
   // Post-H1: typed `owner_subject` JSONB is the only owner signal
   // (the legacy `owner_id` integer FK was dropped in migration
   // 0010). Tests that want a user-owned instance should set
@@ -49,7 +51,7 @@ export interface TestInstance {
   runtimeDisplayName: string | null;
   bundleRef: string | null;
   status: "online" | "offline" | "busy" | "error";
-  exposure: "private" | "public" | "unexposed";
+  exposure: "private" | "public" | "local_only";
   // Post-H4: allowedPrincipals removed from the test instance.
   // The runtime owns the ACL surface (R4); pekohub only stores
   // public-vs-private exposure.
@@ -236,6 +238,13 @@ export async function createInstance(
   const name = overrides.name ?? faker.word.noun().toLowerCase();
   const runtimeId =
     overrides.runtimeId ?? `runtime-${faker.string.alphanumeric(8)}`;
+  const principalDid = overrides.principalDid === undefined && (overrides.exposure === "public" || overrides.exposure === "private")
+    ? `did:key:test-${id}` : overrides.principalDid ?? null;
+  let hubId = overrides.hubId ?? null;
+  if (principalDid && overrides.exposure !== "local_only") {
+    const identity = await client.query(`INSERT INTO hub_principals(signing_did, identity_key) VALUES($1,$1) ON CONFLICT(signing_did) DO UPDATE SET signing_did=EXCLUDED.signing_did RETURNING id`, [principalDid]);
+    hubId = String(identity.rows[0].id);
+  }
 
   const result = await client.query(
     `INSERT INTO instances (
@@ -258,7 +267,7 @@ export async function createInstance(
       overrides.runtimeDisplayName ?? null,
       overrides.bundleRef ?? null,
       overrides.status ?? "offline",
-      overrides.exposure ?? "unexposed",
+      overrides.exposure ?? "local_only",
       JSON.stringify(overrides.capabilities ?? []),
       JSON.stringify(overrides.metadata ?? {}),
       overrides.publicName ?? null,
@@ -272,12 +281,14 @@ export async function createInstance(
       overrides.publishedAt ?? null,
       overrides.featured ?? false,
       // ADR-041: per-Principal DID. Optional — most tests don't care.
-      overrides.principalDid ?? null,
+      principalDid,
     ],
   );
 
+  await client.query("UPDATE instances SET hub_id=$1, local_id=$2 WHERE id=$3", [hubId, overrides.localId ?? `prin_${id}`, id]);
   const row = result.rows[0];
   return {
+    hubId, localId: overrides.localId ?? `prin_${id}`,
     id: row.id,
     type: row.type,
     name: row.name,

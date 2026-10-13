@@ -5,6 +5,7 @@ import { buildTestApp } from "../fixtures/app.js";
 import { createUser, createInstance } from "../fixtures/factories.js";
 import { authHeaders } from "../fixtures/auth.js";
 import {
+  principalAnnouncement,
   MockWebSocket,
   completeHandshake,
   makeRuntimeIdentity,
@@ -29,7 +30,8 @@ import type { WebSocket } from "ws";
  * ADR-058 D4 suite in tests/unit/tunnel-manager.test.ts.
  */
 
-const SHARED_DID = "did:peko:principal:d7shared";
+const SHARED_PRINCIPAL = makeRuntimeIdentity();
+const SHARED_DID = SHARED_PRINCIPAL.did;
 
 describe("ADR-056 D7: single public exposure per principal DID", () => {
   let testDb: TestDb;
@@ -46,6 +48,7 @@ describe("ADR-056 D7: single public exposure per principal DID", () => {
     await testDb.client.close();
   });
 
+  const runtimeIds = new WeakMap<MockWebSocket, string>();
   async function connectedRuntime(tag: string) {
     const { app, tunnelManager } = await buildTunnelTestApp(testDb);
     const user = await createUser(testDb.client, { namespace: `owner-${tag}` });
@@ -54,6 +57,7 @@ describe("ADR-056 D7: single public exposure per principal DID", () => {
     const socket = new MockWebSocket();
     tunnelManager.handleSocket(socket as unknown as WebSocket);
     await completeHandshake(socket, did, privateKey, `nonce-${tag}`);
+    runtimeIds.set(socket, did);
     return { app, tunnelManager, user, did, socket };
   }
 
@@ -61,7 +65,8 @@ describe("ADR-056 D7: single public exposure per principal DID", () => {
     socket: MockWebSocket,
     payload: Record<string, unknown>,
   ) {
-    socket.triggerMessage({ type: "instance_announce", payload });
+    // The connected runtime is tracked explicitly by the fixture.
+    socket.triggerMessage({ type: "instance_announce", payload: principalAnnouncement(runtimeIds.get(socket)!, SHARED_PRINCIPAL, payload) });
   }
 
   async function settle() {
@@ -75,6 +80,23 @@ describe("ADR-056 D7: single public exposure per principal DID", () => {
     );
     return res.rows[0];
   }
+
+  it("assigns a stable Hub actor ID, persists both IDs, and rejects rekeying", async () => {
+    const runtime = await connectedRuntime("identity");
+    const payload = principalAnnouncement(runtime.did, SHARED_PRINCIPAL, {name: "identity", exposure: "private"});
+    runtime.socket.triggerMessage({type: "instance_announce", payload}); await settle();
+    const receipt = runtime.socket.sent.find(m => m.type === "principal_registered");
+    expect(receipt?.type).toBe("principal_registered");
+    if (receipt?.type !== "principal_registered") throw new Error("missing receipt");
+    expect(receipt.localId).toBe(payload.localId); expect(receipt.registrationId).toBe(payload.registrationId);
+    const row = await testDb.client.query("SELECT hub_id, local_id FROM instances WHERE id=$1",[payload.id]);
+    expect(row.rows[0]).toEqual({hub_id: receipt.hubId, local_id: payload.localId});
+    runtime.socket.triggerMessage({type: "instance_announce", payload: {...payload, registrationId: undefined}}); await settle();
+    expect(runtime.socket.sent.filter(m => m.type === "principal_registered").map(m => m.type === "principal_registered" ? m.hubId : null)).toEqual([receipt.hubId,receipt.hubId]);
+    runtime.socket.triggerMessage({type: "instance_announce", payload: {...payload, registrationId:"rekey", identityKey:"different-key"}}); await settle();
+    expect(runtime.socket.sent.some(m => m.type === "principal_registration_rejected" && m.registrationId === "rekey")).toBe(true);
+    await runtime.app.close();
+  });
 
   it("rejects an announce that would publicly expose an already-public DID", async () => {
     const a = await connectedRuntime("a");
@@ -118,7 +140,7 @@ describe("ADR-056 D7: single public exposure per principal DID", () => {
       type: "principal",
       name: "transported-copy",
       status: "online",
-      exposure: "unlisted",
+      exposure: "public",
       principalDid: SHARED_DID,
     });
     await settle();
@@ -184,7 +206,7 @@ describe("ADR-056 D7: single public exposure per principal DID", () => {
       ownerSubject: { kind: "user", id: String(user.id) },
       name: "wants-public",
       status: "online",
-      exposure: "unexposed",
+      exposure: "private",
       principalDid: SHARED_DID,
     });
 
@@ -205,11 +227,11 @@ describe("ADR-056 D7: single public exposure per principal DID", () => {
       method: "PATCH",
       url: `/v1/instances/${candidate.id}/exposure`,
       headers,
-      payload: { exposure: "unlisted" },
+      payload: { exposure: "public" },
     });
     expect(resUnlisted.statusCode).toBe(409);
 
-    // private is not publicly reachable → allowed
+    // Registered private is reachable to its authorized owner.
     const resPrivate = await app.inject({
       method: "PATCH",
       url: `/v1/instances/${candidate.id}/exposure`,
@@ -223,7 +245,7 @@ describe("ADR-056 D7: single public exposure per principal DID", () => {
       method: "PATCH",
       url: `/v1/instances/${publicOne.id}/exposure`,
       headers,
-      payload: { exposure: "unexposed" },
+      payload: { exposure: "local_only" },
     });
     expect(retire.statusCode).toBe(200);
 
@@ -236,7 +258,7 @@ describe("ADR-056 D7: single public exposure per principal DID", () => {
     expect(retry.statusCode).toBe(200);
   });
 
-  it("does not constrain instances without a principal DID", async () => {
+  it("requires verified registration before exposing a local-only principal", async () => {
     const app = await buildTestApp({ testDb });
     const user = await createUser(testDb.client, { namespace: "alice" });
     const headers = await authHeaders(user);
@@ -251,7 +273,7 @@ describe("ADR-056 D7: single public exposure per principal DID", () => {
       ownerSubject: { kind: "user", id: String(user.id) },
       name: "did-less-candidate",
       status: "online",
-      exposure: "unexposed",
+      exposure: "local_only",
     });
 
     const res = await app.inject({
@@ -260,6 +282,6 @@ describe("ADR-056 D7: single public exposure per principal DID", () => {
       headers,
       payload: { exposure: "public" },
     });
-    expect(res.statusCode).toBe(200);
+    expect(res.statusCode).toBe(400);
   });
 });

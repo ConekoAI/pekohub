@@ -24,7 +24,7 @@ function NotFound() {
         <p className="eyebrow mt-6">404</p>
         <h1 className="display mt-2 text-2xl">Nothing lives at this address</h1>
         <p className="lede mx-auto mt-3 max-w-sm">
-          The link may be stale, or the peko may have been unexposed since it was shared.
+          The link may be stale, or the peko may have been made private or unregistered since it was shared.
         </p>
         <div className="mt-7 flex flex-wrap items-center justify-center gap-2">
           <Link to="/pekos" className="btn-primary">

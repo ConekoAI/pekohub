@@ -156,3 +156,14 @@ export async function seedRuntime(
     [did, ownerId, displayName],
   );
 }
+
+/** A real actor-signing proof, with explicit registration request correlation. */
+export function principalAnnouncement(runtimeId: string, principal = makeRuntimeIdentity(), overrides: Record<string, unknown> = {}) {
+  const now = Math.floor(Date.now() / 1000);
+  const header = Buffer.from(JSON.stringify({alg: "EdDSA", typ: "JWT"})).toString("base64url");
+  const payload = Buffer.from(JSON.stringify({runtimeId, principalDid: principal.did, iat: now, exp: now + 60})).toString("base64url");
+  const input = `${header}.${payload}`;
+  const signature = Buffer.from(ed25519.sign(new TextEncoder().encode(input), principal.privateKey)).toString("base64url");
+  return {id: crypto.randomUUID(), type: "principal" as const, name: "helper", status: "online" as const, exposure: "private" as const,
+    localId: `prin_${crypto.randomUUID()}`, identityKey: principal.did, registrationId: crypto.randomUUID(), principalDid: principal.did, principalPop: `${input}.${signature}`, ...overrides};
+}

@@ -114,7 +114,7 @@ export async function buildTestApp(options: TestAppOptions) {
   await app.register(instanceRoutes, { prefix: "/v1" });
   await app.register(publicPekoRoutes, { prefix: "/v1" });
   await app.register(runtimeRoutes, { prefix: "/v1" });
-  // Issue #14: agent directory (by-did / by-handle) for tests.
+  // Issue #14: agent directory (by-hub-id / by-handle) for tests.
   await app.register(principalDirectoryRoutes, { prefix: "/v1" });
   await app.register(adminRoutes, { prefix: "/v1/admin" });
   await app.register(oauthRoutes, { prefix: "/v1/auth" });

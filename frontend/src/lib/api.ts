@@ -238,16 +238,27 @@ export const api = {
    * dual-channel SSE format. Throws on network error; quota
    * rejections arrive as an `event: error` SSE frame.
    *
-   * No `Authorization` header — public endpoint. The visitor cookie
-   * travels via `credentials: 'include'`.
+   * Signed-in callers use their account; anonymous callers use the visitor
+   * cookie. Account and visitor histories remain separate.
    */
-  publicChat: (owner: string, pekoName: string, body: PublicChatBody) =>
-    fetch(`${API_BASE}/v1/public/pekos/${owner}/${pekoName}/chat`, {
+  publicChat: async (owner: string, pekoName: string, body: PublicChatBody) => {
+    const send = () => fetch(`${API_BASE}/v1/public/pekos/${owner}/${pekoName}/chat`, {
       method: 'POST',
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {}) },
       body: JSON.stringify(body),
-    }),
+    });
+    let response = await send();
+    if (response.status === 401 && getAuthToken()) {
+      if (!isRefreshing) {
+        isRefreshing = true;
+        refreshPromise = doRefresh().finally(() => { isRefreshing = false; refreshPromise = null; });
+      }
+      await refreshPromise;
+      response = await send();
+    }
+    return response;
+  },
 
   // ─────────────────────────────────────────────────────────────────────────
   // Owner dashboard (PR #7) — instances scoped to the signed-in user.
@@ -298,7 +309,7 @@ export const api = {
    */
   setInstanceExposure: (
     id: string,
-    exposure: 'private' | 'public' | 'unexposed' | 'unlisted',
+    exposure: 'private' | 'public' | 'local_only',
     publicProfile?: {
       public_name: string;
       description: string;
@@ -503,6 +514,8 @@ export interface SeedVersionsResponse {
 // from shared today.
 export interface OwnedInstanceRecord {
   id: string;
+  hubId: string | null;
+  localId: string | null;
   type: 'principal';
   name: string;
   ownerSubject: { kind: 'user'; id: string } | null;
@@ -510,7 +523,7 @@ export interface OwnedInstanceRecord {
   runtimeDisplayName: string | null;
   bundleRef: string | null;
   status: 'online' | 'offline' | 'busy' | 'error';
-  exposure: 'private' | 'public' | 'unexposed' | 'unlisted';
+  exposure: 'private' | 'public' | 'local_only';
   lastSeenAt: string | null;
   createdAt: string;
   capabilities: string[];

@@ -14,16 +14,16 @@ import { z } from 'zod';
 // (the "principal-as-container" model). To avoid terminology
 // collision between the actor enum and the runtime entity, the actor
 // enum is renamed to `Subject`. The `Agent` variant is renamed to
-// `Principal` (the actor enum has User/Principal/Public; Team was
+// `Principal` (the actor enum has User/Principal/Visitor/Public; Team was
 // removed in the ADR-041 clean break).
 //
-// Wire format: `{ "kind": "user|principal|public", "id": "..." }` for
-// the two with an id; `{ "kind": "public" }` for Public. This matches
+// Wire format: `{ "kind": "user|principal|visitor|public", "id": "..." }` for
+// the three with an id; `{ "kind": "public" }` for Public. This matches
 // the runtime's `#[serde(tag = "kind", content = "id")]` derive on
 // `peko-runtime/src/subject.rs`.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const SubjectKinds = ['user', 'principal', 'public'] as const;
+export const SubjectKinds = ['user', 'principal', 'visitor', 'public'] as const;
 export type SubjectKind = (typeof SubjectKinds)[number];
 
 export const Subject = z.discriminatedUnion('kind', [
@@ -36,6 +36,7 @@ export const Subject = z.discriminatedUnion('kind', [
   // schema must accept it.
   z.object({ kind: z.literal('user'), id: z.string() }),
   z.object({ kind: z.literal('principal'), id: z.string() }),
+  z.object({ kind: z.literal('visitor'), id: z.string().min(1) }),
   z.object({ kind: z.literal('public') }),
 ]);
 export type Subject = z.infer<typeof Subject>;
@@ -81,7 +82,7 @@ export function parseSubject(s: string | null | undefined): Subject | null {
   const kind = s.slice(0, idx);
   const id = s.slice(idx + 1);
   if (!SubjectKinds.includes(kind as SubjectKind)) return null;
-  if (kind === 'public') return { kind: 'public' };
+  if (kind === 'public') return null;
   if (id === '') return null;
   return { kind: kind as SubjectKind, id } as Subject;
 }
@@ -106,13 +107,12 @@ export function subjectId(p: Subject): string {
 
 /**
  * True for any subject that carries a per-session identity.
- * Mirrors `Subject::is_session_peer()` in peko-runtime. Only
- * `User` and `Principal` carry such an identity; `Public` does
+ * Mirrors `Subject::is_session_peer()` in peko-runtime. `User`, `Principal`, and `Visitor` carry such an identity; `Public` does
  * not. The runtime has no `Team` variant in the Subject enum
  * (ADR-041).
  */
 export function isSessionPeer(p: Subject): boolean {
-  return p.kind === 'user' || p.kind === 'principal';
+  return p.kind === 'user' || p.kind === 'principal' || p.kind === 'visitor';
 }
 
 // ── Defensive parsers for legacy wire data ─────────────────────────────────

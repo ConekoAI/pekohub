@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   TargetSpec,
-  RemoteByDID,
+  RemoteByHubId,
   RemoteByHandle,
   parseTargetSpecPath,
   formatTargetSpecPath,
@@ -17,26 +17,26 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("TargetSpec schema", () => {
-  it("accepts a by-did spec", () => {
-    const parsed = RemoteByDID.parse({
-      kind: "by-did",
-      did: "did:peko:principal:abc123",
+  it("accepts a by-hub-id spec", () => {
+    const parsed = RemoteByHubId.parse({
+      kind: "by-hub-id",
+      hubId: "12345678-1234-4234-8234-123456789abc",
     });
-    expect(parsed.kind).toBe("by-did");
-    expect(parsed.did).toBe("did:peko:principal:abc123");
+    expect(parsed.kind).toBe("by-hub-id");
+    expect(parsed.hubId).toBe("12345678-1234-4234-8234-123456789abc");
   });
 
-  it("accepts a by-did spec with runtime-id hint", () => {
-    const parsed = RemoteByDID.parse({
-      kind: "by-did",
-      did: "did:peko:principal:abc123",
+  it("accepts a by-hub-id spec with runtime-id hint", () => {
+    const parsed = RemoteByHubId.parse({
+      kind: "by-hub-id",
+      hubId: "12345678-1234-4234-8234-123456789abc",
       runtimeIdHint: "runtime-42",
     });
-    expect(parsed.runtimeIdHint).toBe("runtime-42");
+    expect(parsed.hubId).toBe("12345678-1234-4234-8234-123456789abc");
   });
 
   it("rejects an empty DID", () => {
-    expect(() => RemoteByDID.parse({ kind: "by-did", did: "" })).toThrow();
+    expect(() => RemoteByHubId.parse({ kind: "by-hub-id", hubId: "" })).toThrow();
   });
 
   it("accepts a by-handle spec", () => {
@@ -79,26 +79,26 @@ describe("TargetSpec schema", () => {
 
   it("discriminates by kind in the union", () => {
     const byDid = TargetSpec.parse({
-      kind: "by-did",
-      did: "did:peko:principal:xyz",
+      kind: "by-hub-id",
+      hubId: "12345678-1234-4234-8234-123456789abc",
     });
     const byHandle = TargetSpec.parse({
       kind: "by-handle",
       owner: "bob",
       principalName: "agent",
     });
-    expect(byDid.kind).toBe("by-did");
+    expect(byDid.kind).toBe("by-hub-id");
     expect(byHandle.kind).toBe("by-handle");
   });
 });
 
 describe("formatTargetSpecPath", () => {
-  it("encodes a by-did spec as the raw DID", () => {
+  it("encodes a by-hub-id spec as the raw DID", () => {
     const s = formatTargetSpecPath({
-      kind: "by-did",
-      did: "did:peko:principal:abc123",
+      kind: "by-hub-id",
+      hubId: "12345678-1234-4234-8234-123456789abc",
     });
-    expect(s).toBe("did:peko:principal:abc123");
+    expect(s).toBe("12345678-1234-4234-8234-123456789abc");
   });
 
   it("encodes a by-handle spec as `owner/principal_name`", () => {
@@ -112,11 +112,11 @@ describe("formatTargetSpecPath", () => {
 });
 
 describe("parseTargetSpecPath", () => {
-  it("parses a DID", () => {
-    const spec = parseTargetSpecPath("did:peko:principal:abc123");
+  it("parses a Hub UUID", () => {
+    const spec = parseTargetSpecPath("12345678-1234-4234-8234-123456789abc");
     expect(spec).toEqual({
-      kind: "by-did",
-      did: "did:peko:principal:abc123",
+      kind: "by-hub-id",
+      hubId: "12345678-1234-4234-8234-123456789abc",
     });
   });
 
@@ -129,10 +129,10 @@ describe("parseTargetSpecPath", () => {
     });
   });
 
-  it("round-trips by-did and by-handle", () => {
+  it("round-trips by-hub-id and by-handle", () => {
     const byDid = {
-      kind: "by-did" as const,
-      did: "did:peko:principal:deadbeef",
+      kind: "by-hub-id" as const,
+      hubId: "12345678-1234-4234-8234-123456789abc",
     };
     expect(parseTargetSpecPath(formatTargetSpecPath(byDid))).toEqual(byDid);
 

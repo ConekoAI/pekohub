@@ -1,5 +1,10 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { instanceService, type CallerSubject } from "../../services/instances.js";
+import { db } from "../../db/index.js";
+import { hubPrincipals } from "../../db/schema.js";
+import { eq } from "drizzle-orm";
+import { z } from "zod";
+import { verifyDidKeyJws } from "../../services/tunnel-crypto.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Principal directory routes (issue #14).
@@ -14,7 +19,7 @@ import { instanceService, type CallerSubject } from "../../services/instances.js
 // today, with runtime-attested Principal-kind callers as a follow-up
 // behind a runtime-issued JWT, gated on peko-runtime#16):
 //
-//   * `GET /v1/principals/by-did/:did`        — DID primary key
+//   * `GET /v1/principals/by-hub-id/:hubId`        — Hub actor UUID
 //   * `GET /v1/principals/by-handle/:owner/:principal_name` — human-readable
 //
 // HTTP semantics, per the issue's acceptance criteria:
@@ -31,7 +36,7 @@ import { instanceService, type CallerSubject } from "../../services/instances.js
 // discussion on the issue.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const DID_PARAM = "[\\w:.\\-]{1,512}";
+const HUB_ID_PARAM = "[\\w:.\\-]{1,512}";
 const OWNER_PARAM = "[a-z0-9][a-z0-9_\\-]{0,127}";
 // Mirrors peko-runtime's `validate_agent_name`:
 //   1-64 chars, ASCII alnum + "-" or "_", no leading/trailing "-",
@@ -53,6 +58,26 @@ async function extractCallerSubject(
   fastify: FastifyInstance,
   request: FastifyRequest,
 ): Promise<CallerSubject> {
+  const assertion = request.headers.authorization?.match(/^PekoPrincipal ([A-Za-z0-9_.-]+)$/)?.[1];
+  if (request.headers.authorization?.startsWith("PekoPrincipal ")) {
+    try {
+      if (!assertion || assertion.length > 4096) throw new Error("invalid assertion");
+      const unverified = JSON.parse(Buffer.from(assertion.split(".")[1], "base64url").toString());
+      if (typeof unverified.sub !== "string" || !unverified.sub.startsWith("did:key:")) throw new Error("invalid subject");
+      const claims = await verifyDidKeyJws(unverified.sub, assertion);
+      const now = Math.floor(Date.now() / 1000);
+      if (!claims || claims.sub !== unverified.sub || claims.aud !== "peko-directory-v1" ||
+          claims.path !== request.url.split("?")[0] || typeof claims.iat !== "number" || typeof claims.exp !== "number" ||
+          claims.iat > now + 30 || claims.exp < now || claims.exp < claims.iat || claims.exp - claims.iat > 60) {
+        throw new Error("invalid claims");
+      }
+      const actor = await db.query.hubPrincipals.findFirst({ where: eq(hubPrincipals.signingDid, claims.sub as string) });
+      if (!actor) throw new Error("principal is not registered");
+      return { kind: "principal", id: actor.id };
+    } catch {
+      throw Object.assign(new Error("Invalid principal directory proof"), { statusCode: 401 });
+    }
+  }
   try {
     const user = await fastify.authenticate(request);
     return { kind: "user", id: String(user.id) };
@@ -64,27 +89,29 @@ async function extractCallerSubject(
 export default async function principalDirectoryRoutes(
   fastify: FastifyInstance,
 ) {
-  // ── GET /v1/principals/by-did/:did ────────────────────────────────────────────
+  // ── GET /v1/principals/by-hub-id/:hubId ────────────────────────────────────────────
   fastify.get(
-    `/principals/by-did/:did(${DID_PARAM})`,
+    `/principals/by-hub-id/:hubId(${HUB_ID_PARAM})`,
     async (request, reply) => {
-      const { did } = request.params as { did: string };
+      const { hubId } = request.params as { hubId: string };
       // Cheap shape check up front so a 400 short-circuits before the DB.
-      if (!did.startsWith("did:")) {
+      if (!z.string().uuid().safeParse(hubId).success) {
         return reply
           .status(400)
-          .send({ error: "Invalid target spec: expected a `did:...` value" });
+          .send({ error: "Invalid target spec: expected a Hub actor UUID" });
       }
 
       const caller = await extractCallerSubject(fastify, request);
       const result = await instanceService.resolvePrincipalTarget(
-        { kind: "by-did", did },
+        { kind: "by-hub-id", hubId },
         caller,
       );
 
       switch (result.status) {
         case "hit":
           return result.resolution;
+        case "ambiguous":
+          return reply.status(409).send({ error: "Principal handle is ambiguous; use its Hub ID" });
         case "miss":
           return reply.status(404).send({ error: "Principal not found" });
         case "denied":
@@ -116,6 +143,8 @@ export default async function principalDirectoryRoutes(
       switch (result.status) {
         case "hit":
           return result.resolution;
+        case "ambiguous":
+          return reply.status(409).send({ error: "Principal handle is ambiguous; use its Hub ID" });
         case "miss":
           return reply.status(404).send({ error: "Principal not found" });
         case "denied":

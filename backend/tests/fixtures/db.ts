@@ -121,6 +121,7 @@ const DDL_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS refresh_tokens_user_active_idx ON refresh_tokens(user_id, revoked_at, expires_at);`,
   `CREATE INDEX IF NOT EXISTS refresh_tokens_prefix_idx ON refresh_tokens(token_prefix);`,
 
+  `CREATE TABLE IF NOT EXISTS hub_principals (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), signing_did VARCHAR(512) UNIQUE NOT NULL, identity_key VARCHAR(512) UNIQUE NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL);`,
   `CREATE TABLE IF NOT EXISTS instances (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     type VARCHAR(16) NOT NULL,
@@ -155,8 +156,10 @@ const DDL_STATEMENTS = [
     -- Transport preference for cross-runtime principal_send.
     -- Issue #14: per-agent DID, populated by the runtime's
     -- instance_announce message (peko-runtime#34) and indexed by
-    -- the by-did resolver.
+    -- the by-hub-id resolver.
     principal_did VARCHAR(512),
+    hub_id UUID REFERENCES hub_principals(id),
+    local_id VARCHAR(255),
     -- ADR-058 D4: true only when the announcing runtime proved
     -- possession of the principal DID's key via principalPop.
     principal_did_verified BOOLEAN DEFAULT FALSE NOT NULL
@@ -172,8 +175,8 @@ const DDL_STATEMENTS = [
   // scans instances and filters by `owner_subject->>'id'`, which is
   // O(n) for the public-discovery path.
   `CREATE INDEX IF NOT EXISTS idx_instances_owner_subject_id ON instances ((owner_subject->>'id'));`,
-  // Issue #14: B-tree on `principal_did` so the by-did resolver
-  // (GET /v1/principals/by-did/:did) is an indexed lookup.
+  // Issue #14: B-tree on `principal_did` so the by-hub-id resolver
+  // (GET /v1/principals/by-hub-id/:did) is an indexed lookup.
   // Post-ADR-056-D7 this is deliberately NOT unique: a transported
   // principal re-lands with the same DID under a new instance id;
   // singularity is enforced at the exposure layer
@@ -221,6 +224,7 @@ export async function resetTables(client: PGlite) {
     "bundle_versions",
     "bundles",
     "instances",
+    "hub_principals",
     "runtimes",
     "api_keys",
     "users",
