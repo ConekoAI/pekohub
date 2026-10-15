@@ -29,6 +29,8 @@ const HELLO_TIMEOUT_MS = 10_000;
 const CHALLENGE_TIMEOUT_MS = 10_000;
 const HEARTBEAT_INTERVAL_SECS = 30;
 const HEARTBEAT_TIMEOUT_MS = 90_000;
+/** A connection heard from within this window is live and cannot be displaced. */
+const LIVE_CONNECTION_WINDOW_MS = 2 * HEARTBEAT_INTERVAL_SECS * 1000;
 const REAPER_INTERVAL_MS = 30_000;
 const CHALLENGE_NONCE_BYTES = 32;
 /** ADR-058 D4: freshness leeways for the announce `principalPop`
@@ -252,17 +254,7 @@ export class TunnelManager {
       throw new TunnelAuthError("unknown runtime");
     }
 
-    // 3. Replace any pre-existing connection for this runtime.
-    const existing = this.connections.get(runtimeId);
-    if (existing) {
-      this.fastify.log.info(
-        { runtimeId },
-        "Replacing existing tunnel connection",
-      );
-      this.closeConnection(existing, "new connection from same runtime");
-    }
-
-    // 4. Issue a fresh, server-generated nonce and remember it for
+    // 3. Issue a fresh, server-generated nonce and remember it for
     // replay protection. base64url keeps the wire format stable across
     // the WebSocket text/binary boundary.
     const challengeNonce = randomBytes(CHALLENGE_NONCE_BYTES).toString(
@@ -305,6 +297,20 @@ export class TunnelManager {
 
     // Consume the challenge — a single ack must not be replayable.
     this.lastChallengeByRuntime.delete(runtimeId);
+
+    // ADR-081 §5.2: one live tunnel per runtime. Only a runtime that has
+    // just proven its key is considered, and it never displaces a live
+    // connection (a copied runtime directory must not knock the original
+    // offline). A connection that has missed its heartbeats is stale and
+    // is replaced, so a restarted runtime reconnects within the window.
+    const existing = this.connections.get(runtimeId);
+    if (existing) {
+      if (Date.now() - existing.lastHeartbeatAt.getTime() <= LIVE_CONNECTION_WINDOW_MS) {
+        throw new TunnelAuthError("runtime already connected");
+      }
+      this.fastify.log.info({ runtimeId }, "Replacing stale tunnel connection");
+      this.closeConnection(existing, "stale connection replaced");
+    }
 
     // Touch the runtime's `lastSeenAt` so the allowlist reflects
     // liveness without a separate announcement path. Extracted into
@@ -544,7 +550,8 @@ export class TunnelManager {
       }
 
       case "principal_registration_rejected":
-      case "principal_registered": return; // Hub-to-runtime receipt; never accepted from a runtime.
+      case "principal_unlinked":
+      case "principal_registered": return; // Hub-to-runtime receipts; never accepted from a runtime.
       default: {
         // Exhaustiveness fallback: any unhandled runtime-originated
         // type lands here. If the union grows, this branch is the
@@ -781,6 +788,51 @@ export class TunnelManager {
       return;
     }
     const principalDidVerified = true;
+    // ADR-081 D7: one online copy. A principal linked to another runtime
+    // moves here only on an explicit registration approved by its owner's
+    // account — implicitly when that account also owns this runtime. Key
+    // possession alone cannot decide: every copy holds the key.
+    const linked = await instanceService.findLinkedElsewhere(hubId, runtimeId);
+    if (linked) {
+      const owner = linked.ownerSubject?.kind === "user" ? linked.ownerSubject.id : null;
+      const approved =
+        owner !== null &&
+        payload.registrationId !== undefined &&
+        (owner === String(ownerId) ||
+          (await instanceService.consumeMoveApproval(hubId, runtimeId, owner)));
+      if (payload.registrationId === undefined) {
+        // A stale copy reconnecting after a move: tell it it is offline.
+        const connection = this.connections.get(runtimeId);
+        if (connection) {
+          this.sendMessage(connection.socket, {
+            type: "principal_unlinked",
+            localId: payload.localId,
+            hubId,
+          });
+        }
+        return;
+      }
+      if (!approved) {
+        reject(
+          "This principal is online on another runtime; its owner must approve the move " +
+            `(POST /v1/principals/by-hub-id/${hubId}/move)`,
+        );
+        return;
+      }
+      await instanceService.delete(linked.id);
+      const previous = this.connections.get(linked.runtimeId);
+      if (previous && linked.localId) {
+        this.sendMessage(previous.socket, {
+          type: "principal_unlinked",
+          localId: linked.localId,
+          hubId,
+        });
+      }
+      this.fastify.log.info(
+        { hubId, from: linked.runtimeId, to: runtimeId },
+        "Principal online link moved",
+      );
+    }
     // ADR-056 D7: at most one publicly exposed instance per
     // principal DID network-wide. A runtime announcing a public /
     // unlisted instance for a DID that ANOTHER instance already
@@ -817,10 +869,11 @@ export class TunnelManager {
       // (the legacy `owner_id` integer FK is gone). Project the
       // resolved runtime owner into the same `{kind:"user",id:"…"}`
       // shape so `upsertFromAnnounce` doesn't need a backfill shim.
-      const ownerSubject = payload.owner ?? {
-        kind: "user" as const,
-        id: String(ownerId),
-      };
+      // ADR-081 D4: an online principal's owner is a Hub account.
+      const ownerSubject =
+        payload.owner?.kind === "user" && payload.owner.id
+          ? payload.owner
+          : { kind: "user" as const, id: String(ownerId) };
       await instanceService.upsertFromAnnounce({
         id: payload.id,
         type: payload.type,
@@ -986,6 +1039,22 @@ export class TunnelManager {
       return;
     }
 
+    // 1b. ADR-081 D7: a registered principal speaks only from the runtime
+    //     its online link points at. An offline copy elsewhere holds the
+    //     same key, so the signature alone cannot tell them apart. An
+    //     unregistered author is left to the receiving runtime, which
+    //     checks registration end to end.
+    if (msg.sourcePrincipalDid.startsWith("did:key:")) {
+      const linked = await instanceService.linkedRuntimeForSigningDid(msg.sourcePrincipalDid);
+      if (linked !== undefined && linked !== conn.runtimeId) {
+        this.fastify.log.warn(
+          { connRuntime: conn.runtimeId, linkedRuntime: linked, principal: msg.sourcePrincipalDid },
+          "dropping envelope from a principal not linked to this runtime",
+        );
+        return;
+      }
+    }
+
     // 2. Recipient lookup. `connections.get(recipientRuntimeId)`
     //    returns `undefined` if the runtime isn't currently
     //    connected (and `getConnection` also filters out sockets
@@ -1055,6 +1124,22 @@ export class TunnelManager {
       return;
     }
 
+    // 1b. ADR-081 D7: a registered principal speaks only from the runtime
+    //     its online link points at. An offline copy elsewhere holds the
+    //     same key, so the signature alone cannot tell them apart. An
+    //     unregistered author is left to the receiving runtime, which
+    //     checks registration end to end.
+    if (msg.sourcePrincipalDid.startsWith("did:key:")) {
+      const linked = await instanceService.linkedRuntimeForSigningDid(msg.sourcePrincipalDid);
+      if (linked !== undefined && linked !== conn.runtimeId) {
+        this.fastify.log.warn(
+          { connRuntime: conn.runtimeId, linkedRuntime: linked, principal: msg.sourcePrincipalDid },
+          "dropping envelope from a principal not linked to this runtime",
+        );
+        return;
+      }
+    }
+
     // 2. Recipient lookup. `connections.get(recipientRuntimeId)`
     //    returns `undefined` if the runtime isn't currently
     //    connected. Drop + count + log; the source runtime will
@@ -1115,6 +1200,12 @@ export class TunnelManager {
       { runtimeId: conn.runtimeId },
       "Runtime tunnel disconnected",
     );
+  }
+
+  /** Close a runtime's tunnel, if connected (e.g. after it unregisters). */
+  disconnectRuntime(runtimeId: string, reason: string): void {
+    const conn = this.connections.get(runtimeId);
+    if (conn) this.closeConnection(conn, reason);
   }
 
   private closeConnection(conn: RuntimeConnection, reason: string): void {
@@ -1545,4 +1636,4 @@ function encodeHttpRequestBody(request: HttpProxiedRequest): Buffer {
   );
 }
 
-export { HEARTBEAT_INTERVAL_SECS, HEARTBEAT_TIMEOUT_MS };
+export { HEARTBEAT_INTERVAL_SECS, HEARTBEAT_TIMEOUT_MS, LIVE_CONNECTION_WINDOW_MS };

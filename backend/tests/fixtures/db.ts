@@ -165,6 +165,14 @@ const DDL_STATEMENTS = [
     principal_did_verified BOOLEAN DEFAULT FALSE NOT NULL
   );`,
   `CREATE INDEX IF NOT EXISTS idx_instances_runtime_id ON instances(runtime_id);`,
+  // ADR-081 D7: a principal's Hub ID is linked to exactly one runtime.
+  `CREATE UNIQUE INDEX IF NOT EXISTS instances_hub_id_unique ON instances(hub_id);`,
+  `CREATE TABLE IF NOT EXISTS principal_move_approvals (
+    hub_id UUID PRIMARY KEY REFERENCES hub_principals(id) ON DELETE CASCADE,
+    runtime_id VARCHAR(255) NOT NULL,
+    approved_by UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at TIMESTAMPTZ NOT NULL
+  );`,
   `CREATE INDEX IF NOT EXISTS idx_instances_exposure_status ON instances(exposure, status);`,
   `CREATE INDEX IF NOT EXISTS idx_instances_last_seen_at ON instances(last_seen_at);`,
   `CREATE INDEX IF NOT EXISTS idx_instances_published_at ON instances(published_at);`,
@@ -224,6 +232,7 @@ export async function resetTables(client: PGlite) {
     "bundle_versions",
     "bundles",
     "instances",
+    "principal_move_approvals",
     "hub_principals",
     "runtimes",
     "api_keys",

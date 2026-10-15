@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { randomBytes } from "node:crypto";
 import { db } from "../../db/index.js";
-import { runtimes } from "../../db/schema.js";
+import { instances, runtimes } from "../../db/schema.js";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { verifyDidKeyJws } from "../../services/tunnel-crypto.js";
@@ -250,6 +250,33 @@ export default async function runtimeRoutes(fastify: FastifyInstance) {
         .orderBy(sql`${runtimes.lastSeenAt} DESC NULLS LAST`);
 
       return { runtimes: rows };
+    },
+  );
+
+  // ── Unregister a runtime (ADR-081 D3) ──────────────────────────────────────
+  // The owning account removes the runtime: its instances leave the
+  // directory, its tunnel closes, and the DID is free to register again.
+  fastify.delete(
+    "/runtimes/:did",
+    { preHandler: [authenticateOrDevBypass] },
+    async (request, reply) => {
+      const user = request.user;
+      const { did } = request.params as { did: string };
+      const row = await db.query.runtimes.findFirst({
+        where: eq(runtimes.runtimeDid, did),
+      });
+      if (!row) {
+        return reply.status(404).send({ error: "Runtime not found" });
+      }
+      if (row.ownerId !== user.id) {
+        return reply.status(403).send({ error: "Forbidden" });
+      }
+      await db.transaction(async (tx) => {
+        await tx.delete(instances).where(eq(instances.runtimeId, did));
+        await tx.delete(runtimes).where(eq(runtimes.runtimeDid, did));
+      });
+      fastify.tunnelManager?.disconnectRuntime(did, "runtime unregistered");
+      return reply.status(204).send();
     },
   );
 

@@ -2,6 +2,15 @@
 
 ## 0.1.0 — pre-launch
 
+- One online copy per principal (ADR-081): a principal's Hub ID links to exactly one
+  runtime; moving it needs the owner account's approval (implicit for the runtime's
+  own account, else `POST /v1/principals/by-hub-id/:hubId/move`), and the old runtime
+  receives `principal_unlinked`. Channel events and invites from a registered
+  principal are relayed only from its linked runtime. `ownerSubject` follows the
+  runtime's announce.
+- One live tunnel per runtime: a newcomer is considered only after proving its key
+  and never displaces a live connection; stale ones are replaced.
+- `DELETE /v1/runtimes/:did` lets the owning account unregister a runtime.
 - Assign stable Hub principal UUIDs separately from deployment instance UUIDs and
   runtime-local actor IDs. Correlate explicit registration receipts, verify signing
   proof, and reject immutable-key reassignment.

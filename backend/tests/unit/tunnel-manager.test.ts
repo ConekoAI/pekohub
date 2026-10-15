@@ -3,6 +3,7 @@ import { EventEmitter } from "events";
 import Fastify from "fastify";
 import { TunnelManager } from "../../src/services/tunnel-manager.js";
 import { instanceService } from "../../src/services/instances.js";
+import { db } from "../../src/db/index.js";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { base58 } from "@scure/base";
 import { SignJWT, importJWK } from "jose";
@@ -131,6 +132,53 @@ describe("TunnelManager", () => {
     expect(socket.sent.some((m) => m.type === "tunnel_challenge")).toBe(true);
     expect(socket.sent.some((m) => m.type === "tunnel_ready")).toBe(true);
     expect(socket.closed).toBe(false);
+  });
+
+  it("never lets a second connection displace a live tunnel (ADR-081 §5.2)", async () => {
+    const manager = new TunnelManager(app);
+    const { did, privateKey } = makeRuntimeIdentity();
+    allowRuntime(manager, did);
+    const first = new MockWebSocket();
+    manager.handleSocket(first as any);
+    await completeHandshake(manager, first, did, privateKey, "nonce-first");
+
+    // A replayed hello alone must not touch the live connection.
+    const replay = new MockWebSocket();
+    manager.handleSocket(replay as any);
+    replay.triggerMessage({
+      type: "runtime_hello",
+      runtimeId: did,
+      nonce: "nonce-first",
+      signature: signHello(privateKey, "nonce-first"),
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(first.closed).toBe(false);
+
+    // Even a fully proven second connection is refused while the first
+    // is live.
+    const second = new MockWebSocket();
+    manager.handleSocket(second as any);
+    await completeHandshake(manager, second, did, privateKey, "nonce-second");
+    expect(first.closed).toBe(false);
+    expect(second.closed).toBe(true);
+    expect(second.sent.some((m) => m.type === "tunnel_ready")).toBe(false);
+  });
+
+  it("replaces a stale tunnel with a newly proven one", async () => {
+    const manager = new TunnelManager(app);
+    const { did, privateKey } = makeRuntimeIdentity();
+    allowRuntime(manager, did);
+    const first = new MockWebSocket();
+    manager.handleSocket(first as any);
+    await completeHandshake(manager, first, did, privateKey, "nonce-old");
+    const conn = (manager as any).connections.get(did);
+    conn.lastHeartbeatAt = new Date(Date.now() - 10 * 60_000);
+
+    const second = new MockWebSocket();
+    manager.handleSocket(second as any);
+    await completeHandshake(manager, second, did, privateKey, "nonce-new");
+    expect(first.closed).toBe(true);
+    expect(second.sent.some((m) => m.type === "tunnel_ready")).toBe(true);
   });
 
   it("rejects an invalid RuntimeHello signature and closes socket", async () => {
@@ -659,6 +707,7 @@ describe("TunnelManager instance_announce principalPop (ADR-058 D4)", () => {
       "owner-user-id",
     );
     vi.spyOn(instanceService, "registerIdentity").mockResolvedValue("12345678-1234-4234-8234-123456789abc");
+    vi.spyOn(instanceService, "findLinkedElsewhere").mockResolvedValue(null);
     const upsertSpy = vi
       .spyOn(instanceService, "upsertFromAnnounce")
       .mockResolvedValue(null as any);
@@ -779,5 +828,84 @@ describe("TunnelManager instance_announce principalPop (ADR-058 D4)", () => {
 
     expect(upsertSpy).not.toHaveBeenCalled();
     upsertSpy.mockRestore();
+  });
+});
+
+describe("TunnelManager single online copy (ADR-081 D7)", () => {
+  const HUB_ID = "12345678-1234-4234-8234-123456789abc";
+  let app: Awaited<ReturnType<typeof buildFastify>>;
+
+  beforeEach(async () => {
+    app = await buildFastify();
+    vi.restoreAllMocks();
+  });
+
+  async function connect(manager: TunnelManager, runtime: { did: string; privateKey: Uint8Array }) {
+    const socket = new MockWebSocket();
+    manager.handleSocket(socket as any);
+    await completeHandshake(manager, socket, runtime.did, runtime.privateKey, `n-${runtime.did.slice(-6)}`);
+    return socket;
+  }
+
+  async function scenario(linkedOwner: string, runtimeOwner: string) {
+    const manager = new TunnelManager(app);
+    const oldHost = makeRuntimeIdentity();
+    const newHost = makeRuntimeIdentity();
+    const principal = makeRuntimeIdentity();
+    vi.spyOn(manager as any, "isRuntimeAllowed").mockResolvedValue(true);
+    vi.spyOn(manager as any, "recordRuntimeConnected").mockResolvedValue(undefined);
+    vi.spyOn(manager as any, "resolveRuntimeOwner").mockResolvedValue(runtimeOwner);
+    vi.spyOn(instanceService, "registerIdentity").mockResolvedValue(HUB_ID);
+    vi.spyOn(instanceService, "findLinkedElsewhere").mockResolvedValue({
+      id: "old-instance",
+      runtimeId: oldHost.did,
+      localId: "prin_old",
+      ownerSubject: { kind: "user", id: linkedOwner },
+    } as any);
+    vi.spyOn(instanceService, "consumeMoveApproval").mockResolvedValue(false);
+    const deleteSpy = vi.spyOn(instanceService, "delete").mockResolvedValue(true);
+    const upsertSpy = vi.spyOn(instanceService, "upsertFromAnnounce").mockResolvedValue(null as any);
+    const oldSocket = await connect(manager, oldHost);
+    const newSocket = await connect(manager, newHost);
+    const announce = async (registrationId?: string) => {
+      const principalPop = await signPrincipalPop(
+        principal,
+        principal.did,
+        canonicalPrincipalPopPayload(newHost.did, principal.did),
+      );
+      newSocket.triggerMessage({
+        type: "instance_announce",
+        payload: makeAnnounce({ principalDid: principal.did, principalPop, registrationId }),
+      });
+      await new Promise((r) => setTimeout(r, 30));
+    };
+    return { oldSocket, newSocket, deleteSpy, upsertSpy, announce };
+  }
+
+  it("moves the link when the owner's account also owns the new runtime", async () => {
+    const { oldSocket, deleteSpy, upsertSpy, announce } = await scenario("alice", "alice");
+    await announce("registration-move");
+    expect(deleteSpy).toHaveBeenCalledWith("old-instance");
+    expect(upsertSpy).toHaveBeenCalledTimes(1);
+    expect(oldSocket.sent).toContainEqual({ type: "principal_unlinked", localId: "prin_old", hubId: HUB_ID });
+  });
+
+  it("refuses a move the owner has not approved", async () => {
+    const { oldSocket, newSocket, deleteSpy, upsertSpy, announce } = await scenario("alice", "mallory");
+    await announce("registration-move");
+    expect(deleteSpy).not.toHaveBeenCalled();
+    expect(upsertSpy).not.toHaveBeenCalled();
+    expect(oldSocket.sent.some((m) => m.type === "principal_unlinked")).toBe(false);
+    expect(newSocket.sent.some((m) => m.type === "principal_registration_rejected")).toBe(true);
+  });
+
+  it("tells a stale copy it is offline instead of re-linking it", async () => {
+    const { newSocket, deleteSpy, upsertSpy, announce } = await scenario("alice", "alice");
+    // A reconnecting registered principal is already known to Hub.
+    vi.spyOn(db.query.hubPrincipals, "findFirst").mockResolvedValue({ id: HUB_ID } as any);
+    await announce(undefined);
+    expect(deleteSpy).not.toHaveBeenCalled();
+    expect(upsertSpy).not.toHaveBeenCalled();
+    expect(newSocket.sent.some((m) => m.type === "principal_unlinked")).toBe(true);
   });
 });

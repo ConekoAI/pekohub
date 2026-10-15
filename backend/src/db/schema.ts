@@ -328,8 +328,24 @@ export const instances = pgTable(
     principalDidIdx: index("idx_instances_principal_did").on(
       table.principalDid,
     ),
+    // ADR-081 D7: a principal's Hub ID is linked to exactly one runtime,
+    // so at most one instance row carries it.
+    hubIdUnique: uniqueIndex("instances_hub_id_unique").on(table.hubId),
   }),
 );
+
+// ADR-081 D7: an owner's approval to move a principal's online link to
+// another runtime. Consumed by that runtime's next registration.
+export const principalMoveApprovals = pgTable("principal_move_approvals", {
+  hubId: uuid("hub_id")
+    .primaryKey()
+    .references(() => hubPrincipals.id, { onDelete: "cascade" }),
+  runtimeId: varchar("runtime_id", { length: 255 }).notNull(),
+  approvedBy: uuid("approved_by")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+});
 
 export const instanceRelations = relations(instances, ({ one }) => ({
   // Owner lookup routes through `instances.owner_subject` (JSONB)

@@ -120,6 +120,37 @@ export default async function principalDirectoryRoutes(
     },
   );
 
+  // ── POST /v1/principals/by-hub-id/:hubId/move ──────────────────────────────
+  // ADR-081 D7: the principal's owner approves moving its online link to
+  // another runtime. The approval is used once, by that runtime's next
+  // registration of the principal, within an hour.
+  fastify.post(
+    `/principals/by-hub-id/:hubId(${HUB_ID_PARAM})/move`,
+    async (request, reply) => {
+      const { hubId } = request.params as { hubId: string };
+      const body = z
+        .object({ runtimeId: z.string().min(1).max(255) })
+        .safeParse(request.body);
+      if (!z.string().uuid().safeParse(hubId).success || !body.success) {
+        return reply.status(400).send({ error: "Expected a Hub actor UUID and { runtimeId }" });
+      }
+      let user;
+      try {
+        user = await fastify.authenticate(request);
+      } catch {
+        return reply.status(401).send({ error: "Authentication required" });
+      }
+      switch (await instanceService.approveMove(hubId, body.data.runtimeId, String(user.id))) {
+        case "approved":
+          return reply.status(204).send();
+        case "miss":
+          return reply.status(404).send({ error: "Principal not found" });
+        case "denied":
+          return reply.status(403).send({ error: "Only the principal's owner can approve a move" });
+      }
+    },
+  );
+
   // ── GET /v1/principals/by-handle/:owner/:principal_name ──────────────────────────
   fastify.get(
     `/principals/by-handle/:owner(${OWNER_PARAM})/:principal_name(${PEKO_NAME_PARAM})`,

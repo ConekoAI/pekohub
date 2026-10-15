@@ -146,8 +146,8 @@ describe("ADR-056 D7: single public exposure per principal DID", () => {
     await settle();
     expect(await instanceRow(bUnlistedId)).toBeUndefined();
 
-    // ... but a PRIVATE announce for the same DID is fine (transport
-    // window: the copy exists, it just can't serve the world)
+    // ADR-081 D7: a PRIVATE copy is refused too — a principal is online
+    // on one runtime, and moving it needs its owner's approval.
     const bPrivateId = crypto.randomUUID();
     announce(b.socket, {
       id: bPrivateId,
@@ -158,7 +158,62 @@ describe("ADR-056 D7: single public exposure per principal DID", () => {
       principalDid: SHARED_DID,
     });
     await settle();
-    expect((await instanceRow(bPrivateId))?.exposure).toBe("private");
+    expect(await instanceRow(bPrivateId)).toBeUndefined();
+    expect(
+      b.socket.sent.some(
+        (m) =>
+          m.type === "principal_registration_rejected" &&
+          m.message.includes("owner must approve the move"),
+      ),
+    ).toBe(true);
+    expect((await instanceRow(rowA.rows[0].id))?.exposure).toBe("public");
+  });
+
+  it("moves the online link only with the owner's approval (ADR-081 D7)", async () => {
+    const a = await connectedRuntime("move-a");
+    // B connects to the same Hub (one tunnel manager), so Hub can tell A
+    // its copy went offline.
+    const bUser = await createUser(testDb.client, { namespace: "owner-move-b" });
+    const bIdentity = makeRuntimeIdentity();
+    await seedRuntime(testDb, bIdentity.did, bUser.id);
+    const bSocket = new MockWebSocket();
+    a.tunnelManager.handleSocket(bSocket as unknown as WebSocket);
+    await completeHandshake(bSocket, bIdentity.did, bIdentity.privateKey, "nonce-move-b");
+    runtimeIds.set(bSocket, bIdentity.did);
+    const b = { user: bUser, did: bIdentity.did, socket: bSocket };
+    const aId = crypto.randomUUID();
+    announce(a.socket, { id: aId, name: "mover", exposure: "private" });
+    await settle();
+    const receipt = a.socket.sent.find((m) => m.type === "principal_registered");
+    if (receipt?.type !== "principal_registered") throw new Error("missing receipt");
+
+    // Someone other than the owner cannot approve.
+    const stranger = await authHeaders(b.user);
+    const denied = await a.app.inject({
+      method: "POST",
+      url: `/v1/principals/by-hub-id/${receipt.hubId}/move`,
+      headers: stranger,
+      payload: { runtimeId: b.did },
+    });
+    expect(denied.statusCode).toBe(403);
+
+    // The owner approves the move to B.
+    const approved = await a.app.inject({
+      method: "POST",
+      url: `/v1/principals/by-hub-id/${receipt.hubId}/move`,
+      headers: await authHeaders(a.user),
+      payload: { runtimeId: b.did },
+    });
+    expect(approved.statusCode).toBe(204);
+
+    const bId = crypto.randomUUID();
+    announce(b.socket, { id: bId, name: "mover", exposure: "private" });
+    await settle();
+    expect((await instanceRow(bId))?.exposure).toBe("private");
+    expect(await instanceRow(aId)).toBeUndefined();
+    expect(a.socket.sent).toContainEqual(
+      expect.objectContaining({ type: "principal_unlinked", hubId: receipt.hubId }),
+    );
   });
 
   it("lets the currently-public instance re-announce (idempotent, not a conflict)", async () => {
@@ -190,72 +245,39 @@ describe("ADR-056 D7: single public exposure per principal DID", () => {
     expect((await instanceRow(instanceId))?.exposure).toBe("public");
   });
 
-  it("returns 409 from PATCH /instances/:id/exposure when another instance is public for the DID", async () => {
+  it("keeps one instance row per principal, so a second public copy cannot arise (ADR-081 D7)", async () => {
     const app = await buildTestApp({ testDb });
     const user = await createUser(testDb.client, { namespace: "alice" });
     const headers = await authHeaders(user);
 
-    const publicOne = await createInstance(testDb.client, {
+    const only = await createInstance(testDb.client, {
       ownerSubject: { kind: "user", id: String(user.id) },
       name: "already-public",
       status: "online",
       exposure: "public",
       principalDid: SHARED_DID,
     });
-    const candidate = await createInstance(testDb.client, {
-      ownerSubject: { kind: "user", id: String(user.id) },
-      name: "wants-public",
-      status: "online",
-      exposure: "private",
-      principalDid: SHARED_DID,
-    });
+    // The database refuses a second row linked to the same Hub ID.
+    await expect(
+      createInstance(testDb.client, {
+        ownerSubject: { kind: "user", id: String(user.id) },
+        name: "wants-public",
+        status: "online",
+        exposure: "private",
+        principalDid: SHARED_DID,
+      }),
+    ).rejects.toThrow();
 
-    const res = await app.inject({
-      method: "PATCH",
-      url: `/v1/instances/${candidate.id}/exposure`,
-      headers,
-      payload: { exposure: "public" },
-    });
-    expect(res.statusCode).toBe(409);
-    const body = JSON.parse(res.body);
-    expect(body.error).toContain("already-public");
-    expect(body.error).toContain(publicOne.id);
-    expect(body.conflictingInstanceId).toBe(publicOne.id);
-
-    // unlisted is publicly reachable too → also 409
-    const resUnlisted = await app.inject({
-      method: "PATCH",
-      url: `/v1/instances/${candidate.id}/exposure`,
-      headers,
-      payload: { exposure: "public" },
-    });
-    expect(resUnlisted.statusCode).toBe(409);
-
-    // Registered private is reachable to its authorized owner.
-    const resPrivate = await app.inject({
-      method: "PATCH",
-      url: `/v1/instances/${candidate.id}/exposure`,
-      headers,
-      payload: { exposure: "private" },
-    });
-    expect(resPrivate.statusCode).toBe(200);
-
-    // Retiring the public instance frees the DID
-    const retire = await app.inject({
-      method: "PATCH",
-      url: `/v1/instances/${publicOne.id}/exposure`,
-      headers,
-      payload: { exposure: "local_only" },
-    });
-    expect(retire.statusCode).toBe(200);
-
-    const retry = await app.inject({
-      method: "PATCH",
-      url: `/v1/instances/${candidate.id}/exposure`,
-      headers,
-      payload: { exposure: "public" },
-    });
-    expect(retry.statusCode).toBe(200);
+    // The one instance changes exposure freely.
+    for (const exposure of ["private", "public", "local_only"]) {
+      const res = await app.inject({
+        method: "PATCH",
+        url: `/v1/instances/${only.id}/exposure`,
+        headers,
+        payload: { exposure },
+      });
+      expect(res.statusCode).toBe(200);
+    }
   });
 
   it("requires verified registration before exposing a local-only principal", async () => {
