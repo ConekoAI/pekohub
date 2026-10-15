@@ -1,5 +1,5 @@
 import { db } from "../db/index.js";
-import { instances, runtimes, users, hubPrincipals } from "../db/schema.js";
+import { instances, runtimes, users, hubPrincipals, principalMoveApprovals } from "../db/schema.js";
 import { eq, and, sql, desc, count, gte, lt, ne, inArray } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import {
@@ -226,6 +226,9 @@ export interface UpdateInstanceInput {
   // (e.g. if a runtime downgrades to pre-#34).
   hubId?: string | null;
   localId?: string | null;
+  // ADR-081 D4: the principal's owner (a Hub account), refreshed on every
+  // announce so an owner transfer on the runtime reaches the directory.
+  ownerSubject?: Subject;
   principalDid?: string | null;
   // ADR-058 D4: PoP verification result paired with `principalDid`.
   // `undefined` leaves the existing flag alone (same leave-alone
@@ -523,6 +526,7 @@ export class InstanceService {
     if (input.featured !== undefined) values.featured = input.featured;
     if (input.hubId !== undefined) values.hubId = input.hubId;
     if (input.localId !== undefined) values.localId = input.localId;
+    if (input.ownerSubject !== undefined) values.ownerSubject = input.ownerSubject;
     if (input.principalDid !== undefined) values.principalDid = input.principalDid;
     if (input.principalDidVerified !== undefined)
       values.principalDidVerified = input.principalDidVerified;
@@ -569,6 +573,64 @@ export class InstanceService {
     if (!actor || actor.signingDid !== signingDid) throw new Error("Actor identity key belongs to another principal");
     return actor.id;
   }
+  /**
+   * ADR-081 D7: the instance a principal is linked to on a runtime other
+   * than `runtimeId`, if any. A principal's Hub ID is online on one
+   * runtime at a time.
+   */
+  async findLinkedElsewhere(hubId: string, runtimeId: string): Promise<InstanceRecord | null> {
+    const row = await db.query.instances.findFirst({
+      where: and(eq(instances.hubId, hubId), ne(instances.runtimeId, runtimeId)),
+    });
+    return row ? this.toRecord(row) : null;
+  }
+
+  /** The runtime a registered signing identity is linked to, if any. */
+  async linkedRuntimeForSigningDid(signingDid: string): Promise<string | null> {
+    const actor = await db.query.hubPrincipals.findFirst({
+      where: eq(hubPrincipals.signingDid, signingDid),
+    });
+    if (!actor) return null;
+    const row = await db.query.instances.findFirst({ where: eq(instances.hubId, actor.id) });
+    return row?.runtimeId ?? null;
+  }
+
+  /**
+   * Record the owner's approval to move a principal's online link to
+   * `runtimeId` (ADR-081 D7). Only the principal's current owner account
+   * may approve; the approval lasts an hour and is used once.
+   */
+  async approveMove(hubId: string, runtimeId: string, approver: string): Promise<"approved" | "miss" | "denied"> {
+    const current = await this.getByHubId(hubId);
+    if (!current) return "miss";
+    if (current.ownerSubject?.kind !== "user" || current.ownerSubject.id !== approver) return "denied";
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+    await db
+      .insert(principalMoveApprovals)
+      .values({ hubId, runtimeId, approvedBy: approver, expiresAt })
+      .onConflictDoUpdate({
+        target: principalMoveApprovals.hubId,
+        set: { runtimeId, approvedBy: approver, expiresAt },
+      });
+    return "approved";
+  }
+
+  /** Use an unexpired approval by `approver` to move `hubId` to `runtimeId`. */
+  async consumeMoveApproval(hubId: string, runtimeId: string, approver: string): Promise<boolean> {
+    const used = await db
+      .delete(principalMoveApprovals)
+      .where(
+        and(
+          eq(principalMoveApprovals.hubId, hubId),
+          eq(principalMoveApprovals.runtimeId, runtimeId),
+          eq(principalMoveApprovals.approvedBy, approver),
+          gte(principalMoveApprovals.expiresAt, new Date()),
+        ),
+      )
+      .returning({ hubId: principalMoveApprovals.hubId });
+    return used.length > 0;
+  }
+
   async getByHubId(id: string): Promise<InstanceRecord | null> {
     const row = await db.query.instances.findFirst({ where: eq(instances.hubId, id), orderBy: resolutionOrder() });
     return row ? this.toRecord(row) : null;
@@ -762,6 +824,7 @@ export class InstanceService {
       // would silently clear the column.
       if (input.hubId !== undefined) values.hubId = input.hubId;
     if (input.localId !== undefined) values.localId = input.localId;
+    if (input.ownerSubject) values.ownerSubject = input.ownerSubject;
     if (input.principalDid !== undefined) values.principalDid = input.principalDid;
       // ADR-058 D4: the verified flag travels with the DID — the
       // tunnel manager recomputes it on every announce that carries

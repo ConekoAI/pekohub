@@ -329,6 +329,9 @@ export type TunnelMessage =
   | { type: "instance_announce"; payload: InstanceAnnouncePayload }
   | { type: "principal_registration_rejected"; registrationId: string; message: string }
   | { type: "principal_registered"; registrationId?: string; localId: string; hubId: string; signingDid: string }
+  // ADR-081 D7: the principal's online link moved to another runtime; the
+  // receiving runtime's copy is now offline-only.
+  | { type: "principal_unlinked"; localId: string; hubId: string }
   | { type: "instance_heartbeat"; payload: InstanceHeartbeatPayload }
   | { type: "instance_deregister"; payload: InstanceDeregisterPayload }
   | { type: "exposure_update"; payload: ExposureUpdatePayload }

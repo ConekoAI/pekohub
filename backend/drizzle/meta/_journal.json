@@ -29,6 +29,13 @@
       "when": 1791810000000,
       "tag": "0003_dual_actor_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792057889787,
+      "tag": "0004_single_online_copy",
+      "breakpoints": true
     }
   ]
 }
