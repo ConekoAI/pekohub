@@ -12,13 +12,16 @@ describe("actor addressing contract", () => {
   beforeEach(async () => { await resetTables(testDb.client); });
   afterAll(async () => { await testDb.client.close(); });
 
-  it("routes the Hub ID and handle to the public host before private migration replicas", async () => {
+  it("routes the Hub ID and handle to the principal's one linked host (ADR-081 D7)", async () => {
     const app = await buildTestApp({ testDb });
     const user = await createUser(testDb.client, { namespace: "alice" });
     const ownerSubject = { kind: "user", id: user.id };
     const principalDid = "did:key:zCurrent";
-    await createInstance(testDb.client, { ownerSubject, principalDid, name: "helper", exposure: "private", status: "offline" });
     const current = await createInstance(testDb.client, { ownerSubject, principalDid, name: "helper", exposure: "public", status: "online" });
+    // A second ("migration replica") row for the same principal cannot exist.
+    await expect(
+      createInstance(testDb.client, { ownerSubject, principalDid, name: "helper", exposure: "private", status: "offline" }),
+    ).rejects.toThrow();
     for (const url of [`/v1/principals/by-hub-id/${current.hubId}`, "/v1/principals/by-handle/alice/helper"]) {
       const response = await app.inject({ method: "GET", url });
       expect(response.statusCode).toBe(200);

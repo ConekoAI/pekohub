@@ -1041,10 +1041,12 @@ export class TunnelManager {
 
     // 1b. ADR-081 D7: a registered principal speaks only from the runtime
     //     its online link points at. An offline copy elsewhere holds the
-    //     same key, so the signature alone cannot tell them apart.
+    //     same key, so the signature alone cannot tell them apart. An
+    //     unregistered author is left to the receiving runtime, which
+    //     checks registration end to end.
     if (msg.sourcePrincipalDid.startsWith("did:key:")) {
       const linked = await instanceService.linkedRuntimeForSigningDid(msg.sourcePrincipalDid);
-      if (linked !== conn.runtimeId) {
+      if (linked !== undefined && linked !== conn.runtimeId) {
         this.fastify.log.warn(
           { connRuntime: conn.runtimeId, linkedRuntime: linked, principal: msg.sourcePrincipalDid },
           "dropping envelope from a principal not linked to this runtime",
@@ -1124,10 +1126,12 @@ export class TunnelManager {
 
     // 1b. ADR-081 D7: a registered principal speaks only from the runtime
     //     its online link points at. An offline copy elsewhere holds the
-    //     same key, so the signature alone cannot tell them apart.
+    //     same key, so the signature alone cannot tell them apart. An
+    //     unregistered author is left to the receiving runtime, which
+    //     checks registration end to end.
     if (msg.sourcePrincipalDid.startsWith("did:key:")) {
       const linked = await instanceService.linkedRuntimeForSigningDid(msg.sourcePrincipalDid);
-      if (linked !== conn.runtimeId) {
+      if (linked !== undefined && linked !== conn.runtimeId) {
         this.fastify.log.warn(
           { connRuntime: conn.runtimeId, linkedRuntime: linked, principal: msg.sourcePrincipalDid },
           "dropping envelope from a principal not linked to this runtime",

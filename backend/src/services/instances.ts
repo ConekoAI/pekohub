@@ -585,12 +585,17 @@ export class InstanceService {
     return row ? this.toRecord(row) : null;
   }
 
-  /** The runtime a registered signing identity is linked to, if any. */
-  async linkedRuntimeForSigningDid(signingDid: string): Promise<string | null> {
+  /**
+   * Where a signing identity may speak from (ADR-081 D7): `undefined` when
+   * it is not a registered principal (receivers judge it end to end),
+   * otherwise the runtime its online link points at, or `null` when it
+   * is registered but online nowhere.
+   */
+  async linkedRuntimeForSigningDid(signingDid: string): Promise<string | null | undefined> {
     const actor = await db.query.hubPrincipals.findFirst({
       where: eq(hubPrincipals.signingDid, signingDid),
     });
-    if (!actor) return null;
+    if (!actor) return undefined;
     const row = await db.query.instances.findFirst({ where: eq(instances.hubId, actor.id) });
     return row?.runtimeId ?? null;
   }
