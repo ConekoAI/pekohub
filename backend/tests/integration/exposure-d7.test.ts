@@ -42,6 +42,7 @@ describe("ADR-056 D7: single public exposure per principal DID", () => {
 
   beforeEach(async () => {
     await resetTables(testDb.client);
+    sharedOwner = undefined;
   });
 
   afterAll(async () => {
@@ -49,6 +50,10 @@ describe("ADR-056 D7: single public exposure per principal DID", () => {
   });
 
   const runtimeIds = new WeakMap<MockWebSocket, string>();
+  const runtimeOwners = new WeakMap<MockWebSocket, string>();
+  // ADR-081 D4: every copy of the shared principal names its one owner —
+  // the account of the runtime that first put it online.
+  let sharedOwner: string | undefined;
   async function connectedRuntime(tag: string) {
     const { app, tunnelManager } = await buildTunnelTestApp(testDb);
     const user = await createUser(testDb.client, { namespace: `owner-${tag}` });
@@ -58,6 +63,7 @@ describe("ADR-056 D7: single public exposure per principal DID", () => {
     tunnelManager.handleSocket(socket as unknown as WebSocket);
     await completeHandshake(socket, did, privateKey, `nonce-${tag}`);
     runtimeIds.set(socket, did);
+    runtimeOwners.set(socket, String(user.id));
     return { app, tunnelManager, user, did, socket };
   }
 
@@ -66,7 +72,9 @@ describe("ADR-056 D7: single public exposure per principal DID", () => {
     payload: Record<string, unknown>,
   ) {
     // The connected runtime is tracked explicitly by the fixture.
-    socket.triggerMessage({ type: "instance_announce", payload: principalAnnouncement(runtimeIds.get(socket)!, SHARED_PRINCIPAL, payload) });
+    sharedOwner ??= runtimeOwners.get(socket);
+    const owner = { kind: "user", id: sharedOwner };
+    socket.triggerMessage({ type: "instance_announce", payload: principalAnnouncement(runtimeIds.get(socket)!, SHARED_PRINCIPAL, { owner, ...payload }) });
   }
 
   async function settle() {
@@ -83,7 +91,7 @@ describe("ADR-056 D7: single public exposure per principal DID", () => {
 
   it("assigns a stable Hub actor ID, persists both IDs, and rejects rekeying", async () => {
     const runtime = await connectedRuntime("identity");
-    const payload = principalAnnouncement(runtime.did, SHARED_PRINCIPAL, {name: "identity", exposure: "private"});
+    const payload = principalAnnouncement(runtime.did, SHARED_PRINCIPAL, {name: "identity", exposure: "private", owner: {kind: "user", id: String(runtime.user.id)}});
     runtime.socket.triggerMessage({type: "instance_announce", payload}); await settle();
     const receipt = runtime.socket.sent.find(m => m.type === "principal_registered");
     expect(receipt?.type).toBe("principal_registered");
@@ -180,6 +188,7 @@ describe("ADR-056 D7: single public exposure per principal DID", () => {
     a.tunnelManager.handleSocket(bSocket as unknown as WebSocket);
     await completeHandshake(bSocket, bIdentity.did, bIdentity.privateKey, "nonce-move-b");
     runtimeIds.set(bSocket, bIdentity.did);
+    runtimeOwners.set(bSocket, String(bUser.id));
     const b = { user: bUser, did: bIdentity.did, socket: bSocket };
     const aId = crypto.randomUUID();
     announce(a.socket, { id: aId, name: "mover", exposure: "private" });

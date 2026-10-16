@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { instanceService, type CallerSubject } from "../../services/instances.js";
+import { auditService } from "../../services/audit.js";
 import { db } from "../../db/index.js";
 import { hubPrincipals } from "../../db/schema.js";
 import { eq } from "drizzle-orm";
@@ -121,9 +122,10 @@ export default async function principalDirectoryRoutes(
   );
 
   // ── POST /v1/principals/by-hub-id/:hubId/move ──────────────────────────────
-  // ADR-081 D7: the principal's owner approves moving its online link to
-  // another runtime. The approval is used once, by that runtime's next
-  // registration of the principal, within an hour.
+  // ADR-081 D4/D7: approve linking a principal to a runtime. For an online
+  // principal only its owner may approve (a move); for one never online,
+  // the approver consents to owning it there. Used once, by that runtime's
+  // next registration of the principal, within an hour.
   fastify.post(
     `/principals/by-hub-id/:hubId(${HUB_ID_PARAM})/move`,
     async (request, reply) => {
@@ -147,6 +149,51 @@ export default async function principalDirectoryRoutes(
           return reply.status(404).send({ error: "Principal not found" });
         case "denied":
           return reply.status(403).send({ error: "Only the principal's owner can approve a move" });
+      }
+    },
+  );
+
+  // ── POST /v1/principals/by-hub-id/:hubId/transfer ─────────────────────────
+  // ADR-081 D4: the Hub's record is an online principal's owner. Only the
+  // recorded owner may transfer it, to another PekoHub user; the linked
+  // runtime is told and updates its copy.
+  fastify.post(
+    `/principals/by-hub-id/:hubId(${HUB_ID_PARAM})/transfer`,
+    async (request, reply) => {
+      const { hubId } = request.params as { hubId: string };
+      const body = z.object({ ownerId: z.string().uuid() }).safeParse(request.body);
+      if (!z.string().uuid().safeParse(hubId).success || !body.success) {
+        return reply.status(400).send({ error: "Expected a Hub actor UUID and { ownerId }" });
+      }
+      let user;
+      try {
+        user = await fastify.authenticate(request);
+      } catch {
+        return reply.status(401).send({ error: "Authentication required" });
+      }
+      const result = await instanceService.transferOwner(hubId, body.data.ownerId, String(user.id));
+      switch (result.status) {
+        case "transferred":
+          await auditService.logPrincipalOwnerTransfer(hubId, String(user.id), {
+            from: result.previous,
+            to: body.data.ownerId,
+            via: "api",
+          });
+          if (result.localId) {
+            fastify.tunnelManager?.notifyOwnerChanged(
+              result.runtimeId,
+              result.localId,
+              hubId,
+              body.data.ownerId,
+            );
+          }
+          return reply.status(204).send();
+        case "miss":
+          return reply.status(404).send({ error: "Principal not found" });
+        case "denied":
+          return reply.status(403).send({ error: "Only the principal's owner can transfer it" });
+        case "unknown_user":
+          return reply.status(422).send({ error: "The new owner is not a PekoHub user" });
       }
     },
   );

@@ -378,6 +378,7 @@ describe("Tunnel Proxy Integration", () => {
         type: "instance_announce",
         payload: principalAnnouncement(did, undefined, {
           id: instanceId,
+          owner: { kind: "user", id: String(user.id) },
           type: "principal",
           name: "announced-agent",
           status: "online",

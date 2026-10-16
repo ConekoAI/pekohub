@@ -20,6 +20,7 @@ import {
 } from "./tunnel-protocol.js";
 import { verifyDidKeySignature, verifyDidKeyJws, TunnelAuthError } from "./tunnel-crypto.js";
 import { instanceService, type InstanceStatus } from "./instances.js";
+import { auditService } from "./audit.js";
 import { metrics, CounterName } from "./metrics.js";
 import { db } from "../db/index.js";
 import { runtimes, instances, hubPrincipals } from "../db/schema.js";
@@ -475,6 +476,11 @@ export class TunnelManager {
         break;
       }
 
+      case "principal_transfer": {
+        await this.handlePrincipalTransfer(conn.runtimeId, msg);
+        break;
+      }
+
       case "instance_deregister": {
         await this.handleInstanceDeregister(conn.runtimeId, msg.payload);
         break;
@@ -551,6 +557,8 @@ export class TunnelManager {
 
       case "principal_registration_rejected":
       case "principal_unlinked":
+      case "principal_transfer_rejected":
+      case "principal_owner_changed":
       case "principal_registered": return; // Hub-to-runtime receipts; never accepted from a runtime.
       default: {
         // Exhaustiveness fallback: any unhandled runtime-originated
@@ -788,6 +796,49 @@ export class TunnelManager {
       return;
     }
     const principalDidVerified = true;
+    // ADR-081 D4: an online principal's owner is a Hub user, and the Hub's
+    // record of it is authoritative. An announce never changes the owner:
+    // only a transfer by the recorded owner does. A runtime whose local
+    // owner disagrees is told the recorded owner and must re-announce.
+    const announcedOwner =
+      payload.owner?.kind === "user" && payload.owner.id ? String(payload.owner.id) : null;
+    if (announcedOwner === null) {
+      reject("An online principal's owner must be a Hub user");
+      return;
+    }
+    const recorded = await instanceService.getByHubId(hubId);
+    const recordedOwner =
+      recorded?.ownerSubject?.kind === "user" ? String(recorded.ownerSubject.id) : null;
+    const staleCopy = !payload.registrationId && recorded !== null && recorded.runtimeId !== runtimeId;
+    if (recorded && recordedOwner !== announcedOwner && !staleCopy) {
+      reject(
+        "This principal's owner on PekoHub differs from the runtime's; " +
+          "ownership of an online principal changes only by a PekoHub transfer",
+      );
+      if (recorded.runtimeId === runtimeId && recordedOwner !== null) {
+        this.notifyOwnerChanged(runtimeId, payload.localId, hubId, recordedOwner);
+      }
+      this.fastify.log.warn(
+        { runtimeId, hubId, recordedOwner, announcedOwner },
+        "Announce rejected: owner differs from the Hub record",
+      );
+      return;
+    }
+    if (!recorded && announcedOwner !== String(ownerId)) {
+      // First registration under another account's ownership needs that
+      // account's consent; key possession and the runtime account are
+      // not enough.
+      const consented =
+        payload.registrationId !== undefined &&
+        (await instanceService.consumeMoveApproval(hubId, runtimeId, announcedOwner));
+      if (!consented) {
+        reject(
+          "The principal's owner must approve putting it online on this runtime " +
+            `(POST /v1/principals/by-hub-id/${hubId}/move with {"runtimeId": "${runtimeId}"})`,
+        );
+        return;
+      }
+    }
     // ADR-081 D7: one online copy. A principal linked to another runtime
     // moves here only on an explicit registration approved by its owner's
     // account — implicitly when that account also owns this runtime. Key
@@ -870,10 +921,8 @@ export class TunnelManager {
       // resolved runtime owner into the same `{kind:"user",id:"…"}`
       // shape so `upsertFromAnnounce` doesn't need a backfill shim.
       // ADR-081 D4: an online principal's owner is a Hub account.
-      const ownerSubject =
-        payload.owner?.kind === "user" && payload.owner.id
-          ? payload.owner
-          : { kind: "user" as const, id: String(ownerId) };
+      // ADR-081 D4: equal to the Hub's record by the check above.
+      const ownerSubject = { kind: "user" as const, id: announcedOwner };
       await instanceService.upsertFromAnnounce({
         id: payload.id,
         type: payload.type,
@@ -1200,6 +1249,80 @@ export class TunnelManager {
       { runtimeId: conn.runtimeId },
       "Runtime tunnel disconnected",
     );
+  }
+
+  /**
+   * Tell a principal's linked runtime the owner the Hub records (ADR-081
+   * D4): after a transfer, or when it announced a different one.
+   */
+  notifyOwnerChanged(
+    runtimeId: string,
+    localId: string,
+    hubId: string,
+    ownerId: string,
+    requestId?: string,
+  ): void {
+    const connection = this.connections.get(runtimeId);
+    if (connection) {
+      this.sendMessage(connection.socket, {
+        type: "principal_owner_changed",
+        requestId,
+        localId,
+        hubId,
+        ownerId,
+      });
+    }
+  }
+
+  /**
+   * A runtime transfers a principal it hosts (ADR-081 D4). Allowed when the
+   * principal is linked to that runtime and the runtime's account is the
+   * recorded owner — the local user at its terminal owns it.
+   */
+  private async handlePrincipalTransfer(
+    runtimeId: string,
+    msg: { requestId: string; localId: string; hubId: string; ownerId: string },
+  ): Promise<void> {
+    const connection = this.connections.get(runtimeId);
+    const refuse = (message: string) => {
+      if (connection) {
+        this.sendMessage(connection.socket, {
+          type: "principal_transfer_rejected",
+          requestId: msg.requestId,
+          message,
+        });
+      }
+    };
+    const record = await instanceService.getByHubId(msg.hubId);
+    if (!record || record.runtimeId !== runtimeId || record.localId !== msg.localId) {
+      refuse("This principal is not online on this runtime");
+      return;
+    }
+    const account = await this.resolveRuntimeOwner(runtimeId);
+    if (account === null) {
+      refuse("Runtime owner is unavailable");
+      return;
+    }
+    const result = await instanceService.transferOwner(msg.hubId, msg.ownerId, String(account));
+    switch (result.status) {
+      case "transferred":
+        await auditService.logPrincipalOwnerTransfer(msg.hubId, String(account), {
+          from: result.previous,
+          to: msg.ownerId,
+          via: "tunnel",
+        });
+        this.notifyOwnerChanged(runtimeId, msg.localId, msg.hubId, msg.ownerId, msg.requestId);
+        return;
+      case "denied":
+        refuse("Only the principal's owner on PekoHub can transfer it");
+        return;
+      case "unknown_user":
+        refuse("The new owner is not a PekoHub user");
+        return;
+      case "miss":
+        refuse("This principal is not online on this runtime");
+        return;
+    }
   }
 
   /** Close a runtime's tunnel, if connected (e.g. after it unregisters). */
