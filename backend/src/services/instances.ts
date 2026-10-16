@@ -601,14 +601,19 @@ export class InstanceService {
   }
 
   /**
-   * Record the owner's approval to move a principal's online link to
-   * `runtimeId` (ADR-081 D7). Only the principal's current owner account
-   * may approve; the approval lasts an hour and is used once.
+   * Record an owner's approval to link a principal to `runtimeId` (ADR-081
+   * D4, D7). For an online principal only its recorded owner may approve
+   * (a move). For one never online, any account may approve, but the
+   * approval only admits a registration that names the approver as owner
+   * — consent to own it. Lasts an hour and is used once.
    */
   async approveMove(hubId: string, runtimeId: string, approver: string): Promise<"approved" | "miss" | "denied"> {
     const current = await this.getByHubId(hubId);
-    if (!current) return "miss";
-    if (current.ownerSubject?.kind !== "user" || current.ownerSubject.id !== approver) return "denied";
+    if (current) {
+      if (current.ownerSubject?.kind !== "user" || current.ownerSubject.id !== approver) return "denied";
+    } else if (!(await db.query.hubPrincipals.findFirst({ where: eq(hubPrincipals.id, hubId) }))) {
+      return "miss";
+    }
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
     await db
       .insert(principalMoveApprovals)
@@ -618,6 +623,35 @@ export class InstanceService {
         set: { runtimeId, approvedBy: approver, expiresAt },
       });
     return "approved";
+  }
+
+  /**
+   * Transfer an online principal to `newOwner` (ADR-081 D4). The Hub's
+   * record is the owner of an online principal, so only its current owner
+   * account (`approver`) may transfer it, to an existing Hub user. Pending
+   * link approvals by the previous owner are withdrawn.
+   */
+  async transferOwner(
+    hubId: string,
+    newOwner: string,
+    approver: string,
+  ): Promise<
+    | { status: "transferred"; runtimeId: string; localId: string | null; previous: string }
+    | { status: "miss" | "denied" | "unknown_user" }
+  > {
+    const current = await this.getByHubId(hubId);
+    if (!current) return { status: "miss" };
+    const previous = current.ownerSubject?.kind === "user" ? current.ownerSubject.id : null;
+    if (previous === null || previous !== approver) return { status: "denied" };
+    if (!(await db.query.users.findFirst({ where: eq(users.id, newOwner) }))) {
+      return { status: "unknown_user" };
+    }
+    await db
+      .update(instances)
+      .set({ ownerSubject: { kind: "user", id: newOwner } })
+      .where(eq(instances.id, current.id));
+    await db.delete(principalMoveApprovals).where(eq(principalMoveApprovals.hubId, hubId));
+    return { status: "transferred", runtimeId: current.runtimeId, localId: current.localId ?? null, previous };
   }
 
   /** Use an unexpired approval by `approver` to move `hubId` to `runtimeId`. */

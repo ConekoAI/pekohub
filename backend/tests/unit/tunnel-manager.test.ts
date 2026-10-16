@@ -684,6 +684,7 @@ function makeAnnounce(overrides: Partial<InstanceAnnouncePayload> = {}): Instanc
   return {
     id: "inst-pop-1",
     localId: "prin_test", identityKey: "test-key", registrationId: "registration-test",
+    owner: { kind: "user", id: "owner-user-id" },
     type: "principal",
     name: "helper",
     status: "online",
@@ -708,6 +709,7 @@ describe("TunnelManager instance_announce principalPop (ADR-058 D4)", () => {
     );
     vi.spyOn(instanceService, "registerIdentity").mockResolvedValue("12345678-1234-4234-8234-123456789abc");
     vi.spyOn(instanceService, "findLinkedElsewhere").mockResolvedValue(null);
+    vi.spyOn(instanceService, "getByHubId").mockResolvedValue(null);
     const upsertSpy = vi
       .spyOn(instanceService, "upsertFromAnnounce")
       .mockResolvedValue(null as any);
@@ -862,6 +864,12 @@ describe("TunnelManager single online copy (ADR-081 D7)", () => {
       localId: "prin_old",
       ownerSubject: { kind: "user", id: linkedOwner },
     } as any);
+    vi.spyOn(instanceService, "getByHubId").mockResolvedValue({
+      id: "old-instance",
+      runtimeId: oldHost.did,
+      localId: "prin_old",
+      ownerSubject: { kind: "user", id: linkedOwner },
+    } as any);
     vi.spyOn(instanceService, "consumeMoveApproval").mockResolvedValue(false);
     const deleteSpy = vi.spyOn(instanceService, "delete").mockResolvedValue(true);
     const upsertSpy = vi.spyOn(instanceService, "upsertFromAnnounce").mockResolvedValue(null as any);
@@ -875,7 +883,12 @@ describe("TunnelManager single online copy (ADR-081 D7)", () => {
       );
       newSocket.triggerMessage({
         type: "instance_announce",
-        payload: makeAnnounce({ principalDid: principal.did, principalPop, registrationId }),
+        payload: makeAnnounce({
+          principalDid: principal.did,
+          principalPop,
+          registrationId,
+          owner: { kind: "user", id: linkedOwner },
+        }),
       });
       await new Promise((r) => setTimeout(r, 30));
     };

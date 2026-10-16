@@ -332,6 +332,13 @@ export type TunnelMessage =
   // ADR-081 D7: the principal's online link moved to another runtime; the
   // receiving runtime's copy is now offline-only.
   | { type: "principal_unlinked"; localId: string; hubId: string }
+  // ADR-081 D4: the Hub's record is an online principal's owner. A runtime
+  // asks to transfer it (allowed when the runtime's account is the owner);
+  // the Hub tells the linked runtime the recorded owner after a transfer,
+  // or when an announce named a different one.
+  | { type: "principal_transfer"; requestId: string; localId: string; hubId: string; ownerId: string }
+  | { type: "principal_transfer_rejected"; requestId: string; message: string }
+  | { type: "principal_owner_changed"; requestId?: string; localId: string; hubId: string; ownerId: string }
   | { type: "instance_heartbeat"; payload: InstanceHeartbeatPayload }
   | { type: "instance_deregister"; payload: InstanceDeregisterPayload }
   | { type: "exposure_update"; payload: ExposureUpdatePayload }

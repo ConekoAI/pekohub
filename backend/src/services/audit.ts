@@ -38,6 +38,25 @@ export class AuditService {
     );
   }
 
+  /** ADR-081 D4: an online principal's owner changed on the Hub. */
+  async logPrincipalOwnerTransfer(
+    hubId: string,
+    userId: string,
+    details: { from: string; to: string; via: "api" | "tunnel" },
+  ): Promise<void> {
+    try {
+      await db.insert(auditLogs).values({
+        namespace: "principals",
+        userId,
+        action: "principal.owner_transfer",
+        resource: hubId,
+        details,
+      });
+    } catch (err) {
+      this.logError("logPrincipalOwnerTransfer", err);
+    }
+  }
+
   async logPush(
     namespace: string,
     userId: string | undefined,
