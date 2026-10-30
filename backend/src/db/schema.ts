@@ -274,6 +274,9 @@ export const instances = pgTable(
     // Public profile fields (ADR-003)
     publicName: varchar("public_name", { length: 255 }),
     description: text("description"),
+    // The peko's avatar as its runtime announces it: an emoji or a
+    // short monogram (never an image URL). Null when it has none.
+    avatar: varchar("avatar", { length: 64 }),
     tags: jsonb("tags").default("[]"),
     category: varchar("category", { length: 32 }),
     tosRequired: boolean("tos_required").default(false),

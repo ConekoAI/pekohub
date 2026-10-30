@@ -144,6 +144,7 @@ const DDL_STATEMENTS = [
     metadata JSONB DEFAULT '{}',
     public_name VARCHAR(255),
     description TEXT,
+    avatar VARCHAR(64),
     tags JSONB DEFAULT '[]',
     category VARCHAR(32),
     tos_required BOOLEAN DEFAULT FALSE,

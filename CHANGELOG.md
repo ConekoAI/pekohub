@@ -2,6 +2,12 @@
 
 ## 0.1.0 — pre-launch
 
+- A peko's avatar (an emoji or short monogram) arrives on its runtime's `instance_announce`.
+  The hub keeps it in `instances.avatar` (migration `0005_peko_avatar`) and serves it on the
+  public peko record, `/v1/me/accessible-pekos`, and discovery hits (read from the row, so a
+  change shows at once). The web profile header and directory cards show it. An announce
+  without the field (older runtimes) leaves it unchanged; `null`, or anything that isn't a
+  short emoji or monogram, clears it.
 - A chat the runtime refuses (a `proxied_response` with status ≥ 400 before any reply
   text) ends the stream with an `event: error` frame carrying the reason, instead of
   writing the refusal as the peko's reply. `PUBLIC_ORIGIN` is documented in

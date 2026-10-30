@@ -100,6 +100,9 @@ export interface InstanceAnnouncePayload {
   // (R4); pekohub only stores the public-vs-private exposure switch.
   capabilities?: string[];
   metadata?: Record<string, unknown>;
+  // The peko's avatar (an emoji or short monogram). `null` clears it;
+  // absent (a runtime that predates the field) leaves the stored one.
+  avatar?: string | null;
   // ADR-041: per-Principal DID, written to `instances.principal_did`
   // and indexed by the by-did resolver
   // (`GET /v1/principals/by-did/:did`). Optional so pre-#82

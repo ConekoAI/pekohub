@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { EventEmitter } from "events";
 import Fastify from "fastify";
-import { TunnelManager, refusalMessage } from "../../src/services/tunnel-manager.js";
+import { TunnelManager, announcedAvatar, refusalMessage } from "../../src/services/tunnel-manager.js";
 import { instanceService } from "../../src/services/instances.js";
 import { db } from "../../src/db/index.js";
 import { ed25519 } from "@noble/curves/ed25519.js";
@@ -981,5 +981,22 @@ describe("TunnelManager single online copy (ADR-081 D7)", () => {
     expect(deleteSpy).not.toHaveBeenCalled();
     expect(upsertSpy).not.toHaveBeenCalled();
     expect(newSocket.sent.some((m) => m.type === "principal_unlinked")).toBe(true);
+  });
+});
+
+describe("announcedAvatar", () => {
+  it("keeps an emoji or monogram and clears anything else", () => {
+    expect(announcedAvatar(undefined)).toBeUndefined();
+    expect(announcedAvatar("🦊")).toBe("🦊");
+    expect(announcedAvatar("👨‍👩‍👧‍👦")).toBe("👨‍👩‍👧‍👦");
+    expect(announcedAvatar("  AB ")).toBe("AB");
+    expect(announcedAvatar(null)).toBeNull();
+    expect(announcedAvatar("")).toBeNull();
+    expect(announcedAvatar(42)).toBeNull();
+    expect(announcedAvatar("two words")).toBeNull();
+    expect(announcedAvatar("a\u0007")).toBeNull();
+    expect(announcedAvatar("https://example.com/me.png")).toBeNull();
+    expect(announcedAvatar("data:image/png;base64,AAAA")).toBeNull();
+    expect(announcedAvatar("a".repeat(65))).toBeNull();
   });
 });
