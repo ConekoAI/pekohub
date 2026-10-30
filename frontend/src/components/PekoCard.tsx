@@ -21,6 +21,11 @@ export function PekoCard({ hit }: { hit: DiscoveryHit }) {
       <header className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="truncate text-[15px] font-semibold tracking-tight text-slate-100">
+            {hit.avatar && (
+              <span aria-hidden="true" className="mr-1.5 select-none">
+                {hit.avatar}
+              </span>
+            )}
             {hit.publicName}
           </h3>
           <p className="mt-1 truncate font-mono text-2xs text-slate-500">

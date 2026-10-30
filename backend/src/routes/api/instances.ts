@@ -848,6 +848,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
               namespace: users.namespace,
               displayName: users.displayName,
               avatarUrl: users.avatarUrl,
+              pekoAvatar: instances.avatar,
             })
             .from(instances)
             // Post-H1: typed `owner_subject` JSONB. `users.id` cast
@@ -877,6 +878,9 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           // for the link, `ownerName` for the label.
           ownerNamespace: owner?.namespace ?? null,
           ownerAvatarUrl: owner?.avatarUrl ?? null,
+          // Read from the row, not the search index: the runtime
+          // re-announces it whenever the owner changes it.
+          avatar: owner?.pekoAvatar ?? null,
           category: h.category,
           tags: h.tags ?? [],
           status: h.status,
@@ -932,6 +936,7 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
               namespace: users.namespace,
               displayName: users.displayName,
               avatarUrl: users.avatarUrl,
+              pekoAvatar: instances.avatar,
             })
             .from(instances)
             // Post-H1: typed `owner_subject` JSONB. `users.id` cast
@@ -961,6 +966,9 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           // for the link, `ownerName` for the label.
           ownerNamespace: owner?.namespace ?? null,
           ownerAvatarUrl: owner?.avatarUrl ?? null,
+          // Read from the row, not the search index: the runtime
+          // re-announces it whenever the owner changes it.
+          avatar: owner?.pekoAvatar ?? null,
           category: h.category,
           tags: h.tags ?? [],
           status: h.status,

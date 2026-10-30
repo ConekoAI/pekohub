@@ -36,6 +36,13 @@
       "when": 1792057889787,
       "tag": "0004_single_online_copy",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793371586736,
+      "tag": "0005_peko_avatar",
+      "breakpoints": true
     }
   ]
 }

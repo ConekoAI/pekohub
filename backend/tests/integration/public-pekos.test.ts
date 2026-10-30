@@ -93,6 +93,7 @@ describe("ADR-059 public peko rename", () => {
         localId: instance.localId,
         publicName: "Greeter",
         description: "Says hi",
+        avatar: null,
         owner: {
           id: user.id,
           name: "Alice",
@@ -147,6 +148,7 @@ describe("ADR-059 public peko rename", () => {
           ownerName: "Alice",
           pekoName: "my-private-peko",
           publicName: "Mine",
+          avatar: null,
           status: "online",
         },
       ],

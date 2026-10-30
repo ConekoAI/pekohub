@@ -47,6 +47,26 @@ type HandshakePhase = "hello" | "challenge" | "ready";
  * The text of a runtime's refusal: a string body as is, `{ error }` /
  * `{ message }` objects by that field, else the status.
  */
+/** Longest avatar kept, in UTF-8 bytes (the `instances.avatar` column). */
+const AVATAR_MAX_BYTES = 64;
+
+/**
+ * The avatar an announce sets: an emoji or short monogram, under the
+ * same rules the runtime applies when the owner picks one. `undefined`
+ * (a runtime that predates the field) leaves the stored one alone;
+ * `null`, an empty string, or anything that fails the rules clears it.
+ */
+export function announcedAvatar(raw: unknown): string | null | undefined {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "string") return null;
+  const avatar = raw.trim();
+  if (!avatar) return null;
+  if (Buffer.byteLength(avatar, "utf8") > AVATAR_MAX_BYTES) return null;
+  if (/[\s\p{Cc}]/u.test(avatar)) return null;
+  if (avatar.includes("://") || avatar.startsWith("data:")) return null;
+  return avatar;
+}
+
 export function refusalMessage(status: number, body: unknown): string {
   if (typeof body === "string" && body.trim()) return body;
   if (body && typeof body === "object") {
@@ -950,6 +970,7 @@ export class TunnelManager {
         // Post-H4: allowedPrincipals removed from the announce payload.
         capabilities: payload.capabilities,
         metadata: payload.metadata,
+        avatar: announcedAvatar(payload.avatar),
         // Issue #14: per-principal DID. Pre-#34 runtimes omit the field;
         // the service layer leaves the existing column alone in that
         // case (see `upsertFromAnnounce`).

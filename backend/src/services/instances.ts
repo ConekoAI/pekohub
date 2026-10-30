@@ -123,6 +123,8 @@ export interface InstanceRecord {
   // Public profile (ADR-003)
   publicName: string | null;
   description: string | null;
+  /** Emoji or short monogram, as the runtime announces it. */
+  avatar: string | null;
   tags: string[];
   category: PublicCategory | null;
   tosRequired: boolean;
@@ -175,6 +177,8 @@ export interface CreateInstanceInput {
   // Public profile
   publicName?: string;
   description?: string;
+  // `null` clears; `undefined` leaves the stored avatar alone.
+  avatar?: string | null;
   tags?: string[];
   category?: PublicCategory;
   tosRequired?: boolean;
@@ -208,6 +212,7 @@ export interface UpdateInstanceInput {
   // Public profile
   publicName?: string;
   description?: string;
+  avatar?: string | null;
   tags?: string[];
   category?: PublicCategory;
   tosRequired?: boolean;
@@ -409,6 +414,7 @@ export class InstanceService {
         lastSeenAt: input.status === "online" ? new Date() : null,
         publicName: input.publicName ?? null,
         description: input.description ?? null,
+        avatar: input.avatar ?? null,
         tags: input.tags ?? [],
         category: input.category ?? null,
         tosRequired: input.tosRequired ?? false,
@@ -516,6 +522,7 @@ export class InstanceService {
     if (input.metadata !== undefined) values.metadata = input.metadata;
     if (input.publicName !== undefined) values.publicName = input.publicName;
     if (input.description !== undefined) values.description = input.description;
+    if (input.avatar !== undefined) values.avatar = input.avatar;
     if (input.tags !== undefined) values.tags = input.tags;
     if (input.category !== undefined) values.category = input.category;
     if (input.tosRequired !== undefined) values.tosRequired = input.tosRequired;
@@ -855,6 +862,8 @@ export class InstanceService {
         exposure: input.exposure,
         capabilities: input.capabilities,
         metadata: input.metadata,
+        // A runtime that predates the field sends no avatar: leave it.
+        avatar: input.avatar,
       };
       if (input.bundleRef !== undefined) values.bundleRef = input.bundleRef;
       // ADR-041: persist the per-Principal DID on re-announce. Treat
@@ -1022,6 +1031,7 @@ export class InstanceService {
       metadata: (row.metadata as Record<string, unknown>) ?? {},
       publicName: row.publicName ?? null,
       description: row.description ?? null,
+      avatar: row.avatar ?? null,
       tags: (row.tags as string[]) ?? [],
       category: (row.category as PublicCategory | null) ?? null,
       tosRequired: row.tosRequired ?? false,

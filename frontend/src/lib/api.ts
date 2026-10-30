@@ -448,6 +448,8 @@ export interface DiscoveryHit {
    */
   ownerNamespace: string | null;
   ownerAvatarUrl: string | null;
+  /** The peko's own avatar: an emoji or short monogram, if it has one. */
+  avatar?: string | null;
   category: string | null;
   tags: string[];
   status: 'online' | 'offline' | 'busy' | 'error';

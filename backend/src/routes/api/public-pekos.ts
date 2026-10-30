@@ -64,6 +64,7 @@ export default async function publicPekoRoutes(fastify: FastifyInstance) {
         hubId: instance.hubId,
         publicName: instance.publicName ?? instance.name,
         description: instance.description,
+        avatar: instance.avatar,
         owner: {
           id: ownerRow.id,
           name: ownerRow.displayName ?? ownerRow.namespace,
@@ -208,6 +209,7 @@ export default async function publicPekoRoutes(fastify: FastifyInstance) {
           ownerName: users.displayName,
           pekoName: instances.name,
           publicName: instances.publicName,
+          avatar: instances.avatar,
           status: instances.status,
         })
         .from(instances)
@@ -232,6 +234,7 @@ export default async function publicPekoRoutes(fastify: FastifyInstance) {
           ownerName: r.ownerName,
           pekoName: r.pekoName,
           publicName: r.publicName,
+          avatar: r.avatar,
           status: r.status as InstanceStatus,
         })),
       };

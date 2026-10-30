@@ -1,0 +1,1 @@
+ALTER TABLE "instances" ADD COLUMN "avatar" varchar(64);

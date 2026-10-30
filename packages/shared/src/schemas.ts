@@ -175,6 +175,9 @@ export const PublicProfile = z.object({
     id: z.string(),
     publicName: z.string(),
     description: z.string().nullable().optional(),
+    // The peko's own avatar: an emoji or short monogram its runtime
+    // announces. Absent from hubs that predate it.
+    avatar: z.string().nullable().optional(),
     owner: z.object({
       id: z.string(),
       name: z.string(),

@@ -24,7 +24,13 @@ export function ProfileHeader({ profile, shareUrl }: ProfileHeaderProps) {
       <div className="bg-brand-fade px-6 pb-6 pt-7">
         <div className="flex flex-wrap items-start gap-4">
           <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-2xl border border-peko-400/25 bg-ink-900/80">
-            <BotGlyph />
+            {liveInstance.avatar ? (
+              <span aria-hidden="true" className="select-none text-2xl font-semibold leading-none text-slate-100">
+                {liveInstance.avatar}
+              </span>
+            ) : (
+              <BotGlyph />
+            )}
           </div>
 
           <div className="min-w-0 flex-1">
