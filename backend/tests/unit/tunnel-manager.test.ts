@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { EventEmitter } from "events";
 import Fastify from "fastify";
-import { TunnelManager } from "../../src/services/tunnel-manager.js";
+import { TunnelManager, refusalMessage } from "../../src/services/tunnel-manager.js";
 import { instanceService } from "../../src/services/instances.js";
 import { db } from "../../src/db/index.js";
 import { ed25519 } from "@noble/curves/ed25519.js";
@@ -583,6 +583,67 @@ describe("TunnelManager", () => {
 
     await expect(streamPromise).resolves.toBeUndefined();
     expect(errors.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("ends a stream the runtime refuses with an error, not a reply chunk", async () => {
+    const manager = new TunnelManager(app);
+    const socket = new MockWebSocket();
+    const { did, privateKey } = makeRuntimeIdentity();
+    allowRuntime(manager, did);
+
+    manager.handleSocket(socket as any);
+    await completeHandshake(manager, socket, did, privateKey, "nonce-refused");
+
+    const chunks: string[] = [];
+    const errors: Error[] = [];
+    let ended = false;
+    const streamPromise = manager.startStream(
+      did,
+      {
+        requestId: "req-refused",
+        instanceId: "inst-1",
+        method: "stream",
+        body: {},
+        headers: {},
+      },
+      {
+        onChunk: (c) => chunks.push(c),
+        onEnd: () => {
+          ended = true;
+        },
+        onError: (err) => errors.push(err),
+      },
+    );
+    await new Promise((r) => setTimeout(r, 20));
+
+    socket.triggerMessage({
+      type: "proxied_response",
+      requestId: "req-refused",
+      payload: Array.from(
+        Buffer.from(
+          JSON.stringify({
+            status: 403,
+            body: "Forbidden: visitor cannot perform Chat on principal:remy",
+          }),
+          "utf8",
+        ),
+      ),
+    });
+
+    await expect(streamPromise).resolves.toBeUndefined();
+    expect(chunks).toEqual([]);
+    expect(ended).toBe(false);
+    expect(errors.map((e) => e.message)).toEqual([
+      "Forbidden: visitor cannot perform Chat on principal:remy",
+    ]);
+  });
+
+  it("reads a refusal's message from its body", () => {
+    expect(refusalMessage(403, "Forbidden: no")).toBe("Forbidden: no");
+    expect(refusalMessage(500, { error: "Execution failed: boom" })).toBe(
+      "Execution failed: boom",
+    );
+    expect(refusalMessage(403, null)).toBe("Request refused (status 403)");
   });
 
   it("propagates status_update messages on disconnect before marking offline", async () => {

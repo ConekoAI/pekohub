@@ -43,6 +43,20 @@ const PRINCIPAL_POP_IAT_LEEWAY_SECS = 60;
 /** Phases of the runtime-side handshake. */
 type HandshakePhase = "hello" | "challenge" | "ready";
 
+/**
+ * The text of a runtime's refusal: a string body as is, `{ error }` /
+ * `{ message }` objects by that field, else the status.
+ */
+export function refusalMessage(status: number, body: unknown): string {
+  if (typeof body === "string" && body.trim()) return body;
+  if (body && typeof body === "object") {
+    const fields = body as { error?: unknown; message?: unknown };
+    if (typeof fields.error === "string" && fields.error.trim()) return fields.error;
+    if (typeof fields.message === "string" && fields.message.trim()) return fields.message;
+  }
+  return `Request refused (status ${status})`;
+}
+
 export interface PendingRequest {
   resolve: (value: { status: number; body: unknown }) => void;
   reject: (reason: Error) => void;
@@ -1421,11 +1435,19 @@ export class TunnelManager {
     return new Promise((resolve, reject) => {
       const pending: PendingRequest = {
         resolve: (result) => {
-          // If resolved without stream init, treat as immediate response
+          // If resolved without stream init, treat as immediate response.
+          // A runtime refusing the request (no chat grant, invalid
+          // bridge token, execution failure) answers with a status
+          // >= 400: that is an error, not the peko's reply — before,
+          // it reached the chat as reply text.
           if (!pending.receivedStreamInit) {
             try {
-              sink.onChunk(String(result.body ?? ""));
-              sink.onEnd();
+              if (result.status >= 400) {
+                sink.onError(new Error(refusalMessage(result.status, result.body)));
+              } else {
+                sink.onChunk(String(result.body ?? ""));
+                sink.onEnd();
+              }
             } catch (err) {
               sink.onError(err instanceof Error ? err : new Error(String(err)));
             }
