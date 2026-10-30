@@ -2,6 +2,11 @@
 
 ## 0.1.0 — pre-launch
 
+- A chat the runtime refuses (a `proxied_response` with status ≥ 400 before any reply
+  text) ends the stream with an `event: error` frame carrying the reason, instead of
+  writing the refusal as the peko's reply. `PUBLIC_ORIGIN` is documented in
+  `backend/.env.example`: it is the bridge-token issuer and must match the hub a
+  runtime registered with (`http://localhost:3000` locally).
 - Hub records an online principal's owner (ADR-081 §5): announces never change it (a
   differing announce is refused and the runtime is sent `principal_owner_changed`);
   registering under another account needs that account's approval; only the recorded
