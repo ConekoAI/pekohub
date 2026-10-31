@@ -186,6 +186,7 @@ describe("ADR-059 public peko rename", () => {
       localId: instance.localId,
       identityKey: did,
       ownerSubject: { kind: "user", id: String(user.id) },
+      ownerHandle: "alice",
       exposure: "public",
     });
   });
