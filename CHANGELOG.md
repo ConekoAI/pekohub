@@ -2,6 +2,12 @@
 
 ## 0.1.0 — pre-launch
 
+- Pekos reach the discovery index again: indexing named no primary key, and Meilisearch can't
+  infer one from `id` next to `ownerId`, so every peko document was rejected and the directory
+  stayed empty. `indexInstance` now names `id`.
+- The directory lookups (`/v1/principals/by-hub-id/:hubId`, `/by-handle/...`) answer with
+  `ownerHandle`, the owning account's handle: with `name`, a peko's share path
+  `/peko/<ownerHandle>/<name>`. The desktop builds an owner's share link from it.
 - A peko's avatar (an emoji or short monogram) arrives on its runtime's `instance_announce`.
   The hub keeps it in `instances.avatar` (migration `0005_peko_avatar`) and serves it on the
   public peko record, `/v1/me/accessible-pekos`, and discovery hits (read from the row, so a

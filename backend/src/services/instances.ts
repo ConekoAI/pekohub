@@ -290,6 +290,12 @@ export interface PrincipalTargetResolution {
   localId: string;
   identityKey: string;
   ownerSubject: Subject;
+  /**
+   * The owning account's handle (`users.namespace`): with `name`, the
+   * peko's share path `/peko/<ownerHandle>/<name>`. Null when the
+   * owner isn't a user account.
+   */
+  ownerHandle: string | null;
   exposure: InstanceExposure;
 }
 
@@ -839,12 +845,20 @@ export class InstanceService {
           identityKey: actor.identityKey,
           principalDid: instance.principalDid ?? "",
           ownerSubject: owner,
+          ownerHandle: await this.ownerHandle(owner),
           exposure: instance.exposure,
         },
       };
     }
 
     return { status: "denied" };
+  }
+
+  /** A user owner's handle (`users.namespace`); null for any other owner. */
+  private async ownerHandle(owner: Subject): Promise<string | null> {
+    if (owner.kind !== "user" || !/^[0-9a-f-]{36}$/i.test(owner.id)) return null;
+    const user = await db.query.users.findFirst({ where: eq(users.id, owner.id) });
+    return user?.namespace ?? null;
   }
 
   async upsertFromAnnounce(

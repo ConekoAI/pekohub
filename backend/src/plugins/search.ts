@@ -221,7 +221,9 @@ async function searchPlugin(fastify: FastifyInstance) {
           publishedAt: doc.publishedAt,
           exposure: "public",
         },
-      ]);
+        // Name it: the engine can't infer one from `id` and `ownerId`,
+        // and fails the whole addition — no peko ever reached the index.
+      ], { primaryKey: "id" });
     },
 
     async searchInstances(query, options = {}) {

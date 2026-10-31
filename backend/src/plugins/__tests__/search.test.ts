@@ -114,4 +114,21 @@ describe("search plugin: indexed document shape", () => {
       expect(doc).not.toHaveProperty(field);
     }
   });
+
+  it("indexes a peko under its `id`, which the engine can't infer next to `ownerId`", async () => {
+    await app.search.indexInstance({
+      objectID: "044fe21d-b43c-5934-b5fc-c806d12fac3f",
+      id: "044fe21d-b43c-5934-b5fc-c806d12fac3f",
+      name: "remy",
+      type: "principal",
+      status: "online",
+      capabilities: [],
+      ownerId: "11111111-1111-4111-8111-111111111111",
+      createdAt: new Date().toISOString(),
+    });
+    expect(addDocuments).toHaveBeenCalledTimes(1);
+    const [documents, options] = addDocuments.mock.calls[0];
+    expect(documents[0]).toMatchObject({ id: "044fe21d-b43c-5934-b5fc-c806d12fac3f", exposure: "public" });
+    expect(options).toEqual({ primaryKey: "id" });
+  });
 });

@@ -69,6 +69,8 @@ describe("Agent directory API", () => {
         identityKey: REAL_DID,
         principalDid: REAL_DID,
         ownerSubject: { kind: "user", id: String(owner.id) },
+        // With `name`, the peko's share path: /peko/alice/helper.
+        ownerHandle: "alice",
         exposure: "private",
       });
     });
@@ -199,6 +201,7 @@ describe("Agent directory API", () => {
         identityKey: REAL_DID,
         principalDid: REAL_DID,
         ownerSubject: { kind: "user", id: String(owner.id) },
+        ownerHandle: "alice",
         exposure: "private",
       });
     });
