@@ -8,6 +8,7 @@
   the website (null otherwise), so clients never build one origin from the other.
   `PUBLIC_ORIGIN` defaults to `https://api.pekohub.ai`. `DEPLOYMENT.md` describes the two
   hosts (and `pekohub.org` as a redirect) instead of the retired dual-hostname split.
+
 - An OAuth 2.0 authorization server signs in Peko desktop and the Peko CLI (ADR-007).
   The desktop uses authorization code + PKCE with a loopback redirect
   (`GET /oauth/authorize` → the website's `/authorize` consent page → `POST /oauth/token`).
