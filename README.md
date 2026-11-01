@@ -4,7 +4,7 @@ Public registry, relay, and discovery hub for [peko-runtime](https://github.com/
 
 PekoHub is three things in one server:
 
-1. **OCI Distribution Spec v1.1 seed registry** (multi-segment repo paths like `peko/principals/<name>`; a push is a zero-layer manifest whose config blob is a stripped `principal.toml` — see ADR-005 and runtime ADR-056 D6). **Seed-only:** the hub carries DNA, never an existence and never a capability package.
+1. **Seed registry**: a seed is a peko's definition (`principal.toml`, published as text and named `<owner>/<name>`; ADR-008). The hub carries DNA, never an existence and never a capability package.
 2. **Tunnel relay** that carries channel traffic between runtimes, plus a chat proxy for signed-in clients that have no runtime of their own (a future mobile app).
 3. **Discovery + share directory** so users can find exposed pekos and open them in `peko-desktop` from a share link. The website offers no chat.
 
@@ -90,23 +90,29 @@ pnpm dev
 
 ## API Overview
 
-All custom endpoints are mounted under `/v1`. OCI endpoints are at `/v2/...`. The runtime CLI's hard-coded `/api/v1` prefix (search, bundle detail, OAuth) is served as an alias of the same handlers.
+REST endpoints are mounted under `/v1`; the OAuth protocol endpoints under `/oauth`.
 
-### OCI Distribution Spec v1.1
+### Seed registry (ADR-008)
 
-`{repo}` is a multi-segment repository path (e.g. `peko/principals/my-peko`; pre-ADR-005 rows use `alice/my-peko`). Write endpoints require a JWT or `pkr_` API key; the first push claims the repo for its publisher (`bundles.publisher_id`).
-
-Only `org.peko.kind: "principal"` is accepted. A push declaring `extension` (or the pre-ADR-041 `agent` / `team`) is answered with **410 Gone**, as is any push into the retired `peko/{extensions,agents,teams}/` lanes — those distributed capability packages, which now live as plain workspace files (runtime ADR-037, ADR-047 §5, ADR-050).
+A seed is a peko's definition, never its existence: a `principal.toml` (plus an optional
+`persona`) as `peko seed <name>` exports it, grown with `peko create <name> -s <file>`.
+Seeds are named `<publisher handle>/<name>`; versions are immutable. The Hub refuses a seed
+that carries `id`, `did`, `actor_key`, `owner`, `permissions`, `boot_state`, `status`,
+`exposure`, or `children`, or that is over 64 KB.
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /v2/_catalog` | List all bundle repos |
-| `GET /v2/{repo}/tags/list` | List tags |
-| `GET /v2/{repo}/manifests/{ref}` | Pull manifest |
-| `PUT /v2/{repo}/manifests/{ref}` | Push manifest (publisher-only on existing repos) |
-| `GET /v2/{repo}/blobs/{digest}` | Pull blob |
-| `POST /v2/{repo}/blobs/uploads/` | Initiate blob upload (auth required) |
-| `PUT /v2/{repo}/blobs/uploads/{uuid}` | Complete blob upload (auth required) |
+| `GET /v1/seeds` | Newest first (`page`, `perPage`). |
+| `GET /v1/seeds/:owner/:name` | Detail: summary, README, versions, latest TOML, `downloadUrl`, `createCommand`. |
+| `GET /v1/seeds/:owner/:name/versions/:version/seed.toml` | Download (`latest` = newest non-deprecated). Counts the pull. |
+| `POST /v1/seeds` | Publish `{ seed, version, readme? }` (signed in). 422 explains a refused seed; 409 on a repeated version. |
+| `POST /v1/seeds/:owner/:name/versions/:version/deprecate` | `{ deprecated, message? }` (publisher). |
+| `DELETE /v1/seeds/:owner/:name[/versions/:version]` | Remove a version or the seed (publisher). |
+| `GET /v1/search?q=` | Full-text search over seeds. |
+
+The OCI Distribution surface (`/v2/*`), the `/v1/bundles/*` API, the `/api/v1` aliases, and
+blob GC are gone: their only producer was the runtime registry client, deleted in runtime
+ADR-066 D7.
 
 ### Tunnel relay
 

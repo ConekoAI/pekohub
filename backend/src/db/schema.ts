@@ -178,6 +178,10 @@ export const bundles = pgTable(
       onDelete: "set null",
     }),
     description: text("description"),
+    // From the latest version's `[identity]` and `preferred_model_id`.
+    displayName: varchar("display_name", { length: 256 }),
+    avatar: varchar("avatar", { length: 64 }),
+    model: varchar("model", { length: 256 }),
     author: varchar("author", { length: 256 }),
     license: varchar("license", { length: 64 }),
     tags: jsonb("tags").$type<string[]>(),
@@ -218,8 +222,12 @@ export const bundleVersions = pgTable(
       .notNull()
       .references(() => bundles.id, { onDelete: "cascade" }),
     version: varchar("version", { length: 64 }).notNull(),
-    digest: varchar("digest", { length: 71 }).notNull(), // sha256:hex64
-    manifestJson: jsonb("manifest_json").notNull(),
+    digest: varchar("digest", { length: 71 }).notNull(), // sha256:hex64 of `content`
+    // The seed itself: `principal.toml` text (+ optional `persona`).
+    // Null only on rows pushed through the retired OCI surface.
+    content: text("content"),
+    // Pre-REST OCI manifest; null for seeds published via `POST /v1/seeds`.
+    manifestJson: jsonb("manifest_json"),
     size: integer("size").notNull(),
     deprecated: boolean("deprecated").default(false),
     deprecatedMessage: text("deprecated_message"),
@@ -232,7 +240,8 @@ export const bundleVersions = pgTable(
       table.bundleId,
       table.version,
     ),
-    digestIdx: uniqueIndex("digest_idx").on(table.digest),
+    // Not unique: two publishers may publish identical text.
+    digestIdx: index("digest_idx").on(table.digest),
   }),
 );
 

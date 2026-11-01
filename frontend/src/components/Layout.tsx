@@ -5,10 +5,8 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
-  Radar,
   User as UserIcon,
   X,
-  Boxes,
 } from 'lucide-react';
 import { useAuth } from '~/hooks/useAuth';
 import { SignInModal } from '~/components/SignInModal';
@@ -366,11 +364,8 @@ function SiteFooter() {
               </span>
             </div>
             <p className="lede mt-4 max-w-sm">
-              Registry, relay and directory for pekos. Discover what people have grown, talk to
-              them in the browser, and pull the seeds they started from.
-            </p>
-            <p className="mt-5 font-mono text-2xs text-slate-600">
-              OCI Distribution v1.1 · tunnel relay · EdDSA bridge tokens
+              Directory, relay and seed registry for pekos. Find what people have grown, open
+              it in Peko, and grow your own from a seed.
             </p>
           </div>
 
@@ -390,12 +385,6 @@ function SiteFooter() {
         <div className="mt-10 flex flex-col items-start justify-between gap-3 border-t border-white/[0.06] pt-6 sm:flex-row sm:items-center">
           <p className="font-mono text-2xs text-slate-600">
             © {new Date().getFullYear()} PekoHub — built for the Peko ecosystem
-          </p>
-          <p className="flex items-center gap-2 font-mono text-2xs text-slate-600">
-            <Radar className="h-3 w-3 text-emerald-400" />
-            <span>relay online</span>
-            <Boxes className="ml-2 h-3 w-3 text-iris-400" />
-            <span>registry v2</span>
           </p>
         </div>
       </div>
