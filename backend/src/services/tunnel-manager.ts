@@ -716,6 +716,18 @@ export class TunnelManager {
     if (pending.timer) clearTimeout(pending.timer);
   }
 
+  /**
+   * Runtime ADR-090 D3: whether `conn` may speak for `source`. Only a
+   * person's address (`user:hub:<account>`) is checked: it must name the
+   * account the runtime is registered to. Principals are checked by their
+   * online link (ADR-081 D7), and other sources are the receiver's to judge.
+   */
+  private async speaksForItsOwnPerson(conn: RuntimeConnection, source: string): Promise<boolean> {
+    if (!source.startsWith("user:hub:")) return true;
+    const owner = await this.resolveRuntimeOwner(conn.runtimeId);
+    return owner !== null && owner === source.slice("user:hub:".length);
+  }
+
   async resolveRuntimeOwner(runtimeId: string): Promise<string | null> {
     // Post-H3: ownerId is a UUID string (was number).
     const row = await db.query.runtimes.findFirst({
@@ -1139,6 +1151,18 @@ export class TunnelManager {
       }
     }
 
+    // 1c. Runtime ADR-090 D3: a person (`user:hub:<account>`) has no key;
+    //     their envelope is vouched for by their runtime, so it is relayed
+    //     only from the runtime registered to that account.
+    if (!(await this.speaksForItsOwnPerson(conn, msg.sourcePrincipalDid))) {
+      metrics.inc(CounterName.HubChannelEventRejectedPersonAccount);
+      this.fastify.log.warn(
+        { connRuntime: conn.runtimeId, person: msg.sourcePrincipalDid, channelId: msg.channelId },
+        "dropping envelope for a person from a runtime not registered to their account",
+      );
+      return;
+    }
+
     // 2. Recipient lookup. `connections.get(recipientRuntimeId)`
     //    returns `undefined` if the runtime isn't currently
     //    connected (and `getConnection` also filters out sockets
@@ -1222,6 +1246,18 @@ export class TunnelManager {
         );
         return;
       }
+    }
+
+    // 1c. Runtime ADR-090 D3: a person (`user:hub:<account>`) has no key;
+    //     their envelope is vouched for by their runtime, so it is relayed
+    //     only from the runtime registered to that account.
+    if (!(await this.speaksForItsOwnPerson(conn, msg.sourcePrincipalDid))) {
+      metrics.inc(CounterName.HubChannelInviteRejectedPersonAccount);
+      this.fastify.log.warn(
+        { connRuntime: conn.runtimeId, person: msg.sourcePrincipalDid, channelId: msg.channelId },
+        "dropping envelope for a person from a runtime not registered to their account",
+      );
+      return;
     }
 
     // 2. Recipient lookup. `connections.get(recipientRuntimeId)`
