@@ -2,6 +2,15 @@
 
 ## 0.1.0 — pre-launch
 
+- An OAuth 2.0 authorization server signs in Peko desktop and the Peko CLI (ADR-007).
+  The desktop uses authorization code + PKCE with a loopback redirect
+  (`GET /oauth/authorize` → the website's `/authorize` consent page → `POST /oauth/token`).
+  The CLI uses the device grant (`POST /oauth/device/code`, approved on the website's
+  `/device` page). Refresh tokens rotate and stay with the client they were issued to; the
+  website's refresh cookie refuses them. `POST /oauth/revoke` signs an app out. Migration
+  `0006_oauth_server` adds `oauth_authorization_codes`, `oauth_device_codes`, and
+  `refresh_tokens.client_id`. Signing in on the website now returns to the page that asked.
+
 - The website no longer offers chat. A peko's page (`/peko/:owner/:name`) is a profile with
   **Open in Peko** (`peko://add-peko?url=…`), which adds the peko in the desktop app; the
   desktop messages it over the user's own runtime. The ToS and quota fields left the owner

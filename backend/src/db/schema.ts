@@ -80,6 +80,10 @@ export const refreshTokens = pgTable(
     rotatedFrom: text("rotated_from").references(
       (): AnyPgColumn => refreshTokens.id,
     ),
+    // The OAuth client this token was issued to (`peko-desktop`,
+    // `peko-cli`); null for the website's own refresh cookie. A token
+    // is only ever refreshed by the client it was issued to.
+    clientId: varchar("client_id", { length: 64 }),
   },
   (table) => ({
     userActiveIdx: index("refresh_tokens_user_active_idx").on(
@@ -88,6 +92,53 @@ export const refreshTokens = pgTable(
       table.expiresAt,
     ),
     prefixIdx: index("refresh_tokens_prefix_idx").on(table.tokenPrefix),
+  }),
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// OAuth authorization server (desktop and CLI sign-in)
+//
+// Codes are high-entropy random values, stored as SHA-256 hex digests.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** One authorization code (RFC 6749 §4.1, PKCE per RFC 7636); single use. */
+export const oauthAuthorizationCodes = pgTable("oauth_authorization_codes", {
+  codeHash: varchar("code_hash", { length: 64 }).primaryKey(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  clientId: varchar("client_id", { length: 64 }).notNull(),
+  redirectUri: text("redirect_uri").notNull(),
+  codeChallenge: varchar("code_challenge", { length: 128 }).notNull(),
+  scope: varchar("scope", { length: 256 }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  usedAt: timestamp("used_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+/** One device authorization (RFC 8628): `pending` until the user decides. */
+export const oauthDeviceCodes = pgTable(
+  "oauth_device_codes",
+  {
+    deviceCodeHash: varchar("device_code_hash", { length: 64 }).primaryKey(),
+    userCode: varchar("user_code", { length: 16 }).notNull(),
+    clientId: varchar("client_id", { length: 64 }).notNull(),
+    scope: varchar("scope", { length: 256 }),
+    status: varchar("status", { length: 16 })
+      .notNull()
+      .default("pending")
+      .$type<"pending" | "approved" | "denied" | "used">(),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    lastPolledAt: timestamp("last_polled_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    userCodeIdx: uniqueIndex("oauth_device_codes_user_code_idx").on(table.userCode),
   }),
 );
 

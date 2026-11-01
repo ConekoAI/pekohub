@@ -24,6 +24,7 @@ import principalDirectoryRoutes from "./routes/api/principals.js";
 import adminRoutes from "./routes/api/admin.js";
 import oauthRoutes from "./routes/auth/oauth.js";
 import apiKeyRoutes from "./routes/auth/api-keys.js";
+import oauthServerRoutes from "./routes/auth/oauth-server.js";
 
 import { GarbageCollector } from "./services/gc.js";
 import { Scheduler } from "./services/scheduler.js";
@@ -46,6 +47,14 @@ async function main() {
   });
 
   // Allow raw binary bodies for OCI blob uploads
+  // OAuth token, device, and revoke requests are form-encoded (RFC 6749 §4.1.3)
+  app.addContentTypeParser(
+    "application/x-www-form-urlencoded",
+    { parseAs: "string" },
+    (_req, body, done) => {
+      done(null, Object.fromEntries(new URLSearchParams(body as string)));
+    },
+  );
   app.addContentTypeParser(
     "application/octet-stream",
     { parseAs: "buffer" },
@@ -168,6 +177,28 @@ async function main() {
   app.get("/.well-known/jwks.json", jwksHandler);
   await app.register(oauthRoutes, { prefix: "/v1/auth" });
   await app.register(apiKeyRoutes, { prefix: "/v1/auth" });
+  // OAuth authorization server for Peko desktop + CLI sign-in
+  await app.register(oauthServerRoutes);
+
+  // OAuth protocol endpoints: device polling runs every few seconds, so
+  // a looser per-IP cap than the sign-in endpoints below.
+  app.addHook("onRequest", async (request, reply) => {
+    if (!request.url.startsWith("/oauth/")) return;
+    const key = `ratelimit:oauth:${request.ip}`;
+    const now = Date.now();
+    const windowMs = 60_000;
+    const max = 60;
+    const store =
+      (app as any)._oauthRateLimitStore ?? new Map<string, number[]>();
+    (app as any)._oauthRateLimitStore = store;
+    const valid = (store.get(key) ?? []).filter((t: number) => now - t < windowMs);
+    if (valid.length >= max) {
+      reply.header("Retry-After", Math.ceil(windowMs / 1000));
+      return reply.status(429).send({ error: "slow_down" });
+    }
+    valid.push(now);
+    store.set(key, valid);
+  });
 
   // Stricter rate limits for auth endpoints
   app.addHook("onRequest", async (request, reply) => {

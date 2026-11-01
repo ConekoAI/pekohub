@@ -1,6 +1,46 @@
 import { Github, X } from 'lucide-react';
 import { API_BASE } from '~/lib/api';
 
+const RETURN_TO_KEY = 'pekohub_return_to';
+
+/**
+ * Where sign-in should land: the page that started it, remembered across
+ * the provider round trip. Only same-origin paths are accepted.
+ */
+export function takeSignInReturnTo(): string | null {
+  const value = sessionStorage.getItem(RETURN_TO_KEY);
+  sessionStorage.removeItem(RETURN_TO_KEY);
+  return value && value.startsWith('/') && !value.startsWith('//') ? value : null;
+}
+
+function rememberReturnTo() {
+  sessionStorage.setItem(RETURN_TO_KEY, `${window.location.pathname}${window.location.search}`);
+}
+
+/** The provider buttons; after sign-in the user comes back to this page. */
+export function SignInOptions() {
+  return (
+    <div className="flex flex-col gap-2.5">
+      <a
+        href={`${API_BASE}/v1/auth/github/authorize`}
+        onClick={rememberReturnTo}
+        className="btn-secondary justify-center py-2.5"
+      >
+        <Github className="h-4 w-4" />
+        Continue with GitHub
+      </a>
+      <a
+        href={`${API_BASE}/v1/auth/google/authorize`}
+        onClick={rememberReturnTo}
+        className="btn-secondary justify-center py-2.5"
+      >
+        <GoogleMark />
+        Continue with Google
+      </a>
+    </div>
+  );
+}
+
 interface SignInModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -36,22 +76,8 @@ export function SignInModal({ isOpen, onClose }: SignInModalProps) {
           Manage exposure, publish seeds and keep your API keys in one place.
         </p>
 
-        <div className="mt-6 flex flex-col gap-2.5">
-          <a
-            href={`${API_BASE}/v1/auth/github/authorize`}
-            className="btn-secondary justify-center py-2.5"
-          >
-            <Github className="h-4 w-4" />
-            Continue with GitHub
-          </a>
-
-          <a
-            href={`${API_BASE}/v1/auth/google/authorize`}
-            className="btn-secondary justify-center py-2.5"
-          >
-            <GoogleMark />
-            Continue with Google
-          </a>
+        <div className="mt-6">
+          <SignInOptions />
         </div>
 
         <div className="divider my-6" />

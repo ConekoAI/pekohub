@@ -179,6 +179,22 @@ Both endpoints return `PrincipalTargetResolution { status: "hit" | "miss" | "den
 | `GET /v1/auth/api-keys` | List API keys owned by the caller. |
 | `DELETE /v1/auth/api-keys/:id` | Revoke an API key. |
 
+### Sign-in for Peko desktop and the CLI (OAuth 2.0 authorization server, ADR-007)
+
+Two first-party public clients: `peko-desktop` (authorization code + PKCE S256, loopback
+redirect on any port) and `peko-cli` (device authorization). Access tokens last one hour;
+refresh tokens rotate and work only for the client they were issued to. Token, device, and
+revoke requests accept JSON or `application/x-www-form-urlencoded`.
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /oauth/authorize` | Validates the request and sends the browser to the website's consent page (`/authorize`). |
+| `POST /oauth/token` | `authorization_code`, `refresh_token`, or `urn:ietf:params:oauth:grant-type:device_code`. RFC 6749 error bodies. |
+| `POST /oauth/device/code` | Starts a device authorization: `device_code`, `user_code` (`ABCD-EFGH`), `verification_uri` (the website's `/device`), `interval` 5s, `expires_in` 600s. |
+| `POST /oauth/revoke` | Revokes a refresh token (sign-out). |
+| `GET /v1/oauth/authorize/describe` · `POST /v1/oauth/authorize/decision` | Consent page: what's asking; allow or cancel (signed-in user). |
+| `GET /v1/oauth/device/describe` · `POST /v1/oauth/device/decision` | Device page: look up a user code; allow or deny (signed-in user). |
+
 ### Health & metrics
 
 | Endpoint | Description |

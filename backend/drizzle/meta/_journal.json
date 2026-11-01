@@ -43,6 +43,13 @@
       "when": 1793371586736,
       "tag": "0005_peko_avatar",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793499946622,
+      "tag": "0006_oauth_server",
+      "breakpoints": true
     }
   ]
 }

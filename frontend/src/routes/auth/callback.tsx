@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
 import { useEffect, useState } from 'react';
 import { AlertCircle, ArrowLeft } from 'lucide-react';
 import { setAuthToken } from '~/lib/api';
+import { takeSignInReturnTo } from '~/components/SignInModal';
 import { Backdrop, Spinner } from '~/components/ui';
 
 export const Route = createFileRoute('/auth/callback')({
@@ -25,7 +26,12 @@ function AuthCallbackPage() {
 
     if (typeof token === 'string' && token) {
       setAuthToken(token);
-      void navigate({ to: '/dashboard', replace: true });
+      const returnTo = takeSignInReturnTo();
+      if (returnTo) {
+        void navigate({ href: returnTo, replace: true });
+      } else {
+        void navigate({ to: '/dashboard', replace: true });
+      }
     } else {
       setError('Authentication failed: no token received');
     }

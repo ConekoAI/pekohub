@@ -80,6 +80,30 @@ export const handlers = [
 
   http.post('/v1/auth/logout', () => HttpResponse.json({ success: true })),
 
+  // OAuth consent (desktop + CLI sign-in)
+  http.get('/v1/oauth/authorize/describe', ({ request }) =>
+    new URL(request.url).searchParams.get('request') === 'expired'
+      ? HttpResponse.json({ error: 'expired' }, { status: 400 })
+      : HttpResponse.json({
+          client: { id: 'peko-desktop', name: 'Peko desktop' },
+          scope: null,
+          redirectUri: 'http://localhost:19876/callback',
+        }),
+  ),
+  http.get('/v1/oauth/device/describe', ({ request }) =>
+    new URL(request.url).searchParams.get('user_code') === 'BCDF-GHJK'
+      ? HttpResponse.json({
+          client: { id: 'peko-cli', name: 'Peko CLI' },
+          scope: null,
+          userCode: 'BCDF-GHJK',
+        })
+      : HttpResponse.json({ error: 'not found' }, { status: 404 }),
+  ),
+  http.post('/v1/oauth/device/decision', async ({ request }) => {
+    const body = (await request.json()) as { approve: boolean };
+    return HttpResponse.json({ status: body.approve ? 'approved' : 'denied' });
+  }),
+
   // ── Search (seed directory with a query) ────────────────────────────
   http.get('/v1/search', ({ request }) => {
     const url = new URL(request.url);

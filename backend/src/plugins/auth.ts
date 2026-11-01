@@ -28,16 +28,21 @@ declare module "fastify" {
   interface FastifyInstance {
     authenticate: (request: FastifyRequest) => Promise<AuthenticatedUser>;
     // Post-H3: userId is a UUID string (was number).
-    issueRefreshToken: (userId: string, deviceInfo?: string) => Promise<string>;
+    issueRefreshToken: (
+      userId: string,
+      deviceInfo?: string,
+      clientId?: string,
+    ) => Promise<string>;
     validateRefreshToken: (
       token: string,
-    ) => Promise<{ id: string; userId: string } | null>;
+    ) => Promise<{ id: string; userId: string; clientId: string | null } | null>;
     revokeRefreshToken: (id: string) => Promise<void>;
     revokeAllUserRefreshTokens: (userId: string) => Promise<void>;
     rotateRefreshToken: (
       oldId: string,
       userId: string,
       deviceInfo?: string,
+      clientId?: string | null,
     ) => Promise<string>;
   }
 }
@@ -126,7 +131,13 @@ async function authPlugin(fastify: FastifyInstance) {
       const decoded = await request.jwtVerify<{
         sub: string;
         namespace: string;
+        typ?: string;
       }>();
+      // Other signed tokens (an OAuth authorize request) share the
+      // secret; only access tokens carry no `typ`.
+      if (decoded.typ !== undefined || typeof decoded.sub !== "string") {
+        throw new Error("Not an access token");
+      }
       const user = await db.query.users.findFirst({
         where: eq(users.id, decoded.sub),
       });
@@ -151,7 +162,7 @@ async function authPlugin(fastify: FastifyInstance) {
 
   fastify.decorate(
     "issueRefreshToken",
-    async (userId: string, deviceInfo?: string) => {
+    async (userId: string, deviceInfo?: string, clientId?: string) => {
       const plainToken = generateRefreshTokenValue();
       const tokenHash = await bcrypt.hash(plainToken, 10);
       const tokenPrefix = await sha256Prefix(plainToken);
@@ -165,6 +176,7 @@ async function authPlugin(fastify: FastifyInstance) {
         tokenHash,
         deviceInfo: deviceInfo ?? null,
         expiresAt,
+        clientId: clientId ?? null,
       });
 
       return plainToken;
@@ -225,7 +237,11 @@ async function authPlugin(fastify: FastifyInstance) {
     for (const candidate of candidates) {
       const match = await bcrypt.compare(token, candidate.tokenHash);
       if (match) {
-        return { id: candidate.id, userId: candidate.userId };
+        return {
+          id: candidate.id,
+          userId: candidate.userId,
+          clientId: candidate.clientId ?? null,
+        };
       }
     }
 
@@ -250,7 +266,12 @@ async function authPlugin(fastify: FastifyInstance) {
 
   fastify.decorate(
     "rotateRefreshToken",
-    async (oldId: string, userId: string, deviceInfo?: string) => {
+    async (
+      oldId: string,
+      userId: string,
+      deviceInfo?: string,
+      clientId?: string | null,
+    ) => {
       // Revoke old token
       await fastify.revokeRefreshToken(oldId);
 
@@ -269,6 +290,7 @@ async function authPlugin(fastify: FastifyInstance) {
         deviceInfo: deviceInfo ?? null,
         expiresAt,
         rotatedFrom: oldId,
+        clientId: clientId ?? null,
       });
 
       return plainToken;
