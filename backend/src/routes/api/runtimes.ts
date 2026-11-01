@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { randomBytes } from "node:crypto";
 import { db } from "../../db/index.js";
 import { instances, runtimes } from "../../db/schema.js";
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { verifyDidKeyJws } from "../../services/tunnel-crypto.js";
 
@@ -248,8 +248,24 @@ export default async function runtimeRoutes(fastify: FastifyInstance) {
         .from(runtimes)
         .where(eq(runtimes.ownerId, user.id))
         .orderBy(sql`${runtimes.lastSeenAt} DESC NULLS LAST`);
+      // How many pekos each runtime has put online, for the owner console.
+      const counts = rows.length
+        ? await db
+            .select({ runtimeId: instances.runtimeId, count: sql<number>`count(*)` })
+            .from(instances)
+            .where(inArray(instances.runtimeId, rows.map((r) => r.runtimeDid)))
+            .groupBy(instances.runtimeId)
+        : [];
+      const pekos = new Map(counts.map((c) => [c.runtimeId, Number(c.count)]));
 
-      return { runtimes: rows };
+      return {
+        runtimes: rows.map((row) => ({
+          ...row,
+          // Whether its tunnel is up right now.
+          connected: fastify.tunnelManager?.isRuntimeConnected(row.runtimeDid) ?? false,
+          pekoCount: pekos.get(row.runtimeDid) ?? 0,
+        })),
+      };
     },
   );
 

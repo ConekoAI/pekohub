@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { routeTree } from '~/routeTree.gen';
@@ -154,11 +154,29 @@ describe('page smoke tests', () => {
     expect(await screen.findByText('Ada')).toBeInTheDocument();
   });
 
-  it('/profile renders identity, runtimes and API keys', async () => {
+  it('/profile is the account: identity, signed-in apps, API keys', async () => {
     renderAt('/profile');
-    expect(await screen.findByRole('heading', { name: 'Profile' })).toBeInTheDocument();
-    expect(await screen.findByText('Registered runtimes')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Account' })).toBeInTheDocument();
+    const app = await screen.findByTestId('signed-in-app');
+    expect(within(app).getByText('Peko desktop')).toBeInTheDocument();
+    expect(within(app).getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
     expect(await screen.findByText('Test Key')).toBeInTheDocument();
+  });
+
+  it('/dashboard/runtimes lists your computers, connected or not', async () => {
+    renderAt('/dashboard/runtimes');
+    expect(await screen.findByRole('heading', { name: 'Runtimes' })).toBeInTheDocument();
+    expect(await screen.findByText('workstation')).toBeInTheDocument();
+    expect(screen.getByText('connected')).toBeInTheDocument();
+    expect(screen.getByText('2 pekos online')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Unregister' })).toBeInTheDocument();
+  });
+
+  it('/dashboard/seeds lists the seeds you published', async () => {
+    renderAt('/dashboard/seeds');
+    expect(await screen.findByRole('heading', { name: 'Your seeds' })).toBeInTheDocument();
+    expect(await screen.findByText('Ada')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Publish a seed/ })).toHaveAttribute('href', '/seeds/new');
   });
 
   it('/peko/<owner>/<name> renders the profile and opens it in Peko', async () => {

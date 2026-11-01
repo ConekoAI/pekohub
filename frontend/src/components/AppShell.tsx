@@ -1,12 +1,14 @@
 import { useState, type ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
-import { LayoutDashboard, Radar, User as UserIcon, LockKeyhole, Boxes } from 'lucide-react';
+import { Boxes, Cpu, LayoutDashboard, LockKeyhole, User as UserIcon } from 'lucide-react';
 import { useAuth } from '~/hooks/useAuth';
 import { Backdrop, Spinner } from '~/components/ui';
 import { SignInModal } from '~/components/SignInModal';
 
 /**
- * Auth-gated shell for owner-side routes (`/dashboard`, `/profile`).
+ * Auth-gated shell for the owner console: your pekos, seeds, runtimes,
+ * and account (`/dashboard`, `/dashboard/seeds`, `/dashboard/runtimes`,
+ * `/profile`).
  *
  * Renders the shared backdrop, a sub-nav across the signed-in area and
  * — when no session resolves — a full sign-in gate instead of a
@@ -64,9 +66,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <nav className="flex items-center gap-1 border-b border-white/[0.06] pt-4">
           <SubNavLink to="/dashboard" icon={<LayoutDashboard className="h-4 w-4" />} label="Pekos" />
-          <SubNavLink to="/pekos" icon={<Radar className="h-4 w-4" />} label="Discover" />
-          <SubNavLink to="/seeds" icon={<Boxes className="h-4 w-4" />} label="Seeds" />
-          <SubNavLink to="/profile" icon={<UserIcon className="h-4 w-4" />} label="Profile" />
+          <SubNavLink to="/dashboard/seeds" icon={<Boxes className="h-4 w-4" />} label="Seeds" />
+          <SubNavLink to="/dashboard/runtimes" icon={<Cpu className="h-4 w-4" />} label="Runtimes" />
+          <SubNavLink to="/profile" icon={<UserIcon className="h-4 w-4" />} label="Account" />
 
           <div className="ml-auto flex items-center gap-2 pb-1">
             <span className="hidden font-mono text-2xs text-slate-600 sm:inline">
@@ -92,12 +94,17 @@ function SubNavLink({
   icon,
   label,
 }: {
-  to: '/dashboard' | '/pekos' | '/seeds' | '/profile';
+  to: '/dashboard' | '/dashboard/seeds' | '/dashboard/runtimes' | '/profile';
   icon: ReactNode;
   label: string;
 }) {
   return (
-    <Link to={to} activeProps={{ className: 'tab tab-active' }} inactiveProps={{ className: 'tab' }}>
+    <Link
+      to={to}
+      activeOptions={{ exact: true }}
+      activeProps={{ className: 'tab tab-active' }}
+      inactiveProps={{ className: 'tab' }}
+    >
       {icon}
       {label}
     </Link>

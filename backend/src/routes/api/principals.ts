@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { instanceService, type CallerSubject } from "../../services/instances.js";
 import { auditService } from "../../services/audit.js";
 import { db } from "../../db/index.js";
-import { hubPrincipals } from "../../db/schema.js";
+import { hubPrincipals, users } from "../../db/schema.js";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { verifyDidKeyJws } from "../../services/tunnel-crypto.js";
@@ -165,9 +165,20 @@ export default async function principalDirectoryRoutes(
     `/principals/by-hub-id/:hubId(${HUB_ID_PARAM})/transfer`,
     async (request, reply) => {
       const { hubId } = request.params as { hubId: string };
-      const body = z.object({ ownerId: z.string().uuid() }).safeParse(request.body);
+      // The new owner by account id, or by handle (what a person types).
+      const body = z
+        .union([z.object({ ownerId: z.string().uuid() }), z.object({ ownerHandle: z.string().min(1).max(128) })])
+        .safeParse(request.body);
       if (!z.string().uuid().safeParse(hubId).success || !body.success) {
-        return reply.status(400).send({ error: "Expected a Hub actor UUID and { ownerId }" });
+        return reply.status(400).send({ error: "Expected a Hub actor UUID and { ownerId } or { ownerHandle }" });
+      }
+      let ownerId: string;
+      if ("ownerId" in body.data) {
+        ownerId = body.data.ownerId;
+      } else {
+        const target = await db.query.users.findFirst({ where: eq(users.namespace, body.data.ownerHandle) });
+        if (!target) return reply.status(422).send({ error: `No PekoHub user is called @${body.data.ownerHandle}` });
+        ownerId = target.id;
       }
       let user;
       try {
@@ -175,12 +186,12 @@ export default async function principalDirectoryRoutes(
       } catch {
         return reply.status(401).send({ error: "Authentication required" });
       }
-      const result = await instanceService.transferOwner(hubId, body.data.ownerId, String(user.id));
+      const result = await instanceService.transferOwner(hubId, ownerId, String(user.id));
       switch (result.status) {
         case "transferred":
           await auditService.logPrincipalOwnerTransfer(hubId, String(user.id), {
             from: result.previous,
-            to: body.data.ownerId,
+            to: ownerId,
             via: "api",
           });
           if (result.localId) {
@@ -188,7 +199,7 @@ export default async function principalDirectoryRoutes(
               result.runtimeId,
               result.localId,
               hubId,
-              body.data.ownerId,
+              ownerId,
             );
           }
           return reply.status(204).send();

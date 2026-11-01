@@ -102,10 +102,12 @@ async function indexSeed(
 export default async function seedRoutes(fastify: FastifyInstance) {
   // ── List ──────────────────────────────────────────────────────────────────
   fastify.get("/seeds", async (request) => {
-    const q = request.query as { page?: string; perPage?: string };
+    const q = request.query as { page?: string; perPage?: string; owner?: string };
     const page = Math.max(1, Number(q.page) || 1);
     const perPage = Math.min(100, Math.max(1, Number(q.perPage) || 24));
-    const published = sql`exists (select 1 from ${bundleVersions} where ${bundleVersions.bundleId} = ${bundles.id} and ${bundleVersions.content} is not null)`;
+    const hasContent = sql`exists (select 1 from ${bundleVersions} where ${bundleVersions.bundleId} = ${bundles.id} and ${bundleVersions.content} is not null)`;
+    // `owner=<handle>`: one publisher's seeds (the owner console's list).
+    const published = q.owner ? and(hasContent, eq(bundles.namespace, q.owner))! : hasContent;
     const rows = await db
       .select()
       .from(bundles)

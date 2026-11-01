@@ -1,21 +1,20 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useCallback, useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CalendarDays,
   Copy,
-  Cpu,
   KeyRound,
+  Laptop,
   Mail,
   Plus,
-  RefreshCw,
   ShieldCheck,
   Trash2,
 } from 'lucide-react';
 import { useAuth } from '~/hooks/useAuth';
 import { api } from '~/lib/api';
 import { AppShell } from '~/components/AppShell';
-import { Avatar, Badge, EmptyState, ErrorNote, Spinner, StatusDot } from '~/components/ui';
+import { Avatar, Badge, EmptyState, ErrorNote, Spinner } from '~/components/ui';
 import { formatDate, relativeTime } from '~/lib/format';
 
 /**
@@ -41,11 +40,10 @@ function ProfilePage() {
   return (
     <AppShell>
       <div className="mb-8">
-        <p className="eyebrow mb-2.5">account</p>
-        <h1 className="display text-2xl sm:text-[28px]">Profile</h1>
+        <p className="eyebrow mb-2.5">console</p>
+        <h1 className="display text-2xl sm:text-[28px]">Account</h1>
         <p className="lede mt-2 max-w-2xl">
-          Your hub identity, the runtimes registered to it, and the keys your CLI uses to push
-          seeds and announce pekos.
+          Who you are on PekoHub, the apps signed in as you, and keys for scripts.
         </p>
       </div>
 
@@ -57,7 +55,7 @@ function ProfilePage() {
           avatarUrl={user?.avatarUrl}
           createdAt={user?.createdAt}
         />
-        <RuntimesPanel />
+        <SignedInAppsPanel />
         <ApiKeysPanel />
       </div>
     </AppShell>
@@ -125,77 +123,57 @@ function IdentityPanel({
    Runtimes
    ───────────────────────────────────────────────────────────────────────── */
 
-function RuntimesPanel() {
-  const runtimes = useQuery({
-    queryKey: ['runtimes'],
-    queryFn: () => api.listRuntimes(),
+/** Peko desktop and the CLI, signed in as you; sign one out everywhere. */
+function SignedInAppsPanel() {
+  const queryClient = useQueryClient();
+  const apps = useQuery({ queryKey: ['signed-in-apps'], queryFn: () => api.listSignedInApps() });
+  const signOut = useMutation({
+    mutationFn: (clientId: string) => api.signOutApp(clientId),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['signed-in-apps'] }),
   });
-
-  const rows = runtimes.data?.runtimes ?? [];
+  const rows = apps.data?.apps ?? [];
 
   return (
     <section>
-      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="eyebrow mb-2">hosts</p>
-          <h2 className="display text-xl">Registered runtimes</h2>
-        </div>
-        <button
-          onClick={() => void runtimes.refetch()}
-          disabled={runtimes.isFetching}
-          className="btn-secondary btn-sm"
-        >
-          {runtimes.isFetching ? (
-            <Spinner className="h-3.5 w-3.5" />
-          ) : (
-            <RefreshCw className="h-3.5 w-3.5" />
-          )}
-          Refresh
-        </button>
+      <div className="mb-4">
+        <p className="eyebrow mb-2">sessions</p>
+        <h2 className="display text-xl">Signed-in apps</h2>
       </div>
-
-      {runtimes.isLoading ? (
-        <div className="flex items-center justify-center gap-2.5 py-12 text-sm text-slate-500">
+      {apps.isLoading ? (
+        <div className="flex items-center justify-center gap-2.5 py-10 text-sm text-slate-500">
           <Spinner className="h-4 w-4" />
-          Loading runtimes…
+          Loading…
         </div>
-      ) : runtimes.isError ? (
-        <ErrorNote>
-          Could not load runtimes —{' '}
-          {runtimes.error instanceof Error ? runtimes.error.message : 'unknown error'}
-        </ErrorNote>
+      ) : apps.isError ? (
+        <ErrorNote>PekoHub isn&apos;t answering right now. Try again in a moment.</ErrorNote>
       ) : rows.length === 0 ? (
         <EmptyState
-          icon={<Cpu className="h-5 w-5" />}
-          title="No runtimes registered"
-          body={
-            <>
-              Run <code className="code-inline">peko tunnel setup</code> on the machine hosting your
-              pekos. It registers the runtime DID here with a proof-of-possession signature.
-            </>
-          }
+          icon={<Laptop className="h-5 w-5" />}
+          title="No apps signed in"
+          body="Sign in from Peko desktop, or run peko runtime register, and it shows up here."
         />
       ) : (
         <ul className="divide-y divide-white/[0.06] overflow-hidden rounded-xl border border-white/[0.07] bg-ink-850/70">
-          {rows.map((runtime) => (
-            <li
-              key={runtime.id}
-              className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5"
-            >
-              <div className="flex min-w-0 items-center gap-3">
-                <StatusDot status={runtime.lastSeenAt ? 'online' : 'offline'} />
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-slate-200">
-                    {runtime.displayName ?? 'Unnamed runtime'}
-                  </p>
-                  <p className="truncate font-mono text-2xs text-slate-600" title={runtime.runtimeDid}>
-                    {runtime.runtimeDid}
-                  </p>
-                </div>
+          {rows.map((app) => (
+            <li key={app.clientId} className="flex flex-wrap items-center gap-4 px-4 py-3.5" data-testid="signed-in-app">
+              <Laptop className="h-4 w-4 text-slate-400" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-slate-200">{app.name}</p>
+                <p className="truncate font-mono text-2xs text-slate-600">
+                  {app.sessions} session{app.sessions === 1 ? '' : 's'} · active {relativeTime(app.lastActiveAt)}
+                  {app.devices[0] ? ` · ${app.devices[0]}` : ''}
+                </p>
               </div>
-              <p className="font-mono text-2xs text-slate-600">
-                {runtime.lastSeenAt ? `seen ${relativeTime(runtime.lastSeenAt)}` : 'never seen'}
-              </p>
+              <button
+                type="button"
+                disabled={signOut.isPending}
+                onClick={() => {
+                  if (window.confirm(`Sign ${app.name} out everywhere?`)) signOut.mutate(app.clientId);
+                }}
+                className="btn-ghost btn-sm text-rose-300 hover:text-rose-200"
+              >
+                Sign out
+              </button>
             </li>
           ))}
         </ul>

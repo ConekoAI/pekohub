@@ -168,6 +168,7 @@ export const handlers = [
       data: [
         {
           id: 'inst-1',
+          hubId: '156f1a95-d977-4c4a-979e-8ed4848ae6eb',
           type: 'principal',
           name: 'ada',
           ownerSubject: { kind: 'user', id: 'user-1' },
@@ -234,10 +235,33 @@ export const handlers = [
           displayName: 'workstation',
           lastSeenAt: new Date().toISOString(),
           createdAt: new Date('2026-01-01').toISOString(),
+          connected: true,
+          pekoCount: 2,
         },
       ],
     }),
   ),
+  http.delete('/v1/runtimes/:did', () => new HttpResponse(null, { status: 204 })),
+  http.get('/v1/auth/apps', () =>
+    HttpResponse.json({
+      apps: [
+        {
+          clientId: 'peko-desktop',
+          name: 'Peko desktop',
+          sessions: 1,
+          lastActiveAt: new Date().toISOString(),
+          devices: ['Peko/0.1 (macOS)'],
+        },
+      ],
+    }),
+  ),
+  http.delete('/v1/auth/apps/:clientId', () => new HttpResponse(null, { status: 204 })),
+  http.post('/v1/principals/by-hub-id/:hubId/transfer', async ({ request }) => {
+    const body = (await request.json()) as { ownerHandle: string };
+    return body.ownerHandle === 'nobody'
+      ? HttpResponse.json({ error: 'No PekoHub user is called @nobody' }, { status: 422 })
+      : new HttpResponse(null, { status: 204 });
+  }),
 
   // ── API keys ────────────────────────────────────────────────────────────
   http.get('/v1/auth/api-keys', () =>
