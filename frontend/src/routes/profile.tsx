@@ -31,6 +31,7 @@ import { formatDate, relativeTime } from '~/lib/format';
  * `/seeds`, filtered to the seed lane.
  */
 export const Route = createFileRoute('/profile')({
+  head: () => ({ meta: [{ title: 'Account — PekoHub' }] }),
   component: ProfilePage,
 });
 

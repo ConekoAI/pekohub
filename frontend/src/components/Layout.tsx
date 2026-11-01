@@ -11,13 +11,15 @@ import {
 import { useAuth } from '~/hooks/useAuth';
 import { SignInModal } from '~/components/SignInModal';
 import { Avatar, Spinner } from '~/components/ui';
+import { DOCS_URL, GETTING_STARTED_URL, RUNTIME_REPO_URL } from '~/lib/links';
 
-const REPO_URL = 'https://github.com/ConekoAI/pekohub';
+const REPO_URL = RUNTIME_REPO_URL;
 
-/** Primary destinations. `Seeds` is the registry lane (ADR-005 §2). */
+/** Primary destinations: the directory, the seed registry, and the app. */
 const NAV = [
   { to: '/pekos', label: 'Pekos' },
   { to: '/seeds', label: 'Seeds' },
+  { to: '/download', label: 'Download' },
 ] as const;
 
 interface LayoutProps {
@@ -355,7 +357,7 @@ function SiteFooter() {
   return (
     <footer className="relative mt-20 border-t border-white/[0.06] bg-ink-950/60">
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
-        <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-5">
           <div className="lg:col-span-2">
             <div className="flex items-center gap-2.5">
               <LogoMark />
@@ -364,27 +366,33 @@ function SiteFooter() {
               </span>
             </div>
             <p className="lede mt-4 max-w-sm">
-              Directory, relay and seed registry for pekos. Find what people have grown, open
-              it in Peko, and grow your own from a seed.
+              Find pekos people have made public, open them in Peko, and grow your own from a
+              seed.
             </p>
           </div>
 
-          <FooterColumn title="Directory">
+          <FooterColumn title="Product">
+            <FooterLink to="/download">Download</FooterLink>
             <FooterLink to="/pekos">Pekos</FooterLink>
             <FooterLink to="/seeds">Seeds</FooterLink>
-            <FooterLink to="/dashboard">Dashboard</FooterLink>
           </FooterColumn>
 
-          <FooterColumn title="Project">
-            <FooterAnchor href={REPO_URL}>GitHub</FooterAnchor>
-            <FooterAnchor href={`${REPO_URL}/tree/main/docs`}>Architecture</FooterAnchor>
-            <FooterAnchor href={`${REPO_URL}/blob/main/DEPLOYMENT.md`}>Deployment</FooterAnchor>
+          <FooterColumn title="Resources">
+            <FooterAnchor href={GETTING_STARTED_URL}>Getting started</FooterAnchor>
+            <FooterAnchor href={DOCS_URL}>Docs</FooterAnchor>
+            <FooterAnchor href={RUNTIME_REPO_URL}>GitHub</FooterAnchor>
+            <FooterLink to="/status">Status</FooterLink>
+          </FooterColumn>
+
+          <FooterColumn title="Legal">
+            <FooterLink to="/terms">Terms</FooterLink>
+            <FooterLink to="/privacy">Privacy</FooterLink>
           </FooterColumn>
         </div>
 
         <div className="mt-10 flex flex-col items-start justify-between gap-3 border-t border-white/[0.06] pt-6 sm:flex-row sm:items-center">
           <p className="font-mono text-2xs text-slate-600">
-            © {new Date().getFullYear()} PekoHub — built for the Peko ecosystem
+            © {new Date().getFullYear()} ConekoAI · PekoHub
           </p>
         </div>
       </div>
@@ -401,7 +409,13 @@ function FooterColumn({ title, children }: { title: string; children: React.Reac
   );
 }
 
-function FooterLink({ to, children }: { to: '/pekos' | '/seeds' | '/dashboard'; children: React.ReactNode }) {
+function FooterLink({
+  to,
+  children,
+}: {
+  to: '/pekos' | '/seeds' | '/download' | '/status' | '/terms' | '/privacy';
+  children: React.ReactNode;
+}) {
   return (
     <li>
       <Link to={to} className="text-sm text-slate-400 transition-colors hover:text-peko-200">

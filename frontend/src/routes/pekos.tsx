@@ -46,6 +46,7 @@ const searchSchema = z.object({
 });
 
 export const Route = createFileRoute('/pekos')({
+  head: () => ({ meta: [{ title: 'Pekos — PekoHub' }] }),
   validateSearch: searchSchema,
   component: PekosPage,
 });

@@ -21,6 +21,7 @@ import {
 import { Spinner } from '~/components/ui';
 
 export const Route = createFileRoute('/device')({
+  head: () => ({ meta: [{ title: 'Connect a device — PekoHub' }] }),
   component: DevicePage,
   validateSearch: (search: Record<string, unknown>) => ({
     code: typeof search.code === 'string' ? search.code : undefined,

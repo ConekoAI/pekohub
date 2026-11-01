@@ -23,6 +23,7 @@ import { Avatar, Badge, CopyButton, ErrorNote, Spinner, Stat } from '~/component
  * `/templates/*` links redirect here.
  */
 export const Route = createFileRoute('/seeds/$')({
+  head: ({ params }) => ({ meta: [{ title: `${params._splat ?? 'Seed'} — Seeds — PekoHub` }] }),
   component: SeedDetailPage,
 });
 

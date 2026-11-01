@@ -1,4 +1,5 @@
-import { createRootRoute, Link, Outlet, useRouter } from '@tanstack/react-router';
+import { useEffect } from 'react';
+import { createRootRoute, Link, Outlet, useMatches, useRouter } from '@tanstack/react-router';
 import { Compass, RefreshCw, TriangleAlert } from 'lucide-react';
 import { Layout } from '~/components/Layout';
 import { Backdrop } from '~/components/ui';
@@ -6,12 +7,28 @@ import { Backdrop } from '~/components/ui';
 export const Route = createRootRoute({
   component: () => (
     <Layout>
+      <DocumentTitle />
       <Outlet />
     </Layout>
   ),
   notFoundComponent: NotFound,
   errorComponent: RouteError,
 });
+
+const DEFAULT_TITLE = 'PekoHub — pekos and the seeds they grow from';
+
+/** The tab title from the deepest route that names one in its `head`. */
+function DocumentTitle() {
+  const matches = useMatches();
+  const title = [...matches]
+    .reverse()
+    .map((match) => (match.meta as { title?: string }[] | undefined)?.find((m) => m?.title)?.title)
+    .find(Boolean);
+  useEffect(() => {
+    document.title = title ?? DEFAULT_TITLE;
+  }, [title]);
+  return null;
+}
 
 function NotFound() {
   return (

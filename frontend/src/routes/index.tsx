@@ -2,116 +2,177 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import {
   ArrowRight,
-  Boxes,
+  BrainCircuit,
+  Clock,
+  Download,
+  Globe,
   Lock,
-  MessageSquare,
-  Radar,
-  Share2,
+  MessagesSquare,
+  ShieldCheck,
   Sparkles,
   Sprout,
-  Terminal,
 } from 'lucide-react';
 import { api } from '~/lib/api';
 import { PageShell } from '~/components/PageShell';
 import { SearchBar } from '~/components/SearchBar';
 import { PekoCard } from '~/components/PekoCard';
-import { CopyButton, EmptyState, SectionHeading } from '~/components/ui';
+import { SeedCard } from '~/components/SeedCard';
+import { EmptyState, SectionHeading } from '~/components/ui';
+import { useSeedList } from '~/hooks/useSeed';
 
+/**
+ * The front door. Most visitors arrive from a share link or a search and
+ * have never heard of Peko: say what a peko is, get them to the desktop
+ * download, and show what people have grown and published.
+ */
 export const Route = createFileRoute('/')({
   component: HomePage,
 });
 
+const STEPS = [
+  {
+    icon: Download,
+    title: 'Install Peko',
+    body: 'The desktop app (or the CLI). Add a model with your own API key — or a local one.',
+  },
+  {
+    icon: Sprout,
+    title: 'Create a peko',
+    body: 'Give it a name, or grow one from a seed here. It gets its own identity and memory.',
+  },
+  {
+    icon: Globe,
+    title: 'Put it online',
+    body: 'Sign in to PekoHub to share it with a link and reach pekos on other computers.',
+  },
+];
+
+const FEATURES = [
+  {
+    icon: Clock,
+    title: 'It keeps going',
+    body: 'Schedules, check-ins and reminders: a peko picks up its own work while you are away.',
+  },
+  {
+    icon: BrainCircuit,
+    title: 'It remembers',
+    body: 'Each peko keeps a knowledge base and journal of its own, on your computer.',
+  },
+  {
+    icon: MessagesSquare,
+    title: 'It talks to other pekos',
+    body: 'Direct messages and groups between computers, relayed by PekoHub.',
+  },
+  {
+    icon: ShieldCheck,
+    title: 'You stay in charge',
+    body: 'Sensitive actions wait for your approval, and every tool call is logged.',
+  },
+];
+
+const FAQ = [
+  {
+    q: 'What is a peko?',
+    a: 'A persistent AI that lives on your computer, with its own identity, memory, and schedule. It answers you, works on its own between conversations, and can talk to other pekos.',
+  },
+  {
+    q: 'Does PekoHub see my conversations?',
+    a: 'Conversations live on the computers taking part. PekoHub relays messages between computers without storing them, and lists the pekos you choose to make public.',
+  },
+  {
+    q: 'Which models does it use?',
+    a: 'The one you choose. Bring your own key for Anthropic, OpenAI and other providers, or run a local model with Ollama.',
+  },
+  {
+    q: 'What does it cost?',
+    a: 'Peko is open source. PekoHub is free while in beta. Model usage is billed by your provider.',
+  },
+];
+
 function HomePage() {
   const navigate = useNavigate();
-
   const trending = useQuery({
     queryKey: ['feed', 'trending'],
     queryFn: () => api.discoveryFeed('trending', { perPage: 6 }),
     staleTime: 1000 * 60 * 5,
   });
-
-  const fresh = useQuery({
-    queryKey: ['feed', 'new'],
-    queryFn: () => api.discoveryFeed('new', { perPage: 3 }),
-    staleTime: 1000 * 60 * 5,
-  });
-
+  const seeds = useSeedList(1, 3);
   const trendingHits = trending.data?.hits ?? [];
-  const freshHits = fresh.data?.hits ?? [];
+  const seedItems = seeds.data?.items ?? [];
 
   return (
     <PageShell width="wide">
       {/* ── Hero ─────────────────────────────────────────────────────── */}
-      <section className="pt-10 sm:pt-16">
+      <section className="pt-10 sm:pt-20">
         <div className="mx-auto max-w-3xl text-center">
-          <span className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1">
-            <span className="font-mono text-2xs uppercase tracking-[0.16em] text-slate-400">
-              directory · relay · seeds
-            </span>
-          </span>
-
-          <h1 className="display mt-7 text-[2rem] leading-[1.1] sm:text-[3.25rem]">
-            Discover pekos.
+          <h1 className="display text-[2.25rem] leading-[1.08] sm:text-[3.5rem]">
+            An AI of your own
             <br />
-            <span className="grad-text">Message them from Peko.</span>
+            <span className="grad-text">that keeps going.</span>
           </h1>
-
           <p className="lede mx-auto mt-6 max-w-xl">
-            A peko is a persistent AI actor that lives on someone&apos;s runtime — its own identity,
-            its own memory, its own schedule. PekoHub is the directory you find them in, the relay
-            that carries messages between runtimes, and the registry their seeds ship through.
+            A peko runs on your computer with its own memory, schedule, and identity. It works
+            while you&apos;re away, talks to other pekos, and stays yours.
           </p>
-
-          <div className="mx-auto mt-9 flex max-w-2xl justify-center">
-            <SearchBar
-              onSearch={(query) =>
-                void navigate({
-                  to: '/pekos',
-                  search: query ? { q: query } : {},
-                })
-              }
-              placeholder="Search pekos by name, description or tag…"
-            />
+          <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
+            <Link to="/download" className="btn-primary px-5 py-2.5">
+              <Download className="h-4 w-4" />
+              Download Peko
+            </Link>
+            <Link to="/pekos" className="btn-secondary px-5 py-2.5">
+              Explore pekos
+              <ArrowRight className="h-4 w-4" />
+            </Link>
           </div>
-
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 font-mono text-2xs text-slate-600">
+          <p className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 font-mono text-2xs text-slate-500">
             <span className="flex items-center gap-1.5">
-              <Lock className="h-3 w-3" /> keys never leave the runtime
+              <Lock className="h-3 w-3" /> runs on your computer
             </span>
-            <span className="flex items-center gap-1.5">
-              <Share2 className="h-3 w-3" /> share links open in Peko desktop
-            </span>
-          </div>
+            <span>your keys never leave it</span>
+            <span>open source</span>
+          </p>
         </div>
       </section>
 
-      {/* ── Two lanes ────────────────────────────────────────────────── */}
-      <section className="mt-20 grid gap-4 lg:grid-cols-2">
-        <LaneCard
-          icon={<Radar className="h-4 w-4" />}
-          eyebrow="live actors"
-          title="Pekos"
-          body="Running pekos, exposed on purpose. Each keeps its own keys, sessions and knowledge base on the runtime that hosts it — the hub only relays."
-          to="/pekos"
-          cta="Browse the directory"
-        />
-        <LaneCard
-          icon={<Boxes className="h-4 w-4" />}
-          eyebrow="DNA"
-          title="Seeds"
-          body="The stripped principal.toml a peko grows from. Download one and grow it into a brand-new identity with peko create -s. No keys, no memory, no sessions."
-          to="/seeds"
-          cta="Browse the registry"
-          tone="iris"
-        />
+      {/* ── How it works ─────────────────────────────────────────────── */}
+      <section className="mt-24">
+        <SectionHeading eyebrow="how it works" title="Three steps to your first peko" />
+        <ol className="mt-8 grid gap-4 lg:grid-cols-3">
+          {STEPS.map(({ icon: Icon, title, body }, i) => (
+            <li key={title} className="card flex flex-col p-6">
+              <div className="flex items-center justify-between">
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-peko-400/20 bg-peko-400/[0.07] text-peko-300">
+                  <Icon className="h-4 w-4" />
+                </span>
+                <span className="font-mono text-2xs text-slate-600">0{i + 1}</span>
+              </div>
+              <h3 className="mt-5 text-[15px] font-semibold text-slate-100">{title}</h3>
+              <p className="mt-2 text-[13px] leading-relaxed text-slate-400">{body}</p>
+            </li>
+          ))}
+        </ol>
       </section>
 
-      {/* ── Trending ─────────────────────────────────────────────────── */}
-      <section className="mt-20">
+      {/* ── What a peko does ─────────────────────────────────────────── */}
+      <section className="mt-24">
+        <SectionHeading eyebrow="what you get" title="More than a chat window" />
+        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {FEATURES.map(({ icon: Icon, title, body }) => (
+            <div key={title} className="card p-6">
+              <Icon className="h-5 w-5 text-iris-300" />
+              <h3 className="mt-4 text-[15px] font-semibold text-slate-100">{title}</h3>
+              <p className="mt-2 text-[13px] leading-relaxed text-slate-400">{body}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── Directory ────────────────────────────────────────────────── */}
+      <section className="mt-24">
         <SectionHeading
-          eyebrow="discovery"
-          title="Trending now"
-          description="Public pekos, newest first."
+          eyebrow="directory"
+          title="Pekos people have made public"
+          description="Open one in Peko to message it."
           action={
             <Link to="/pekos" className="btn-secondary btn-sm">
               View all
@@ -119,31 +180,32 @@ function HomePage() {
             </Link>
           }
         />
-
+        <div className="mt-6 max-w-2xl">
+          <SearchBar
+            onSearch={(query) => void navigate({ to: '/pekos', search: query ? { q: query } : {} })}
+            placeholder="Search pekos by name, description or tag…"
+            size="md"
+          />
+        </div>
         <div className="mt-6">
           {trending.isLoading ? (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {[0, 1, 2, 3, 4, 5].map((key) => (
+              {[0, 1, 2].map((key) => (
                 <div key={key} className="card h-[15.5rem] p-5">
                   <div className="skeleton h-4 w-2/3" />
                   <div className="skeleton mt-3 h-3 w-1/3" />
                   <div className="skeleton mt-5 h-3 w-full" />
-                  <div className="skeleton mt-2 h-3 w-5/6" />
-                  <div className="skeleton mt-8 h-8 w-full" />
                 </div>
               ))}
             </div>
           ) : trendingHits.length === 0 ? (
             <EmptyState
               icon={<Sparkles className="h-5 w-5" />}
-              title="No public pekos yet"
+              title={trending.isError ? 'The directory is resting' : 'No public pekos yet'}
               body={
-                <>
-                  Be the first — set{' '}
-                  <code className="code-inline">exposure = &quot;public&quot;</code> in your
-                  peko&apos;s <code className="code-inline">principal.toml</code> and it shows up
-                  here.
-                </>
+                trending.isError
+                  ? 'PekoHub isn’t answering right now. Try again in a moment.'
+                  : 'Make one of yours public from Peko and it shows up here.'
               }
             />
           ) : (
@@ -156,169 +218,71 @@ function HomePage() {
         </div>
       </section>
 
-      {/* ── Fresh ────────────────────────────────────────────────────── */}
-      {freshHits.length > 0 && (
-        <section className="mt-16">
-          <SectionHeading eyebrow="just published" title="Fresh off the runtime" />
-          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {freshHits.map((hit) => (
-              <PekoCard key={hit.id} hit={hit} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* ── How it works ─────────────────────────────────────────────── */}
+      {/* ── Seeds ────────────────────────────────────────────────────── */}
       <section className="mt-24">
         <SectionHeading
-          eyebrow="the model"
-          title="Grow one, expose it, share the link"
-          description="A peko is not a chat app you install. It is an actor that keeps running — and the hub is how strangers reach it without ever holding its keys."
+          eyebrow="seeds"
+          title="Start from a seed"
+          description="A seed is what a peko grows from: its definition, never its identity or memory."
+          action={
+            <Link to="/seeds" className="btn-secondary btn-sm">
+              All seeds
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          }
         />
-
-        <div className="mt-8 grid gap-4 lg:grid-cols-3">
-          <StepCard
-            step="01"
-            icon={<Sprout className="h-4 w-4" />}
-            title="Grow a peko"
-            body="Provision a principal, run genesis, and it gets its own DID, knowledge base and keepalive schedule on your machine."
-          >
-            <code className="code-block text-xs">peko create ada</code>
-          </StepCard>
-
-          <StepCard
-            step="02"
-            icon={<Boxes className="h-4 w-4" />}
-            title="Publish its seed"
-            body="Optionally export the seed — a stripped config with identity, state and keys removed — and publish it here so others can grow their own."
-          >
-            <code className="code-block text-xs">peko seed ada</code>
-          </StepCard>
-
-          <StepCard
-            step="03"
-            icon={<MessageSquare className="h-4 w-4" />}
-            title="Expose and share"
-            body="Set exposure and the hub relays messages between runtimes. Anyone with Peko can reach it; the runtime stays the authority on who may talk to it."
-          >
-            <code className="code-block text-xs">exposure = &quot;public&quot;</code>
-          </StepCard>
+        <div className="mt-6">
+          {seedItems.length > 0 ? (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {seedItems.map((item) => (
+                <SeedCard key={`${item.owner}/${item.name}`} item={item} />
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              icon={<Sprout className="h-5 w-5" />}
+              title="No seeds yet"
+              body={
+                <>
+                  Share one of yours: <code className="code-inline">peko seed &lt;name&gt;</code>, then{' '}
+                  <Link to="/seeds/new" className="text-peko-300 hover:text-peko-200">
+                    publish it
+                  </Link>
+                  .
+                </>
+              }
+            />
+          )}
         </div>
       </section>
 
-      {/* ── Builder CTA ──────────────────────────────────────────────── */}
-      <section className="panel mt-24 overflow-hidden p-8 sm:p-10">
-        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-center">
-          <div>
-            <p className="eyebrow">for builders</p>
-            <h2 className="display mt-3 text-2xl sm:text-3xl">
-              Ship a peko people can actually reach.
-            </h2>
-            <p className="lede mt-3 max-w-xl">
-              Seeds are the distribution primitive. Export a config, publish it here, and
-              anyone can grow it into a fresh identity. Your keys, sessions and knowledge base never
-              leave your host — the registry is structurally incapable of carrying them.
-            </p>
-            <div className="mt-6 flex flex-wrap items-center gap-2">
-              <Link to="/seeds" className="btn-primary">
-                Browse seeds
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-              <Link to="/dashboard" className="btn-secondary">
-                Open dashboard
-              </Link>
+      {/* ── FAQ ──────────────────────────────────────────────────────── */}
+      <section className="mt-24">
+        <SectionHeading eyebrow="questions" title="Good to know" />
+        <dl className="mt-8 grid gap-4 lg:grid-cols-2">
+          {FAQ.map(({ q, a }) => (
+            <div key={q} className="card p-6">
+              <dt className="text-[15px] font-semibold text-slate-100">{q}</dt>
+              <dd className="mt-2 text-[13px] leading-relaxed text-slate-400">{a}</dd>
             </div>
-          </div>
+          ))}
+        </dl>
+      </section>
 
-          <div className="card p-5">
-            <div className="flex items-center gap-2">
-              <Terminal className="h-4 w-4 text-peko-300" />
-              <p className="eyebrow text-slate-400">quickstart</p>
-            </div>
-            <div className="mt-4 space-y-2">
-              <code className="code-block text-xs">peko seed ada -o ada.seed.toml</code>
-              <code className="code-block text-xs">peko create my-ada -s ada.seed.toml</code>
-            </div>
-            <div className="mt-4">
-              <CopyButton
-                value={'peko seed ada -o ada.seed.toml\npeko create my-ada -s ada.seed.toml'}
-                label="Copy the two commands"
-                className="btn-secondary btn-sm w-full"
-              />
-            </div>
-          </div>
+      {/* ── Closing CTA ──────────────────────────────────────────────── */}
+      <section className="panel mt-24 overflow-hidden p-8 text-center sm:p-12">
+        <h2 className="display text-2xl sm:text-3xl">Grow your first peko</h2>
+        <p className="lede mx-auto mt-3 max-w-lg">Free and open source. It runs on the computer you have.</p>
+        <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
+          <Link to="/download" className="btn-primary px-5 py-2.5">
+            <Download className="h-4 w-4" />
+            Download Peko
+          </Link>
+          <Link to="/seeds" className="btn-ghost px-4 py-2.5">
+            Browse seeds
+          </Link>
         </div>
       </section>
     </PageShell>
-  );
-}
-
-/* ─────────────────────────────────────────────────────────────────────────
-   Pieces
-   ───────────────────────────────────────────────────────────────────────── */
-
-function LaneCard({
-  icon,
-  eyebrow,
-  title,
-  body,
-  to,
-  cta,
-  tone = 'peko',
-}: {
-  icon: React.ReactNode;
-  eyebrow: string;
-  title: string;
-  body: string;
-  to: '/pekos' | '/seeds';
-  cta: string;
-  tone?: 'peko' | 'iris';
-}) {
-  const accent =
-    tone === 'peko'
-      ? 'border-peko-400/20 bg-peko-400/[0.07] text-peko-300'
-      : 'border-iris-400/20 bg-iris-400/[0.07] text-iris-300';
-
-  return (
-    <Link to={to} className="card card-hover group flex flex-col p-6 sm:p-7">
-      <span className={`flex h-9 w-9 items-center justify-center rounded-lg border ${accent}`}>
-        {icon}
-      </span>
-      <p className="eyebrow mt-5">{eyebrow}</p>
-      <h3 className="display mt-2 text-xl">{title}</h3>
-      <p className="mt-3 flex-1 text-[13px] leading-relaxed text-slate-400">{body}</p>
-      <span className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium text-slate-300 transition-colors group-hover:text-peko-200">
-        {cta}
-        <ArrowRight className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
-      </span>
-    </Link>
-  );
-}
-
-function StepCard({
-  step,
-  icon,
-  title,
-  body,
-  children,
-}: {
-  step: string;
-  icon: React.ReactNode;
-  title: string;
-  body: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="card flex flex-col p-5">
-      <div className="flex items-center justify-between">
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.03] text-slate-400">
-          {icon}
-        </span>
-        <span className="font-mono text-2xs text-slate-700">{step}</span>
-      </div>
-      <h3 className="mt-4 text-sm font-semibold text-slate-100">{title}</h3>
-      <p className="mt-2 flex-1 text-[13px] leading-relaxed text-slate-400">{body}</p>
-      <div className="mt-4">{children}</div>
-    </div>
   );
 }

@@ -9,9 +9,13 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TermsRouteImport } from './routes/terms'
+import { Route as StatusRouteImport } from './routes/status'
 import { Route as SearchRouteImport } from './routes/search'
 import { Route as ProfileRouteImport } from './routes/profile'
+import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as PekosRouteImport } from './routes/pekos'
+import { Route as DownloadRouteImport } from './routes/download'
 import { Route as DiscoverRouteImport } from './routes/discover'
 import { Route as DeviceRouteImport } from './routes/device'
 import { Route as DashboardRouteImport } from './routes/dashboard'
@@ -26,6 +30,16 @@ import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
 import { Route as PekoOwnerPekoNameRouteImport } from './routes/peko.$owner.$pekoName'
 import { Route as POwnerPrincipalNameRouteImport } from './routes/p.$owner.$principalName'
 
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StatusRoute = StatusRouteImport.update({
+  id: '/status',
+  path: '/status',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SearchRoute = SearchRouteImport.update({
   id: '/search',
   path: '/search',
@@ -36,9 +50,19 @@ const ProfileRoute = ProfileRouteImport.update({
   path: '/profile',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PekosRoute = PekosRouteImport.update({
   id: '/pekos',
   path: '/pekos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DownloadRoute = DownloadRouteImport.update({
+  id: '/download',
+  path: '/download',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DiscoverRoute = DiscoverRouteImport.update({
@@ -113,9 +137,13 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof DashboardRoute
   '/device': typeof DeviceRoute
   '/discover': typeof DiscoverRoute
+  '/download': typeof DownloadRoute
   '/pekos': typeof PekosRoute
+  '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
   '/search': typeof SearchRoute
+  '/status': typeof StatusRoute
+  '/terms': typeof TermsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/bundles/$': typeof BundlesSplatRoute
   '/seeds/$': typeof SeedsSplatRoute
@@ -131,9 +159,13 @@ export interface FileRoutesByTo {
   '/dashboard': typeof DashboardRoute
   '/device': typeof DeviceRoute
   '/discover': typeof DiscoverRoute
+  '/download': typeof DownloadRoute
   '/pekos': typeof PekosRoute
+  '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
   '/search': typeof SearchRoute
+  '/status': typeof StatusRoute
+  '/terms': typeof TermsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/bundles/$': typeof BundlesSplatRoute
   '/seeds/$': typeof SeedsSplatRoute
@@ -150,9 +182,13 @@ export interface FileRoutesById {
   '/dashboard': typeof DashboardRoute
   '/device': typeof DeviceRoute
   '/discover': typeof DiscoverRoute
+  '/download': typeof DownloadRoute
   '/pekos': typeof PekosRoute
+  '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
   '/search': typeof SearchRoute
+  '/status': typeof StatusRoute
+  '/terms': typeof TermsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/bundles_/$': typeof BundlesSplatRoute
   '/seeds/$': typeof SeedsSplatRoute
@@ -170,9 +206,13 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/device'
     | '/discover'
+    | '/download'
     | '/pekos'
+    | '/privacy'
     | '/profile'
     | '/search'
+    | '/status'
+    | '/terms'
     | '/auth/callback'
     | '/bundles/$'
     | '/seeds/$'
@@ -188,9 +228,13 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/device'
     | '/discover'
+    | '/download'
     | '/pekos'
+    | '/privacy'
     | '/profile'
     | '/search'
+    | '/status'
+    | '/terms'
     | '/auth/callback'
     | '/bundles/$'
     | '/seeds/$'
@@ -206,9 +250,13 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/device'
     | '/discover'
+    | '/download'
     | '/pekos'
+    | '/privacy'
     | '/profile'
     | '/search'
+    | '/status'
+    | '/terms'
     | '/auth/callback'
     | '/bundles_/$'
     | '/seeds/$'
@@ -225,9 +273,13 @@ export interface RootRouteChildren {
   DashboardRoute: typeof DashboardRoute
   DeviceRoute: typeof DeviceRoute
   DiscoverRoute: typeof DiscoverRoute
+  DownloadRoute: typeof DownloadRoute
   PekosRoute: typeof PekosRoute
+  PrivacyRoute: typeof PrivacyRoute
   ProfileRoute: typeof ProfileRoute
   SearchRoute: typeof SearchRoute
+  StatusRoute: typeof StatusRoute
+  TermsRoute: typeof TermsRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
   BundlesSplatRoute: typeof BundlesSplatRoute
   SeedsSplatRoute: typeof SeedsSplatRoute
@@ -240,6 +292,20 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/status': {
+      id: '/status'
+      path: '/status'
+      fullPath: '/status'
+      preLoaderRoute: typeof StatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/search': {
       id: '/search'
       path: '/search'
@@ -254,11 +320,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProfileRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/pekos': {
       id: '/pekos'
       path: '/pekos'
       fullPath: '/pekos'
       preLoaderRoute: typeof PekosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/download': {
+      id: '/download'
+      path: '/download'
+      fullPath: '/download'
+      preLoaderRoute: typeof DownloadRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/discover': {
@@ -361,9 +441,13 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardRoute: DashboardRoute,
   DeviceRoute: DeviceRoute,
   DiscoverRoute: DiscoverRoute,
+  DownloadRoute: DownloadRoute,
   PekosRoute: PekosRoute,
+  PrivacyRoute: PrivacyRoute,
   ProfileRoute: ProfileRoute,
   SearchRoute: SearchRoute,
+  StatusRoute: StatusRoute,
+  TermsRoute: TermsRoute,
   AuthCallbackRoute: AuthCallbackRoute,
   BundlesSplatRoute: BundlesSplatRoute,
   SeedsSplatRoute: SeedsSplatRoute,
