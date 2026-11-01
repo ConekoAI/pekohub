@@ -1,9 +1,10 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, gt, isNotNull, isNull } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import {
   oauthAuthorizationCodes,
   oauthDeviceCodes,
+  refreshTokens,
   users,
 } from "../../db/schema.js";
 import {
@@ -375,6 +376,68 @@ export default async function oauthServerRoutes(fastify: FastifyInstance) {
     }
 
     return oauthError(reply, 400, "unsupported_grant_type");
+  });
+
+  // ── Signed-in apps (owner console) ────────────────────────────────────────
+  // The apps signed in to this account — Peko desktop, the CLI — one row
+  // per client: how many live sessions it holds and when it last signed in
+  // or refreshed. Signing an app out revokes every session it holds.
+  fastify.get("/v1/auth/apps", async (request, reply) => {
+    let user;
+    try {
+      user = await fastify.authenticate(request);
+    } catch {
+      return reply.status(401).send({ error: "Sign in first" });
+    }
+    const rows = await db.query.refreshTokens.findMany({
+      where: and(
+        eq(refreshTokens.userId, user.id),
+        isNotNull(refreshTokens.clientId),
+        isNull(refreshTokens.revokedAt),
+        gt(refreshTokens.expiresAt, new Date()),
+      ),
+    });
+    const apps = new Map<string, { sessions: number; lastActiveAt: Date; devices: Set<string> }>();
+    for (const row of rows) {
+      const app = apps.get(row.clientId!) ?? { sessions: 0, lastActiveAt: row.createdAt, devices: new Set<string>() };
+      app.sessions += 1;
+      if (row.createdAt > app.lastActiveAt) app.lastActiveAt = row.createdAt;
+      if (row.deviceInfo) app.devices.add(row.deviceInfo);
+      apps.set(row.clientId!, app);
+    }
+    return {
+      apps: [...apps.entries()]
+        .map(([clientId, app]) => ({
+          clientId,
+          name: findClient(clientId)?.name ?? clientId,
+          sessions: app.sessions,
+          lastActiveAt: app.lastActiveAt.toISOString(),
+          devices: [...app.devices].slice(0, 5),
+        }))
+        .sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt)),
+    };
+  });
+
+  fastify.delete("/v1/auth/apps/:clientId", async (request, reply) => {
+    let user;
+    try {
+      user = await fastify.authenticate(request);
+    } catch {
+      return reply.status(401).send({ error: "Sign in first" });
+    }
+    const { clientId } = request.params as { clientId: string };
+    if (!findClient(clientId)) return reply.status(404).send({ error: "No such app" });
+    await db
+      .update(refreshTokens)
+      .set({ revokedAt: new Date() })
+      .where(
+        and(
+          eq(refreshTokens.userId, user.id),
+          eq(refreshTokens.clientId, clientId),
+          isNull(refreshTokens.revokedAt),
+        ),
+      );
+    return reply.status(204).send();
   });
 
   // ── Revocation (RFC 7009) ─────────────────────────────────────────────────

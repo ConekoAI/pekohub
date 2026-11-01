@@ -25,6 +25,8 @@ import { Route as SeedsIndexRouteImport } from './routes/seeds/index'
 import { Route as TemplatesSplatRouteImport } from './routes/templates_.$'
 import { Route as SeedsNewRouteImport } from './routes/seeds/new'
 import { Route as SeedsSplatRouteImport } from './routes/seeds/$'
+import { Route as DashboardSeedsRouteImport } from './routes/dashboard_.seeds'
+import { Route as DashboardRuntimesRouteImport } from './routes/dashboard_.runtimes'
 import { Route as BundlesSplatRouteImport } from './routes/bundles_.$'
 import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
 import { Route as PekoOwnerPekoNameRouteImport } from './routes/peko.$owner.$pekoName'
@@ -110,6 +112,16 @@ const SeedsSplatRoute = SeedsSplatRouteImport.update({
   path: '/seeds/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DashboardSeedsRoute = DashboardSeedsRouteImport.update({
+  id: '/dashboard_/seeds',
+  path: '/dashboard/seeds',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardRuntimesRoute = DashboardRuntimesRouteImport.update({
+  id: '/dashboard_/runtimes',
+  path: '/dashboard/runtimes',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BundlesSplatRoute = BundlesSplatRouteImport.update({
   id: '/bundles_/$',
   path: '/bundles/$',
@@ -146,6 +158,8 @@ export interface FileRoutesByFullPath {
   '/terms': typeof TermsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/bundles/$': typeof BundlesSplatRoute
+  '/dashboard/runtimes': typeof DashboardRuntimesRoute
+  '/dashboard/seeds': typeof DashboardSeedsRoute
   '/seeds/$': typeof SeedsSplatRoute
   '/seeds/new': typeof SeedsNewRoute
   '/templates/$': typeof TemplatesSplatRoute
@@ -168,6 +182,8 @@ export interface FileRoutesByTo {
   '/terms': typeof TermsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/bundles/$': typeof BundlesSplatRoute
+  '/dashboard/runtimes': typeof DashboardRuntimesRoute
+  '/dashboard/seeds': typeof DashboardSeedsRoute
   '/seeds/$': typeof SeedsSplatRoute
   '/seeds/new': typeof SeedsNewRoute
   '/templates/$': typeof TemplatesSplatRoute
@@ -191,6 +207,8 @@ export interface FileRoutesById {
   '/terms': typeof TermsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/bundles_/$': typeof BundlesSplatRoute
+  '/dashboard_/runtimes': typeof DashboardRuntimesRoute
+  '/dashboard_/seeds': typeof DashboardSeedsRoute
   '/seeds/$': typeof SeedsSplatRoute
   '/seeds/new': typeof SeedsNewRoute
   '/templates_/$': typeof TemplatesSplatRoute
@@ -215,6 +233,8 @@ export interface FileRouteTypes {
     | '/terms'
     | '/auth/callback'
     | '/bundles/$'
+    | '/dashboard/runtimes'
+    | '/dashboard/seeds'
     | '/seeds/$'
     | '/seeds/new'
     | '/templates/$'
@@ -237,6 +257,8 @@ export interface FileRouteTypes {
     | '/terms'
     | '/auth/callback'
     | '/bundles/$'
+    | '/dashboard/runtimes'
+    | '/dashboard/seeds'
     | '/seeds/$'
     | '/seeds/new'
     | '/templates/$'
@@ -259,6 +281,8 @@ export interface FileRouteTypes {
     | '/terms'
     | '/auth/callback'
     | '/bundles_/$'
+    | '/dashboard_/runtimes'
+    | '/dashboard_/seeds'
     | '/seeds/$'
     | '/seeds/new'
     | '/templates_/$'
@@ -282,6 +306,8 @@ export interface RootRouteChildren {
   TermsRoute: typeof TermsRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
   BundlesSplatRoute: typeof BundlesSplatRoute
+  DashboardRuntimesRoute: typeof DashboardRuntimesRoute
+  DashboardSeedsRoute: typeof DashboardSeedsRoute
   SeedsSplatRoute: typeof SeedsSplatRoute
   SeedsNewRoute: typeof SeedsNewRoute
   TemplatesSplatRoute: typeof TemplatesSplatRoute
@@ -404,6 +430,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SeedsSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/dashboard_/seeds': {
+      id: '/dashboard_/seeds'
+      path: '/dashboard/seeds'
+      fullPath: '/dashboard/seeds'
+      preLoaderRoute: typeof DashboardSeedsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard_/runtimes': {
+      id: '/dashboard_/runtimes'
+      path: '/dashboard/runtimes'
+      fullPath: '/dashboard/runtimes'
+      preLoaderRoute: typeof DashboardRuntimesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/bundles_/$': {
       id: '/bundles_/$'
       path: '/bundles/$'
@@ -450,6 +490,8 @@ const rootRouteChildren: RootRouteChildren = {
   TermsRoute: TermsRoute,
   AuthCallbackRoute: AuthCallbackRoute,
   BundlesSplatRoute: BundlesSplatRoute,
+  DashboardRuntimesRoute: DashboardRuntimesRoute,
+  DashboardSeedsRoute: DashboardSeedsRoute,
   SeedsSplatRoute: SeedsSplatRoute,
   SeedsNewRoute: SeedsNewRoute,
   TemplatesSplatRoute: TemplatesSplatRoute,

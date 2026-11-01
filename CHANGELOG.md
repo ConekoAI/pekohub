@@ -2,6 +2,15 @@
 
 ## 0.1.0 — pre-launch
 
+- An owner console. The signed-in area has four tabs — **Pekos**, **Seeds**, **Runtimes**,
+  **Account** — instead of mixing in public pages. New: `/dashboard/runtimes` (each
+  computer: connected now or last seen, pekos it has online, unregister),
+  `/dashboard/seeds` (your published seeds with downloads), a **Signed-in apps** panel on
+  Account (Peko desktop, the CLI: sessions, last active, sign out everywhere), and an
+  **Owner** tab on a peko to transfer it to another account by handle. API:
+  `GET /v1/runtimes` adds `connected` and `pekoCount`; `GET /v1/seeds?owner=<handle>`;
+  `GET /v1/auth/apps` and `DELETE /v1/auth/apps/:clientId`; the transfer endpoint takes
+  `{ ownerHandle }` as well as `{ ownerId }`.
 - The website leads to the desktop app. A new landing page says what a peko is, shows how
   to get one in three steps, and puts **Download Peko** first; a `/download` page offers
   Peko desktop for macOS, Windows and Linux (the visitor's platform marked) and the `peko`
@@ -46,10 +55,7 @@
   the website (null otherwise), so clients never build one origin from the other.
   `PUBLIC_ORIGIN` defaults to `https://api.pekohub.ai`. `DEPLOYMENT.md` describes the two
   hosts (and `pekohub.org` as a redirect) instead of the retired dual-hostname split.
-<<<<<<< HEAD
-=======
 
->>>>>>> origin/master
 - An OAuth 2.0 authorization server signs in Peko desktop and the Peko CLI (ADR-007).
   The desktop uses authorization code + PKCE with a loopback redirect
   (`GET /oauth/authorize` → the website's `/authorize` consent page → `POST /oauth/token`).

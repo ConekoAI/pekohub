@@ -123,12 +123,16 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 /** A request answered with 204 / no body; errors carry the server's message. */
-async function fetchNoContent(url: string, method = 'DELETE'): Promise<void> {
+async function fetchNoContent(url: string, method = 'DELETE', body?: unknown): Promise<void> {
   const token = getAuthToken();
   const response = await fetch(`${API_BASE}${url}`, {
     method,
     credentials: 'include',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+    },
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
@@ -226,6 +230,25 @@ export const api = {
    * live" view. Requires a JWT.
    */
   listRuntimes: () => fetchJson<{ runtimes: RuntimeRecord[] }>('/v1/runtimes'),
+
+  /** Unregister a runtime: its pekos leave the directory and its tunnel closes. */
+  unregisterRuntime: (runtimeDid: string) =>
+    fetchNoContent(`/v1/runtimes/${encodeURIComponent(runtimeDid)}`),
+
+  /** One publisher's seeds (the owner console's list). */
+  listSeedsBy: (owner: string) =>
+    fetchJson<SeedList>(`/v1/seeds?owner=${encodeURIComponent(owner)}&perPage=100`),
+
+  listSignedInApps: () => fetchJson<{ apps: SignedInApp[] }>('/v1/auth/apps'),
+
+  /** Sign an app (Peko desktop, the CLI) out everywhere. */
+  signOutApp: (clientId: string) => fetchNoContent(`/v1/auth/apps/${encodeURIComponent(clientId)}`),
+
+  /** Hand a peko to another PekoHub account; its runtime is told (ADR-081 D4). */
+  transferPeko: (hubId: string, ownerHandle: string) =>
+    fetchNoContent(`/v1/principals/by-hub-id/${encodeURIComponent(hubId)}/transfer`, 'POST', {
+      ownerHandle,
+    }),
 
   logout: () =>
     fetchJson<void>('/v1/auth/logout', { method: 'POST' }).finally(() => {
@@ -489,6 +512,19 @@ export interface RuntimeRecord {
   displayName: string | null;
   lastSeenAt: string | null;
   createdAt: string;
+  /** Its tunnel is up right now. */
+  connected?: boolean;
+  /** Pekos it has put online. */
+  pekoCount?: number;
+}
+
+/** An app signed in to the account (`GET /v1/auth/apps`). */
+export interface SignedInApp {
+  clientId: string;
+  name: string;
+  sessions: number;
+  lastActiveAt: string;
+  devices: string[];
 }
 
 /** One row of `GET /v1/seeds`. */

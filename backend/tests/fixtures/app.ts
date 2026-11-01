@@ -193,6 +193,8 @@ function createMockTunnelManager() {
       return false;
     },
     async broadcastControl() {},
+    notifyOwnerChanged() {},
+    disconnectRuntime() {},
     async sendProxiedRequest() {
       throw new Error("Runtime not connected");
     },

@@ -6,6 +6,7 @@ import {
   CircleDot,
   EyeOff,
   Globe,
+  UserRound,
   Lock,
   PowerOff,
   RefreshCw,
@@ -303,7 +304,7 @@ function ManageInstanceModal({
   onSaved: () => void;
 }) {
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<'exposure' | 'status'>('exposure');
+  const [tab, setTab] = useState<'exposure' | 'status' | 'owner'>('exposure');
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -426,6 +427,15 @@ function ManageInstanceModal({
             <CircleDot className="h-3.5 w-3.5" />
             Status
           </button>
+          {instance.hubId && (
+            <button
+              onClick={() => setTab('owner')}
+              className={`tab ${tab === 'owner' ? 'tab-active' : ''}`}
+            >
+              <UserRound className="h-3.5 w-3.5" />
+              Owner
+            </button>
+          )}
         </div>
 
         <div className="max-h-[60vh] overflow-y-auto px-6 py-6">
@@ -533,6 +543,15 @@ function ManageInstanceModal({
                 </div>
               )}
             </div>
+          ) : tab === 'owner' && instance.hubId ? (
+            <TransferPanel
+              hubId={instance.hubId}
+              name={instance.publicName ?? instance.name}
+              onTransferred={() => {
+                void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+                onClose();
+              }}
+            />
           ) : (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-2">
@@ -585,6 +604,60 @@ function ManageInstanceModal({
           </div>
         </footer>
       </div>
+    </div>
+  );
+}
+
+/** Hand the peko to another PekoHub account (ADR-081 D4). */
+function TransferPanel({
+  hubId,
+  name,
+  onTransferred,
+}: {
+  hubId: string;
+  name: string;
+  onTransferred: () => void;
+}) {
+  const [handle, setHandle] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const target = handle.trim().replace(/^@/, '');
+
+  const transfer = async () => {
+    if (!window.confirm(`Give ${name} to @${target}? They become its owner, and you can't undo this yourself.`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.transferPeko(hubId, target);
+      onTransferred();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'The transfer didn’t go through');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <p className="text-[13px] leading-relaxed text-slate-400">
+        Transfer {name} to another PekoHub account. Its runtime is told, and the new owner decides
+        what it does from then on. It keeps running on the same computer.
+      </p>
+      <ModalField label="New owner's handle">
+        <input
+          value={handle}
+          onChange={(event) => setHandle(event.target.value)}
+          placeholder="@handle"
+          className="input"
+          autoCapitalize="off"
+          spellCheck={false}
+        />
+      </ModalField>
+      {error && <p className="text-2xs text-rose-300">{error}</p>}
+      <button type="button" disabled={busy || !target} onClick={() => void transfer()} className="btn-danger btn-sm">
+        {busy && <Spinner className="h-3.5 w-3.5" />}
+        Transfer {name}
+      </button>
     </div>
   );
 }
