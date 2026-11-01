@@ -2,6 +2,12 @@
 
 ## 0.1.0 — pre-launch
 
+- An envelope that speaks for a person (`sourcePrincipalDid = user:hub:<account>`,
+  runtime ADR-090 D3) is relayed only from the runtime registered to that account. A
+  person has no signing key, so their runtime vouches for them; this check stops a
+  registered runtime from claiming another account's person. Refused envelopes are
+  dropped and counted (`hub.channel_{event,invite}.rejected_person_account`); the tunnel
+  stays up.
 - The registry publishes seeds as text (ADR-008). `POST /v1/seeds` takes `{ seed, version,
   readme? }` from a signed-in user and publishes `<handle>/<name>`; the Hub refuses a seed
   carrying an identity, owner, grants, or deployment state, and anything over 64 KB.
