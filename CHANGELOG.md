@@ -2,6 +2,12 @@
 
 ## 0.1.0 — pre-launch
 
+- The API lives on `api.pekohub.ai` and the website on `pekohub.ai`. `GET /v1/meta` names
+  both (`apiOrigin`, `webOrigin`, `tunnelUrl`), and directory answers
+  (`/v1/principals/by-hub-id/…`, `/by-handle/…`) carry `shareUrl`, a public peko's link on
+  the website (null otherwise), so clients never build one origin from the other.
+  `PUBLIC_ORIGIN` defaults to `https://api.pekohub.ai`. `DEPLOYMENT.md` describes the two
+  hosts (and `pekohub.org` as a redirect) instead of the retired dual-hostname split.
 - An OAuth 2.0 authorization server signs in Peko desktop and the Peko CLI (ADR-007).
   The desktop uses authorization code + PKCE with a loopback redirect
   (`GET /oauth/authorize` → the website's `/authorize` consent page → `POST /oauth/token`).

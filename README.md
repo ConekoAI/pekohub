@@ -160,6 +160,12 @@ The SPA's canonical share URL is `/peko/:owner/:name` (`/p/:owner/:name` redirec
 | `DELETE /v1/instances/:id` | Revoke exposure and delete the row. |
 | `POST /v1/instances/:id/chat` | Authenticated chat (SSE) for owners and permitted callers. |
 
+### Where things live
+
+`GET /v1/meta` → `{ apiOrigin, webOrigin, tunnelUrl }` (`https://api.pekohub.ai`,
+`https://pekohub.ai`, `wss://api.pekohub.ai/v1/tunnel` in production). Build API calls from
+`apiOrigin` and links people open from `webOrigin`.
+
 ### Principal directory (cross-runtime channel addressing)
 
 | Endpoint | Description |

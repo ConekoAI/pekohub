@@ -72,6 +72,8 @@ describe("Agent directory API", () => {
         // With `name`, the peko's share path: /peko/alice/helper.
         ownerHandle: "alice",
         exposure: "private",
+        // A private peko has no share link.
+        shareUrl: null,
       });
     });
 
@@ -203,6 +205,8 @@ describe("Agent directory API", () => {
         ownerSubject: { kind: "user", id: String(owner.id) },
         ownerHandle: "alice",
         exposure: "private",
+        // A private peko has no share link.
+        shareUrl: null,
       });
     });
 

@@ -211,6 +211,8 @@ describe("ADR-059 public peko rename", () => {
       ownerSubject: { kind: "user", id: String(user.id) },
       ownerHandle: "alice",
       exposure: "public",
+      // Additive: the website's share link (gap map C4).
+      shareUrl: expect.stringMatching(/\/peko\/alice\/resolver-target$/),
     });
   });
 });
