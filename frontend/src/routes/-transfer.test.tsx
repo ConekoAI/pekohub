@@ -28,7 +28,9 @@ async function openOwnerTab() {
 }
 
 describe('transferring a peko from the console', () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
   it('hands it to another account by handle, after confirming', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
