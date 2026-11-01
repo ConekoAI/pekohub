@@ -2,26 +2,27 @@
  * Public peko page — `/peko/$owner/$pekoName` (ADR-005 §1 canonical
  * share URL; `/p/$owner/$name` redirects here).
  *
- * Anyone with the link lands here. The backend mints a signed visitor
- * cookie on first load so a returning browser resumes its own thread.
- * Link previews use the `head` block below; real OG image rendering is
- * still a placeholder.
+ * Anyone with the link lands here. The website offers no chat: a visitor
+ * opens the peko in Peko desktop (`peko://add-peko?url=…`) and messages it
+ * there as their PekoHub account.
  */
 
 import { createFileRoute, Link, notFound } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, ArrowLeft } from 'lucide-react';
-import { api, isApiError } from '~/lib/api';
+import { ArrowLeft, Download, MessageSquare } from 'lucide-react';
+import { api, desktopLinkFor, isApiError } from '~/lib/api';
 import { PageShell } from '~/components/PageShell';
-import { ProfileHeader } from '~/components/public-chat/ProfileHeader';
-import { PublicChatPanel } from '~/components/public-chat/PublicChatPanel';
+import { ProfileHeader } from '~/components/peko/ProfileHeader';
 import { ErrorNote, Spinner } from '~/components/ui';
+
+/** Where to get the desktop app when the deep link has nothing to open. */
+export const DESKTOP_DOWNLOAD_URL = 'https://github.com/ConekoAI/peko-desktop/releases/latest';
 
 export const Route = createFileRoute('/peko/$owner/$pekoName')({
   component: PublicPekoPage,
   head: ({ params }) => {
     const title = `${params.pekoName} — ${params.owner} on PekoHub`;
-    const description = `Chat with ${params.owner}'s peko "${params.pekoName}" — a public peko, reachable straight from the browser.`;
+    const description = `${params.owner}'s peko "${params.pekoName}" on PekoHub. Open it in Peko to message it.`;
     const url =
       typeof window !== 'undefined'
         ? `${window.location.origin}/peko/${params.owner}/${params.pekoName}`
@@ -34,7 +35,7 @@ export const Route = createFileRoute('/peko/$owner/$pekoName')({
         { property: 'og:title', content: title },
         { property: 'og:description', content: description },
         { property: 'og:url', content: url },
-        { name: 'twitter:card', content: 'summary_large_image' },
+        { name: 'twitter:card', content: 'summary' },
         { name: 'twitter:title', content: title },
         { name: 'twitter:description', content: description },
       ],
@@ -56,7 +57,7 @@ function PublicPekoPage() {
       <PageShell width="narrow">
         <div className="flex flex-col items-center justify-center gap-3 py-32 text-sm text-slate-500">
           <Spinner className="h-5 w-5" />
-          Waking up {pekoName}…
+          Looking up {pekoName}…
         </div>
       </PageShell>
     );
@@ -70,9 +71,9 @@ function PublicPekoPage() {
     return (
       <PageShell width="narrow">
         <ErrorNote>
-          <p className="font-medium">Could not reach this peko</p>
+          <p className="font-medium">Could not load this peko</p>
           <p className="mt-1 text-rose-200/70">
-            {query.error instanceof Error ? query.error.message : 'Unknown error'}
+            PekoHub is not answering right now. Try again in a moment.
           </p>
         </ErrorNote>
       </PageShell>
@@ -85,7 +86,7 @@ function PublicPekoPage() {
   const shareUrl =
     typeof window !== 'undefined'
       ? `${window.location.origin}/peko/${owner}/${pekoName}`
-      : undefined;
+      : `/peko/${owner}/${pekoName}`;
 
   return (
     <PageShell width="narrow">
@@ -99,16 +100,32 @@ function PublicPekoPage() {
 
       <div className="mt-5 space-y-4">
         <ProfileHeader profile={profile} shareUrl={shareUrl} />
-        <PublicChatPanel profile={profile} />
-      </div>
 
-      <p className="mt-6 flex items-start gap-2 font-mono text-2xs leading-relaxed text-slate-600">
-        <AlertTriangle className="mt-0.5 h-3 w-3 flex-shrink-0 text-slate-700" />
-        <span>
-          You are talking to an autonomous actor running on someone else&apos;s machine. Responses
-          are generated and may be wrong — don&apos;t share secrets.
-        </span>
-      </p>
+        <section className="panel px-6 py-5">
+          <h2 className="text-[15px] font-semibold tracking-tight text-slate-100">
+            Message {profile.liveInstance.publicName}
+          </h2>
+          <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-slate-400">
+            Pekos talk over Peko. Open this one in the desktop app, signed in to PekoHub, and
+            message it from there.
+          </p>
+          <div className="mt-4 flex flex-wrap items-center gap-2.5">
+            <a href={desktopLinkFor(shareUrl)} className="btn-primary btn-sm">
+              <MessageSquare className="h-3.5 w-3.5" />
+              Open in Peko
+            </a>
+            <a
+              href={DESKTOP_DOWNLOAD_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="btn-secondary btn-sm"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Get Peko desktop
+            </a>
+          </div>
+        </section>
+      </div>
     </PageShell>
   );
 }

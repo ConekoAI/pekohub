@@ -1,4 +1,4 @@
-import type { SearchQuery, SearchResponse, BundleDetail, UserProfile, PublicProfile, PublicChatBody } from '@pekohub/shared';
+import type { SearchQuery, SearchResponse, BundleDetail, UserProfile, PublicProfile } from '@pekohub/shared';
 
 declare const __API_BASE__: string;
 export const API_BASE = typeof __API_BASE__ !== 'undefined' ? __API_BASE__ : '';
@@ -217,48 +217,16 @@ export const api = {
     }),
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Public chat (PR-C) — anonymous, no JWT, visitor cookie round-trip.
+  // Public peko profiles — no JWT; anyone with the link can see one.
   // ─────────────────────────────────────────────────────────────────────────
 
   /**
-   * Fetch the public profile for a peko. Used by `/peko/$owner/$pekoName`
-   * to render the share-link landing page (description, model,
-   * tags, ToS gate, chat input). No JWT — anyone with the link can
-   * see this; the visitor cookie is set by the backend so the
-   * subsequent `publicChat` call can resolve a thread.
+   * Fetch the public profile for a peko. Used by `/peko/$owner/$pekoName`,
+   * the share-link landing page. The website offers no chat; a visitor
+   * opens the peko in Peko desktop and messages it over their own runtime.
    */
   publicProfile: (owner: string, pekoName: string) =>
     fetchJson<PublicProfile>(`/v1/public/pekos/${owner}/${pekoName}`),
-
-  /**
-   * Open a streaming SSE chat with a public peko. Returns the
-   * raw `Response` so the caller can attach a body-reader; callers
-   * that need a discriminated stream of `chunk | iteration | done |
-   * error` events should use `usePublicChat()` which parses the
-   * dual-channel SSE format. Throws on network error; quota
-   * rejections arrive as an `event: error` SSE frame.
-   *
-   * Signed-in callers use their account; anonymous callers use the visitor
-   * cookie. Account and visitor histories remain separate.
-   */
-  publicChat: async (owner: string, pekoName: string, body: PublicChatBody) => {
-    const send = () => fetch(`${API_BASE}/v1/public/pekos/${owner}/${pekoName}/chat`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json', ...(getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {}) },
-      body: JSON.stringify(body),
-    });
-    let response = await send();
-    if (response.status === 401 && getAuthToken()) {
-      if (!isRefreshing) {
-        isRefreshing = true;
-        refreshPromise = doRefresh().finally(() => { isRefreshing = false; refreshPromise = null; });
-      }
-      await refreshPromise;
-      response = await send();
-    }
-    return response;
-  },
 
   // ─────────────────────────────────────────────────────────────────────────
   // Owner dashboard (PR #7) — instances scoped to the signed-in user.
@@ -469,6 +437,15 @@ export function ownerHandle(hit: DiscoveryHit): string {
 export function shareUrlFor(hit: DiscoveryHit, origin?: string): string {
   const base = origin ?? (typeof window !== 'undefined' ? window.location.origin : '');
   return `${base}/peko/${encodeURIComponent(ownerHandle(hit))}/${encodeURIComponent(hit.publicName)}`;
+}
+
+/**
+ * The Peko desktop deep link that adds a peko from its share link
+ * (`peko://add-peko?url=…`, handled by peko-desktop's deep-link router).
+ * The desktop adds the peko and messages it as the signed-in user.
+ */
+export function desktopLinkFor(shareUrl: string): string {
+  return `peko://add-peko?url=${encodeURIComponent(shareUrl)}`;
 }
 
 /**

@@ -34,6 +34,7 @@ export async function buildTunnelTestApp(testDb: TestDb) {
   process.env.GC_ENABLED = "false";
   process.env.RATE_LIMIT_MAX = "1000";
   process.env.ALLOW_DEV_AUTH_BYPASS = "false";
+  process.env.ALLOW_VISITOR_CHAT = "true";
 
   setDb(testDb.db);
 

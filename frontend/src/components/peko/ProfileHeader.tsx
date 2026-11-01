@@ -9,7 +9,7 @@
 
 import { Cpu, Share2 } from 'lucide-react';
 import type { PublicProfile } from '@pekohub/shared';
-import { Avatar, Badge, CopyButton, StatusPill } from '~/components/ui';
+import { Avatar, CopyButton, StatusPill } from '~/components/ui';
 
 interface ProfileHeaderProps {
   profile: PublicProfile;
@@ -85,11 +85,8 @@ export function ProfileHeader({ profile, shareUrl }: ProfileHeaderProps) {
         </span>
         <span className="flex items-center gap-1.5 font-mono text-2xs text-slate-600">
           <Share2 className="h-3 w-3" />
-          messages relayed, never stored by the hub
+          messages relayed between runtimes, never stored by the hub
         </span>
-        {liveInstance.tosRequired && (
-          <Badge tone="warn">terms required</Badge>
-        )}
       </div>
     </section>
   );

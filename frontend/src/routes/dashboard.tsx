@@ -47,13 +47,13 @@ const EXPOSURE_META: Record<
 > = {
   public: {
     label: 'Public',
-    blurb: 'Listed in the directory. Anyone can find and chat with it.',
+    blurb: 'Listed in the directory. Anyone with Peko can find and message it.',
     icon: Globe,
     tone: 'peko',
   },
   private: {
     label: 'Private',
-    blurb: 'Only subjects listed in the runtime’s permissions may chat.',
+    blurb: 'Not listed. Only actors the runtime’s permissions allow may message it.',
     icon: Lock,
     tone: 'neutral',
   },
@@ -315,10 +315,6 @@ function ManageInstanceModal({
   const [description, setDescription] = useState(instance.description ?? '');
   const [category, setCategory] = useState(instance.category ?? 'other');
   const [tags, setTags] = useState(instance.tags.join(', '));
-  const [tosRequired, setTosRequired] = useState(instance.tosRequired);
-  const [tosText, setTosText] = useState(instance.tosText ?? '');
-  const [dailyQuota, setDailyQuota] = useState(instance.dailyQuota?.toString() ?? '');
-  const [weeklyQuota, setWeeklyQuota] = useState(instance.weeklyQuota?.toString() ?? '');
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -352,10 +348,6 @@ function ManageInstanceModal({
                   .map((tag) => tag.trim())
                   .filter(Boolean),
                 category,
-                tos_required: tosRequired,
-                tos_text: tosRequired ? tosText : undefined,
-                daily_quota: dailyQuota ? Number(dailyQuota) : undefined,
-                weekly_quota: weeklyQuota ? Number(weeklyQuota) : undefined,
               }
             : undefined,
         );
@@ -537,55 +529,6 @@ function ManageInstanceModal({
                     </ModalField>
                   </div>
 
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <ModalField label="Daily quota" hint="blank = unlimited">
-                      <input
-                        value={dailyQuota}
-                        onChange={(event) => setDailyQuota(event.target.value.replace(/\D/g, ''))}
-                        inputMode="numeric"
-                        className="input"
-                        placeholder="200"
-                      />
-                    </ModalField>
-                    <ModalField label="Weekly quota" hint="blank = unlimited">
-                      <input
-                        value={weeklyQuota}
-                        onChange={(event) => setWeeklyQuota(event.target.value.replace(/\D/g, ''))}
-                        inputMode="numeric"
-                        className="input"
-                        placeholder="1000"
-                      />
-                    </ModalField>
-                  </div>
-
-                  <label className="flex items-start gap-3 rounded-lg border border-white/[0.07] bg-ink-900/60 px-3.5 py-3">
-                    <input
-                      type="checkbox"
-                      checked={tosRequired}
-                      onChange={(event) => setTosRequired(event.target.checked)}
-                      className="mt-0.5 h-4 w-4 rounded border-ink-500 bg-ink-900 text-peko-500 focus:ring-peko-400/40"
-                    />
-                    <span>
-                      <span className="block text-sm text-slate-200">
-                        Require terms of service
-                      </span>
-                      <span className="mt-0.5 block text-2xs text-slate-500">
-                        Visitors must acknowledge before their first message.
-                      </span>
-                    </span>
-                  </label>
-
-                  {tosRequired && (
-                    <ModalField label="Terms text">
-                      <textarea
-                        value={tosText}
-                        onChange={(event) => setTosText(event.target.value)}
-                        rows={4}
-                        className="textarea"
-                        placeholder="Be kind. Don't paste secrets."
-                      />
-                    </ModalField>
-                  )}
                 </div>
               )}
             </div>

@@ -23,6 +23,8 @@ export interface TestAppOptions {
   testDb: TestDb;
   jwtSecret?: string;
   enableOAuth?: boolean;
+  /** Anonymous visitor chat (`ALLOW_VISITOR_CHAT`); on unless set false. */
+  allowVisitorChat?: boolean;
 }
 
 /**
@@ -47,6 +49,7 @@ export async function buildTestApp(options: TestAppOptions) {
   process.env.GC_ENABLED = "false";
   process.env.RATE_LIMIT_MAX = "1000";
   process.env.ALLOW_DEV_AUTH_BYPASS = "false";
+  process.env.ALLOW_VISITOR_CHAT = options.allowVisitorChat === false ? "false" : "true";
 
   if (options.enableOAuth) {
     process.env.GITHUB_CLIENT_ID = "test-github-id";

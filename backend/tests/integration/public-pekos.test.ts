@@ -107,6 +107,29 @@ describe("ADR-059 public peko rename", () => {
     });
   });
 
+  it("with visitor chat off (the default), anonymous chat asks to sign in and no visitor cookie is set", async () => {
+    const app = await buildTestApp({ testDb, allowVisitorChat: false });
+    const user = await createUser(testDb.client, { namespace: "alice" });
+    await createInstance(testDb.client, {
+      ownerSubject: { kind: "user", id: String(user.id) },
+      name: "greeter",
+      exposure: "public",
+      status: "online",
+    });
+
+    const page = await app.inject({ method: "GET", url: "/v1/public/pekos/alice/greeter" });
+    expect(page.statusCode).toBe(200);
+    expect(page.headers["set-cookie"]).toBeUndefined();
+
+    const chat = await app.inject({
+      method: "POST",
+      url: "/v1/public/pekos/alice/greeter/chat",
+      payload: { message: "hi" },
+    });
+    expect(chat.statusCode).toBe(401);
+    expect(JSON.parse(chat.body).code).toBe("sign_in_required");
+  });
+
   it("renamed paths use peko-facing copy (Peko not found)", async () => {
     const app = await buildTestApp({ testDb });
     await createUser(testDb.client, { namespace: "alice" });

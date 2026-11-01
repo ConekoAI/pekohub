@@ -125,6 +125,7 @@ async function buildApp(): Promise<FastifyInstance> {
     GC_INTERVAL_MS: 86400000,
     GC_RETENTION_DAYS: 7,
     GC_BATCH_SIZE: 1000,
+    ALLOW_VISITOR_CHAT: "false",
   });
 
   // Mock storage

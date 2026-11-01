@@ -5,8 +5,8 @@ Public registry, relay, and discovery hub for [peko-runtime](https://github.com/
 PekoHub is three things in one server:
 
 1. **OCI Distribution Spec v1.1 seed registry** (multi-segment repo paths like `peko/principals/<name>`; a push is a zero-layer manifest whose config blob is a stripped `principal.toml` — see ADR-005 and runtime ADR-056 D6). **Seed-only:** the hub carries DNA, never an existence and never a capability package.
-2. **Tunnel relay** that proxies chat traffic from public callers to runtime-owned pekos.
-3. **Discovery + share directory** so users can find and chat with exposed pekos — anonymously in the browser, or via `peko-desktop` after a share link.
+2. **Tunnel relay** that carries channel traffic between runtimes, plus a chat proxy for signed-in clients that have no runtime of their own (a future mobile app).
+3. **Discovery + share directory** so users can find exposed pekos and open them in `peko-desktop` from a share link. The website offers no chat.
 
 The hub is intentionally a thin router. Per-peer access decisions live in the runtime's `PrincipalConfig.permissions` (the authoritative inbound ACL). The hub only mirrors `exposure` / `status`, and forwards identity as short-lived EdDSA bridge tokens (ADR-057/058).
 
@@ -16,7 +16,7 @@ The hub is intentionally a thin router. Per-peer access decisions live in the ru
 
 ```
 pekohub/
-├── backend/          # Fastify API — OCI registry + tunnel relay + public chat
+├── backend/          # Fastify API — seed registry + tunnel relay + directory
 ├── frontend/         # React SPA — Vite + Tailwind + TanStack Router
 ├── packages/shared/  # Zod schemas (Subject, TargetSpec, PublicProfile)
 └── docker-compose.yml
@@ -138,7 +138,7 @@ Per runtime ADR-056 D7, at most one instance per `principal_did` may be `public`
 | Endpoint | Description |
 |----------|-------------|
 | `GET /v1/public/pekos/:owner/:pekoName` | Public profile for any `public` or `unlisted` peko. |
-| `POST /v1/public/pekos/:owner/:pekoName/chat` | Anonymous chat via SSE. A signed visitor cookie (HMAC, 365-day HttpOnly/SameSite=Lax) identifies the caller to the runtime. 20 req/60s/IP rate limit; per-instance `dailyQuota`/`weeklyQuota`; optional ToS gate (returns 428). |
+| `POST /v1/public/pekos/:owner/:pekoName/chat` | Chat via SSE for runtime-less clients. Signed-in callers only unless `ALLOW_VISITOR_CHAT=true` (default `false`), which lets anonymous callers in under a signed visitor cookie (HMAC, 365-day HttpOnly/SameSite=Lax) identifies the caller to the runtime. 20 req/60s/IP rate limit; per-instance `dailyQuota`/`weeklyQuota`; optional ToS gate (returns 428). |
 | `GET /v1/instances/public` | List public pekos (paginated). |
 | `GET /v1/instances/public/search` | Full-text search over public pekos. |
 | `GET /v1/discovery/search` | Faceted search: `q`, `category`, `sort` (`relevance` / `recent` / `popular`). Returns only `exposure = public`. |
