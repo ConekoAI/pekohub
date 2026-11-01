@@ -442,8 +442,7 @@ export function shareUrlFor(hit: DiscoveryHit, origin?: string): string {
 /**
  * The Peko desktop deep link that adds a peko from its share link
  * (`peko://add-peko?url=…`, handled by peko-desktop's deep-link router).
- * The desktop resolves the link through the Hub directory and messages
- * the peko from the user's own runtime.
+ * The desktop adds the peko and messages it as the signed-in user.
  */
 export function desktopLinkFor(shareUrl: string): string {
   return `peko://add-peko?url=${encodeURIComponent(shareUrl)}`;

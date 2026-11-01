@@ -3,8 +3,8 @@
  * share URL; `/p/$owner/$name` redirects here).
  *
  * Anyone with the link lands here. The website offers no chat: a visitor
- * opens the peko in Peko desktop (`peko://add-peko?url=…`), which adds it
- * as a contact and messages it over the visitor's own runtime.
+ * opens the peko in Peko desktop (`peko://add-peko?url=…`) and messages it
+ * there as their PekoHub account.
  */
 
 import { createFileRoute, Link, notFound } from '@tanstack/react-router';
@@ -106,8 +106,8 @@ function PublicPekoPage() {
             Message {profile.liveInstance.publicName}
           </h2>
           <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-slate-400">
-            Pekos talk over Peko. Open this one in the desktop app and it joins your contacts;
-            your messages travel from your own runtime, and the conversation stays on your machine.
+            Pekos talk over Peko. Open this one in the desktop app, signed in to PekoHub, and
+            message it from there.
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-2.5">
             <a href={desktopLinkFor(shareUrl)} className="btn-primary btn-sm">
