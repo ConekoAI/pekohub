@@ -8,11 +8,12 @@ import authPlugin from "../../src/plugins/auth.js";
 import { setDb } from "../../src/db/index.js";
 
 import searchApiRoutes from "../../src/routes/api/search.js";
-import bundleApiRoutes from "../../src/routes/api/bundles.js";
+import seedRoutes from "../../src/routes/api/seeds.js";
+import metaRoutes from "../../src/routes/api/meta.js";
+import oauthServerRoutes from "../../src/routes/auth/oauth-server.js";
 import adminRoutes from "../../src/routes/api/admin.js";
 import oauthRoutes from "../../src/routes/auth/oauth.js";
 import apiKeyRoutes from "../../src/routes/auth/api-keys.js";
-import ociRoutes from "../../src/routes/oci/index.js";
 import tunnelPlugin from "../../src/plugins/tunnel.js";
 import instanceApiRoutes from "../../src/routes/api/instances.js";
 import runtimeApiRoutes from "../../src/routes/api/runtimes.js";
@@ -98,7 +99,6 @@ async function main() {
   process.env.MEILISEARCH_API_KEY = "test";
   process.env.JWT_SECRET = "test-secret-key-that-is-32-chars-long!!";
   process.env.NODE_ENV = "development";
-  process.env.GC_ENABLED = "false";
   process.env.RATE_LIMIT_MAX = "1000";
   process.env.ALLOW_DEV_AUTH_BYPASS = "true";
   process.env.ALLOW_VISITOR_CHAT = "true";
@@ -108,36 +108,15 @@ async function main() {
 
   const app = Fastify({
     logger: false,
-    bodyLimit: 100 * 1024 * 1024,
+    bodyLimit: 1024 * 1024,
   });
 
-  // Content type parsers
+  // OAuth token, device, and revoke requests are form-encoded
   app.addContentTypeParser(
-    "application/octet-stream",
-    { parseAs: "buffer" },
+    "application/x-www-form-urlencoded",
+    { parseAs: "string" },
     (_req, body, done) => {
-      done(null, body);
-    },
-  );
-  app.addContentTypeParser(
-    "application/vnd.oci.image.manifest.v1+json",
-    { parseAs: "buffer" },
-    (_req, body, done) => {
-      done(null, body);
-    },
-  );
-  app.addContentTypeParser(
-    "application/vnd.oci.image.index.v1+json",
-    { parseAs: "buffer" },
-    (_req, body, done) => {
-      done(null, body);
-    },
-  );
-  app.addContentTypeParser(
-    "application/vnd.peko.manifest.v1+json",
-    { parseAs: "buffer" },
-    (_req, body, done) => {
-      done(null, body);
+      done(null, Object.fromEntries(new URLSearchParams(body as string)));
     },
   );
 
@@ -157,9 +136,9 @@ async function main() {
   await app.register(tunnelPlugin);
 
   // Register routes
-  await app.register(ociRoutes);
   await app.register(searchApiRoutes, { prefix: "/v1" });
-  await app.register(bundleApiRoutes, { prefix: "/v1" });
+  await app.register(seedRoutes, { prefix: "/v1" });
+  await app.register(metaRoutes, { prefix: "/v1" });
   await app.register(instanceApiRoutes, { prefix: "/v1" });
   await app.register(runtimeApiRoutes, { prefix: "/v1" });
   await app.register(principalDirectoryRoutes, { prefix: "/v1" });
@@ -174,6 +153,7 @@ async function main() {
   app.get("/.well-known/jwks.json", jwksHandler);
   await app.register(oauthRoutes, { prefix: "/v1/auth" });
   await app.register(apiKeyRoutes, { prefix: "/v1/auth" });
+  await app.register(oauthServerRoutes);
 
   // Health check
   app.get("/health", async () => ({ status: "ok", version: "0.1.0" }));

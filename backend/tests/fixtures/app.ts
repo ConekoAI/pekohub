@@ -7,7 +7,7 @@ import authPlugin from "../../src/plugins/auth.js";
 import { setDb } from "../../src/db/index.js";
 
 import searchApiRoutes from "../../src/routes/api/search.js";
-import bundleApiRoutes from "../../src/routes/api/bundles.js";
+import seedRoutes from "../../src/routes/api/seeds.js";
 import instanceRoutes from "../../src/routes/api/instances.js";
 import publicPekoRoutes from "../../src/routes/api/public-pekos.js";
 import runtimeRoutes from "../../src/routes/api/runtimes.js";
@@ -17,7 +17,6 @@ import metaRoutes from "../../src/routes/api/meta.js";
 import oauthRoutes from "../../src/routes/auth/oauth.js";
 import oauthServerRoutes from "../../src/routes/auth/oauth-server.js";
 import apiKeyRoutes from "../../src/routes/auth/api-keys.js";
-import ociRoutes from "../../src/routes/oci/index.js";
 
 import type { TestDb } from "./db.js";
 
@@ -48,7 +47,6 @@ export async function buildTestApp(options: TestAppOptions) {
   process.env.MEILISEARCH_API_KEY = "test";
   process.env.JWT_SECRET = jwtSecret;
   process.env.NODE_ENV = "test";
-  process.env.GC_ENABLED = "false";
   process.env.RATE_LIMIT_MAX = "1000";
   process.env.ALLOW_DEV_AUTH_BYPASS = "false";
   process.env.ALLOW_VISITOR_CHAT = options.allowVisitorChat === false ? "false" : "true";
@@ -82,27 +80,6 @@ export async function buildTestApp(options: TestAppOptions) {
       done(null, Object.fromEntries(new URLSearchParams(body as string)));
     },
   );
-  app.addContentTypeParser(
-    "application/octet-stream",
-    { parseAs: "buffer" },
-    (_req, body, done) => {
-      done(null, body);
-    },
-  );
-  app.addContentTypeParser(
-    "application/vnd.oci.image.manifest.v1+json",
-    { parseAs: "buffer" },
-    (_req, body, done) => {
-      done(null, body);
-    },
-  );
-  app.addContentTypeParser(
-    "application/vnd.oci.image.index.v1+json",
-    { parseAs: "buffer" },
-    (_req, body, done) => {
-      done(null, body);
-    },
-  );
 
   // Register plugins
   await app.register(configPlugin);
@@ -121,9 +98,8 @@ export async function buildTestApp(options: TestAppOptions) {
   app.decorate("tunnelRouter", createMockTunnelRouter(app.tunnelManager));
 
   // Register routes
-  await app.register(ociRoutes);
   await app.register(searchApiRoutes, { prefix: "/v1" });
-  await app.register(bundleApiRoutes, { prefix: "/v1" });
+  await app.register(seedRoutes, { prefix: "/v1" });
   await app.register(instanceRoutes, { prefix: "/v1" });
   await app.register(publicPekoRoutes, { prefix: "/v1" });
   await app.register(runtimeRoutes, { prefix: "/v1" });
@@ -135,12 +111,6 @@ export async function buildTestApp(options: TestAppOptions) {
   await app.register(apiKeyRoutes, { prefix: "/v1/auth" });
   await app.register(oauthServerRoutes);
 
-  // `/api/v1` alias surface — mirrors `src/index.ts` (the runtime CLI
-  // hard-codes this prefix for search / bundle detail / OAuth).
-  await app.register(searchApiRoutes, { prefix: "/api/v1" });
-  await app.register(bundleApiRoutes, { prefix: "/api/v1" });
-  await app.register(oauthRoutes, { prefix: "/api/v1/auth" });
-  await app.register(apiKeyRoutes, { prefix: "/api/v1/auth" });
 
   // Health check
   app.get("/health", async () => ({ status: "ok", version: "0.1.0" }));

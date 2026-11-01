@@ -14,9 +14,8 @@ import searchPlugin from "./plugins/search.js";
 import tunnelPlugin from "./plugins/tunnel.js";
 import quotaPlugin from "./plugins/quotas.js";
 
-import ociRoutes from "./routes/oci/index.js";
 import searchApiRoutes from "./routes/api/search.js";
-import bundleApiRoutes from "./routes/api/bundles.js";
+import seedRoutes from "./routes/api/seeds.js";
 import runtimeRoutes from "./routes/api/runtimes.js";
 import instanceRoutes from "./routes/api/instances.js";
 import publicPekoRoutes from "./routes/api/public-pekos.js";
@@ -27,7 +26,6 @@ import oauthRoutes from "./routes/auth/oauth.js";
 import apiKeyRoutes from "./routes/auth/api-keys.js";
 import oauthServerRoutes from "./routes/auth/oauth-server.js";
 
-import { GarbageCollector } from "./services/gc.js";
 import { Scheduler } from "./services/scheduler.js";
 import { metrics } from "./services/metrics.js";
 import { instanceService } from "./services/instances.js";
@@ -41,49 +39,18 @@ async function main() {
           ? { target: "pino-pretty" }
           : undefined,
     },
-    // Increase body size limit for blob uploads (100MB)
-    bodyLimit: 100 * 1024 * 1024,
+    // Seeds are at most 64 KB; nothing else posts large bodies.
+    bodyLimit: 1024 * 1024,
     // Trust X-Forwarded-For from nginx/Cloudflare so request.ip is the real client IP
     trustProxy: true,
   });
 
-  // Allow raw binary bodies for OCI blob uploads
   // OAuth token, device, and revoke requests are form-encoded (RFC 6749 §4.1.3)
   app.addContentTypeParser(
     "application/x-www-form-urlencoded",
     { parseAs: "string" },
     (_req, body, done) => {
       done(null, Object.fromEntries(new URLSearchParams(body as string)));
-    },
-  );
-  app.addContentTypeParser(
-    "application/octet-stream",
-    { parseAs: "buffer" },
-    (_req, body, done) => {
-      done(null, body);
-    },
-  );
-  // Allow OCI manifest content types
-  app.addContentTypeParser(
-    "application/vnd.oci.image.manifest.v1+json",
-    { parseAs: "buffer" },
-    (_req, body, done) => {
-      done(null, body);
-    },
-  );
-  app.addContentTypeParser(
-    "application/vnd.oci.image.index.v1+json",
-    { parseAs: "buffer" },
-    (_req, body, done) => {
-      done(null, body);
-    },
-  );
-  // Allow legacy CLI manifest content type (peko-runtime uses this)
-  app.addContentTypeParser(
-    "application/vnd.peko.manifest.v1+json",
-    { parseAs: "buffer" },
-    (_req, body, done) => {
-      done(null, body);
     },
   );
 
@@ -135,12 +102,10 @@ async function main() {
   // on a sidecar / metrics-scrape path is the typical deployment.
   app.get("/metrics", async () => metrics.snapshot());
 
-  // OCI Distribution Spec routes — registered via single aggregator
-  await app.register(ociRoutes);
-
   // Custom API routes
   await app.register(searchApiRoutes, { prefix: "/v1" });
-  await app.register(bundleApiRoutes, { prefix: "/v1" });
+  // The seed registry (runtime ADR-060)
+  await app.register(seedRoutes, { prefix: "/v1" });
   // Issue #15: runtime registration (POST /v1/runtimes/register) was dead
   // code — the routes/api/index.ts aggregator was never imported, so
   // `peko tunnel setup` calls were silently 404ing in production. Register
@@ -158,17 +123,6 @@ async function main() {
   await app.register(principalDirectoryRoutes, { prefix: "/v1" });
   await app.register(adminRoutes, { prefix: "/v1/admin" });
   await app.register(metaRoutes, { prefix: "/v1" });
-
-  // `/api/v1` alias surface: the runtime CLI hard-codes this prefix
-  // (search → GET /api/v1/search, bundle detail →
-  // GET /api/v1/bundles/<ns>/<name>, OAuth → /api/v1/auth/github/authorize;
-  // see peko-rs/cli/src/commands/search.rs). The canonical `/v1`
-  // registrations above stay; these are the same plugins mounted a
-  // second time under the CLI-facing prefix.
-  await app.register(searchApiRoutes, { prefix: "/api/v1" });
-  await app.register(bundleApiRoutes, { prefix: "/api/v1" });
-  await app.register(oauthRoutes, { prefix: "/api/v1/auth" });
-  await app.register(apiKeyRoutes, { prefix: "/api/v1/auth" });
 
   // ADR-057: bridge-token verification keys. Runtimes fetch this to
   // validate the EdDSA tokens the hub mints when proxying chat (the
@@ -205,8 +159,7 @@ async function main() {
   // Stricter rate limits for auth endpoints
   app.addHook("onRequest", async (request, reply) => {
     if (
-      request.url.startsWith("/v1/auth/") ||
-      request.url.startsWith("/api/v1/auth/")
+      request.url.startsWith("/v1/auth/")
     ) {
       // Use a simple in-memory rate limiter for auth endpoints
       // @fastify/rate-limit doesn't support prefix-based scoping,
@@ -274,38 +227,6 @@ async function main() {
       }
     },
   );
-
-  if (app.config.GC_ENABLED === "true") {
-    const gc = new GarbageCollector(app.storage);
-
-    scheduler.addJob(
-      "garbage-collection",
-      app.config.GC_INTERVAL_MS,
-      async () => {
-        const result = await gc.collect({
-          retentionDays: app.config.GC_RETENTION_DAYS,
-          dryRun: false,
-          batchSize: app.config.GC_BATCH_SIZE,
-        });
-
-        app.log.info(
-          `GC completed — blobsScanned=${result.blobsScanned} blobsDeleted=${result.blobsDeleted} bytesFreed=${result.bytesFreed} errors=${result.errors.length}`,
-        );
-
-        if (result.errors.length > 0) {
-          for (const error of result.errors) {
-            app.log.error(`GC error: ${error}`);
-          }
-        }
-      },
-    );
-
-    app.log.info(
-      `Scheduled GC enabled (interval=${app.config.GC_INTERVAL_MS}ms, retention=${app.config.GC_RETENTION_DAYS}days, batchSize=${app.config.GC_BATCH_SIZE})`,
-    );
-  } else {
-    app.log.info("Scheduled GC disabled");
-  }
 
   scheduler.start();
   app.log.info("Scheduler started (mark-offline-if-stale every 60s)");

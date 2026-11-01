@@ -45,6 +45,9 @@ const DDL_STATEMENTS = [
     -- pusher (mirrors migration 0001_bundle_publisher).
     publisher_id UUID REFERENCES users(id) ON DELETE SET NULL,
     description TEXT,
+    display_name VARCHAR(256),
+    avatar VARCHAR(64),
+    model VARCHAR(256),
     author VARCHAR(256),
     license VARCHAR(64),
     tags JSONB DEFAULT '[]',
@@ -65,7 +68,8 @@ const DDL_STATEMENTS = [
     bundle_id INTEGER NOT NULL REFERENCES bundles(id) ON DELETE CASCADE,
     version VARCHAR(64) NOT NULL,
     digest VARCHAR(71) NOT NULL,
-    manifest_json JSONB NOT NULL,
+    content TEXT,
+    manifest_json JSONB,
     size INTEGER NOT NULL,
     deprecated BOOLEAN DEFAULT FALSE,
     deprecated_message TEXT,
@@ -73,7 +77,7 @@ const DDL_STATEMENTS = [
   );`,
 
   `CREATE UNIQUE INDEX IF NOT EXISTS bundle_version_idx ON bundle_versions(bundle_id, version);`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS digest_idx ON bundle_versions(digest);`,
+  `CREATE INDEX IF NOT EXISTS digest_idx ON bundle_versions(digest);`,
 
   `CREATE TABLE IF NOT EXISTS blobs (
     id SERIAL PRIMARY KEY,

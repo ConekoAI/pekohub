@@ -19,6 +19,7 @@ import { Route as AuthorizeRouteImport } from './routes/authorize'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SeedsIndexRouteImport } from './routes/seeds/index'
 import { Route as TemplatesSplatRouteImport } from './routes/templates_.$'
+import { Route as SeedsNewRouteImport } from './routes/seeds/new'
 import { Route as SeedsSplatRouteImport } from './routes/seeds/$'
 import { Route as BundlesSplatRouteImport } from './routes/bundles_.$'
 import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
@@ -75,6 +76,11 @@ const TemplatesSplatRoute = TemplatesSplatRouteImport.update({
   path: '/templates/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SeedsNewRoute = SeedsNewRouteImport.update({
+  id: '/seeds/new',
+  path: '/seeds/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SeedsSplatRoute = SeedsSplatRouteImport.update({
   id: '/seeds/$',
   path: '/seeds/$',
@@ -113,6 +119,7 @@ export interface FileRoutesByFullPath {
   '/auth/callback': typeof AuthCallbackRoute
   '/bundles/$': typeof BundlesSplatRoute
   '/seeds/$': typeof SeedsSplatRoute
+  '/seeds/new': typeof SeedsNewRoute
   '/templates/$': typeof TemplatesSplatRoute
   '/seeds/': typeof SeedsIndexRoute
   '/p/$owner/$principalName': typeof POwnerPrincipalNameRoute
@@ -130,6 +137,7 @@ export interface FileRoutesByTo {
   '/auth/callback': typeof AuthCallbackRoute
   '/bundles/$': typeof BundlesSplatRoute
   '/seeds/$': typeof SeedsSplatRoute
+  '/seeds/new': typeof SeedsNewRoute
   '/templates/$': typeof TemplatesSplatRoute
   '/seeds': typeof SeedsIndexRoute
   '/p/$owner/$principalName': typeof POwnerPrincipalNameRoute
@@ -148,6 +156,7 @@ export interface FileRoutesById {
   '/auth/callback': typeof AuthCallbackRoute
   '/bundles_/$': typeof BundlesSplatRoute
   '/seeds/$': typeof SeedsSplatRoute
+  '/seeds/new': typeof SeedsNewRoute
   '/templates_/$': typeof TemplatesSplatRoute
   '/seeds/': typeof SeedsIndexRoute
   '/p/$owner/$principalName': typeof POwnerPrincipalNameRoute
@@ -167,6 +176,7 @@ export interface FileRouteTypes {
     | '/auth/callback'
     | '/bundles/$'
     | '/seeds/$'
+    | '/seeds/new'
     | '/templates/$'
     | '/seeds/'
     | '/p/$owner/$principalName'
@@ -184,6 +194,7 @@ export interface FileRouteTypes {
     | '/auth/callback'
     | '/bundles/$'
     | '/seeds/$'
+    | '/seeds/new'
     | '/templates/$'
     | '/seeds'
     | '/p/$owner/$principalName'
@@ -201,6 +212,7 @@ export interface FileRouteTypes {
     | '/auth/callback'
     | '/bundles_/$'
     | '/seeds/$'
+    | '/seeds/new'
     | '/templates_/$'
     | '/seeds/'
     | '/p/$owner/$principalName'
@@ -219,6 +231,7 @@ export interface RootRouteChildren {
   AuthCallbackRoute: typeof AuthCallbackRoute
   BundlesSplatRoute: typeof BundlesSplatRoute
   SeedsSplatRoute: typeof SeedsSplatRoute
+  SeedsNewRoute: typeof SeedsNewRoute
   TemplatesSplatRoute: typeof TemplatesSplatRoute
   SeedsIndexRoute: typeof SeedsIndexRoute
   POwnerPrincipalNameRoute: typeof POwnerPrincipalNameRoute
@@ -297,6 +310,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TemplatesSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/seeds/new': {
+      id: '/seeds/new'
+      path: '/seeds/new'
+      fullPath: '/seeds/new'
+      preLoaderRoute: typeof SeedsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/seeds/$': {
       id: '/seeds/$'
       path: '/seeds/$'
@@ -347,6 +367,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthCallbackRoute: AuthCallbackRoute,
   BundlesSplatRoute: BundlesSplatRoute,
   SeedsSplatRoute: SeedsSplatRoute,
+  SeedsNewRoute: SeedsNewRoute,
   TemplatesSplatRoute: TemplatesSplatRoute,
   SeedsIndexRoute: SeedsIndexRoute,
   POwnerPrincipalNameRoute: POwnerPrincipalNameRoute,

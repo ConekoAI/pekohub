@@ -2,6 +2,17 @@
 
 ## 0.1.0 — pre-launch
 
+- The registry publishes seeds as text (ADR-008). `POST /v1/seeds` takes `{ seed, version,
+  readme? }` from a signed-in user and publishes `<handle>/<name>`; the Hub refuses a seed
+  carrying an identity, owner, grants, or deployment state, and anything over 64 KB.
+  `GET /v1/seeds`, `/v1/seeds/:owner/:name`, and `…/versions/:v/seed.toml` (download,
+  `latest` works) serve them; the publisher deprecates and deletes. The website gains
+  `/seeds/new` (paste or drop the file), and the seed page leads with Download plus the
+  `peko create … -s …` command. Migration `0007_seed_content` adds
+  `bundle_versions.content` and the seed summary columns on `bundles`. The OCI surface
+  (`/v2/*`), `/v1/bundles/*`, the `/api/v1` aliases, blob GC (`GC_*` settings), and the
+  shared OCI types are removed — the runtime registry client that used them was deleted in
+  runtime ADR-066 D7. Seeds pushed through OCI stay in the database but are not listed.
 - The API lives on `api.pekohub.ai` and the website on `pekohub.ai`. `GET /v1/meta` names
   both (`apiOrigin`, `webOrigin`, `tunnelUrl`), and directory answers
   (`/v1/principals/by-hub-id/…`, `/by-handle/…`) carry `shareUrl`, a public peko's link on

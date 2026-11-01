@@ -1,4 +1,4 @@
-import type { SearchQuery, SearchResponse, BundleDetail, UserProfile, PublicProfile } from '@pekohub/shared';
+import type { SearchQuery, SearchResponse, UserProfile, PublicProfile } from '@pekohub/shared';
 
 declare const __API_BASE__: string;
 export const API_BASE = typeof __API_BASE__ !== 'undefined' ? __API_BASE__ : '';
@@ -122,6 +122,20 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+/** A request answered with 204 / no body; errors carry the server's message. */
+async function fetchNoContent(url: string, method = 'DELETE'): Promise<void> {
+  const token = getAuthToken();
+  const response = await fetch(`${API_BASE}${url}`, {
+    method,
+    credentials: 'include',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+    throw new ApiError(response.status, error.error ?? `HTTP ${response.status}`, error);
+  }
+}
+
 export const api = {
   search: (params: SearchQuery) => {
     const searchParams = new URLSearchParams();
@@ -136,44 +150,33 @@ export const api = {
     return fetchJson<SearchResponse>(`/v1/search?${searchParams}`);
   },
 
-  getBundle: (namespace: string, name: string) =>
-    fetchJson<BundleDetail>(`/v1/bundles/${namespace}/${name}`),
+  // ── Seeds (the registry) ────────────────────────────────────────────────
+  listSeeds: (opts?: { page?: number; perPage?: number }) => {
+    const params = new URLSearchParams();
+    if (opts?.page) params.set('page', String(opts.page));
+    if (opts?.perPage) params.set('perPage', String(opts.perPage));
+    return fetchJson<SeedList>(`/v1/seeds?${params}`);
+  },
 
-  getBundleVersions: (namespace: string, name: string) =>
-    fetchJson<{ namespace: string; name: string; versions: Array<{ version: string; digest: string; size: number; createdAt: string; deprecated: boolean | null; deprecatedMessage: string | null }> }>(
-      `/v1/bundles/${namespace}/${name}/versions`
+  getSeed: (owner: string, name: string) =>
+    fetchJson<SeedDetail>(`/v1/seeds/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`),
+
+  publishSeed: (body: { seed: string; version: string; readme?: string }) =>
+    fetchJson<SeedPublished>('/v1/seeds', { method: 'POST', body: JSON.stringify(body) }),
+
+  setSeedVersionDeprecated: (owner: string, name: string, version: string, deprecated: boolean, message?: string) =>
+    fetchJson<{ version: string; deprecated: boolean }>(
+      `/v1/seeds/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/versions/${encodeURIComponent(version)}/deprecate`,
+      { method: 'POST', body: JSON.stringify({ deprecated, message }) },
     ),
 
-  /**
-   * OCI catalog — every repository path the registry holds
-   * (`peko/principals/<name>` for current seeds, plus any
-   * pre-ADR-005 two-segment rows). Anonymous; no JWT. The seed
-   * directory uses this as its listing source because it reads the
-   * registry's real contents rather than a derived search index.
-   *
-   * The `/v2/_catalog` and `/v1/bundles/...` paths below are the
-   * registry's **machine** vocabulary and are unchanged by ADR-060 —
-   * only the user-facing term moved from "template" to "seed".
-   */
-  getCatalog: () => fetchJson<CatalogResponse>('/v2/_catalog'),
+  deleteSeedVersion: (owner: string, name: string, version: string) =>
+    fetchNoContent(
+      `/v1/seeds/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/versions/${encodeURIComponent(version)}`,
+    ),
 
-  deprecateVersion: (
-    namespace: string,
-    name: string,
-    version: string,
-    deprecated: boolean,
-    message?: string
-  ) =>
-    fetchJson<{
-      namespace: string;
-      name: string;
-      version: string;
-      deprecated: boolean | null;
-      deprecatedMessage: string | null;
-    }>(`/v1/bundles/${namespace}/${name}/versions/${version}/deprecate`, {
-      method: 'POST',
-      body: JSON.stringify({ deprecated, message }),
-    }),
+  deleteSeed: (owner: string, name: string) =>
+    fetchNoContent(`/v1/seeds/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`),
 
   generateApiKey: (name: string) =>
     fetchJson<{ id: number; name: string; prefix: string; key: string; createdAt: string }>(
@@ -227,16 +230,6 @@ export const api = {
   logout: () =>
     fetchJson<void>('/v1/auth/logout', { method: 'POST' }).finally(() => {
       clearAuthToken();
-    }),
-
-  deleteBundle: (namespace: string, name: string) =>
-    fetch(`${API_BASE}/v1/bundles/${namespace}/${name}`, { method: 'DELETE', credentials: 'include' }).then((r) => {
-      if (!r.ok) throw new Error('Failed to delete bundle');
-    }),
-
-  deleteVersion: (namespace: string, name: string, version: string) =>
-    fetch(`${API_BASE}/v1/bundles/${namespace}/${name}/versions/${version}`, { method: 'DELETE', credentials: 'include' }).then((r) => {
-      if (!r.ok) throw new Error('Failed to delete version');
     }),
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -485,14 +478,6 @@ export function desktopLinkFor(shareUrl: string): string {
 }
 
 /**
- * Shape returned by `GET /v2/_catalog` (OCI Distribution v1.1).
- * Repository paths are multi-segment, e.g. `peko/principals/my-peko`.
- */
-export interface CatalogResponse {
-  repositories: string[];
-}
-
-/**
  * One row from `GET /v1/runtimes`. Mirrors the `runtimes` table — the
  * DID is the identity, `displayName` is operator-set, `lastSeenAt` is
  * refreshed on every tunnel heartbeat.
@@ -506,20 +491,62 @@ export interface RuntimeRecord {
   createdAt: string;
 }
 
-/** One version row from `GET /v1/bundles/:namespace/:name/versions`. */
+/** One row of `GET /v1/seeds`. */
+export interface SeedListItem {
+  owner: string;
+  name: string;
+  displayName: string | null;
+  description: string | null;
+  avatar: string | null;
+  model: string | null;
+  pullCount: number;
+  updatedAt: string;
+}
+
+export interface SeedList {
+  items: SeedListItem[];
+  total: number;
+  page: number;
+  perPage: number;
+}
+
 export interface SeedVersion {
   version: string;
   digest: string;
   size: number;
   createdAt: string;
-  deprecated: boolean | null;
+  deprecated: boolean;
   deprecatedMessage: string | null;
 }
 
-export interface SeedVersionsResponse {
-  namespace: string;
+/** `GET /v1/seeds/:owner/:name`. */
+export interface SeedDetail {
+  owner: { handle: string; displayName: string; avatarUrl: string | null };
   name: string;
+  displayName: string | null;
+  description: string | null;
+  avatar: string | null;
+  model: string | null;
+  readme: string | null;
+  latestVersion: string;
+  /** The latest version's TOML. */
+  content: string;
   versions: SeedVersion[];
+  pullCount: { allTime: number; weekly: number };
+  createdAt: string;
+  updatedAt: string;
+  createCommand: string;
+  downloadUrl: string;
+  webUrl: string;
+}
+
+export interface SeedPublished {
+  owner: string;
+  name: string;
+  version: string;
+  digest: string;
+  downloadUrl: string;
+  webUrl: string;
 }
 
 // Shape returned by GET /v1/instances for the owner. Mirrors

@@ -193,10 +193,6 @@ jobs:
             S3_FORCE_PATH_STYLE=false
             RATE_LIMIT_MAX=1000
             RATE_LIMIT_WINDOW_MS=60000
-            GC_ENABLED=true
-            GC_INTERVAL_MS=86400000
-            GC_RETENTION_DAYS=7
-            GC_BATCH_SIZE=1000
             ENVEOF
             chmod 600 "$APP_DIR/.env"
 

@@ -99,25 +99,29 @@ describe('page smoke tests', () => {
     expect(await screen.findByText('Ada')).toBeInTheDocument();
   });
 
-  it('/seeds renders the catalog and drops retired lanes', async () => {
+  it('/seeds lists seeds newest first', async () => {
     renderAt('/seeds');
     expect(await screen.findByRole('heading', { name: 'Seeds' })).toBeInTheDocument();
-
-    // The current seed lane and the pre-ADR-005 row are listed…
-    expect(await screen.findByText('my-peko')).toBeInTheDocument();
-    expect(await screen.findByText('old-peko')).toBeInTheDocument();
-
-    // …the retired `peko/extensions/...` lane is counted but not listed.
-    expect(await screen.findByText(/under a retired lane/i)).toBeInTheDocument();
-    expect(screen.queryByText('retired-thing')).not.toBeInTheDocument();
+    expect(await screen.findByText('Ada')).toBeInTheDocument();
+    expect(screen.getByText('testuser/ada')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Publish a seed/ })).toBeInTheDocument();
   });
 
-  it('/seeds/<repo> renders the detail page with the install flow', async () => {
+  it('/seeds/<owner>/<name> shows the download and the create command', async () => {
+    renderAt('/seeds/testuser/ada');
+    expect(await screen.findByRole('heading', { name: 'Ada' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Download v1\.1\.0/ })).toHaveAttribute(
+      'href',
+      'http://api.test/v1/seeds/testuser/ada/versions/1.1.0/seed.toml',
+    );
+    expect(screen.getByText('peko create my-ada -s ada.seed.toml')).toBeInTheDocument();
+    // The signed-in publisher gets version actions.
+    expect(screen.getByRole('button', { name: 'Undeprecate' })).toBeInTheDocument();
+  });
+
+  it('/seeds/<legacy multi-segment path> is not found', async () => {
     renderAt('/seeds/peko/principals/my-peko');
-    expect(await screen.findByRole('heading', { name: 'my-peko' })).toBeInTheDocument();
-    expect(await screen.findByText(/How to use it/i)).toBeInTheDocument();
-    // Step 2 teaches the ADR-056 D6 grounding step, not a package install.
-    expect(await screen.findByText(/peko create my-peko -s/)).toBeInTheDocument();
+    expect(await screen.findByText('Nothing lives at this address')).toBeInTheDocument();
   });
 
   it('/dashboard renders the owner console', async () => {

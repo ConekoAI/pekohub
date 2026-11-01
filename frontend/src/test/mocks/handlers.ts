@@ -23,46 +23,30 @@ const DISCOVERY_HIT = {
   featured: false,
 };
 
-function seedDetail(namespace: string, name: string) {
-  const version = {
-    version: '1.0.0',
-    digest: 'sha256:abc123def4567890',
-    size: 2048,
-    createdAt: new Date().toISOString(),
-    deprecated: false,
-    deprecatedMessage: null,
-  };
+const SEED_TOML = 'name = "ada"\npreferred_model_id = "claude-opus-5-5"\n\n[identity]\ndisplay_name = "Ada"\n';
 
+function seedDetail(owner: string, name: string) {
   return {
-    namespace,
+    owner: { handle: owner, displayName: 'Test User', avatarUrl: null },
     name,
-    versions: [version],
-    metadata: {
-      name,
-      description: 'A test seed',
-      author: 'Test Author',
-      license: 'MIT',
-      tags: ['test'],
-      bundleType: 'principal',
-      homepage: null,
-      repository: null,
-      readme: '# Test seed\n\nGround it with `peko create -s`.',
-      version: '1.0.0',
-      deprecated: false,
-    },
-    readme: '# Test seed\n\nGround it with `peko create -s`.',
-    pullCount: { daily: 5, weekly: 20, monthly: 100, allTime: 500 },
-    installCommand: `peko pull pekohub.ai/${namespace}/${name}:1.0.0`,
+    displayName: 'Ada',
+    description: 'Reads papers and keeps notes',
+    avatar: '🦉',
+    model: 'claude-opus-5-5',
+    readme: '## About\nA research partner.',
+    latestVersion: '1.1.0',
+    content: SEED_TOML,
+    versions: [
+      { version: '1.1.0', digest: `sha256:${'b'.repeat(64)}`, size: 80, createdAt: new Date('2026-10-02').toISOString(), deprecated: false, deprecatedMessage: null },
+      { version: '1.0.0', digest: `sha256:${'a'.repeat(64)}`, size: 78, createdAt: new Date('2026-10-01').toISOString(), deprecated: true, deprecatedMessage: 'old persona' },
+    ],
+    pullCount: { allTime: 42, weekly: 3 },
+    createdAt: new Date('2026-10-01').toISOString(),
+    updatedAt: new Date('2026-10-02').toISOString(),
+    createCommand: `peko create my-${name} -s ${name}.seed.toml`,
+    downloadUrl: `http://api.test/v1/seeds/${owner}/${name}/versions/1.1.0/seed.toml`,
+    webUrl: `http://web.test/seeds/${owner}/${name}`,
   };
-}
-
-/** Split `/v1/bundles/<repo>[/suffix]` into namespace + name. */
-function repoFromUrl(url: string, suffix = ''): { namespace: string; name: string } {
-  const path = new URL(url).pathname;
-  const repo = path.replace(/^\/v1\/bundles\//, '').replace(new RegExp(`${suffix}$`), '');
-  const segments = repo.split('/').filter(Boolean);
-  const name = segments[segments.length - 1] ?? '';
-  return { namespace: segments.slice(0, -1).join('/'), name };
 }
 
 export const handlers = [
@@ -110,7 +94,7 @@ export const handlers = [
     return HttpResponse.json({
       items: [
         {
-          namespace: 'peko/principals',
+          namespace: 'testuser',
           name: 'my-peko',
           version: '1.0.0',
           description: 'A test peko seed',
@@ -128,34 +112,40 @@ export const handlers = [
     });
   }),
 
-  // ── OCI catalog (seed directory without a query) ────────────────────
-  // One path per lane class so the retired-lane filter is exercised: a
-  // current seed, a pre-ADR-005 row, and a retired lane.
-  http.get('/v2/_catalog', () =>
+  // ── Seeds ───────────────────────────────────────────────────────────
+  http.get('/v1/seeds', () =>
     HttpResponse.json({
-      repositories: [
-        'peko/principals/my-peko',
-        'legacy-user/old-peko',
-        'peko/extensions/retired-thing',
+      items: [
+        {
+          owner: 'testuser',
+          name: 'ada',
+          displayName: 'Ada',
+          description: 'Reads papers and keeps notes',
+          avatar: '🦉',
+          model: 'claude-opus-5-5',
+          pullCount: 42,
+          updatedAt: new Date().toISOString(),
+        },
       ],
+      total: 1,
+      page: 1,
+      perPage: 24,
     }),
   ),
-
-  // ── Seed detail (multi-segment namespace) ───────────────────────────
-  // Path-to-regexp's `*` matches a single segment, so multi-segment
-  // repository paths (`peko/principals/foo`) need a regexp matcher.
-  http.get(/\/v1\/bundles\/.+\/versions$/, ({ request }) => {
-    const repo = repoFromUrl(request.url, '/versions');
-    return HttpResponse.json({
-      namespace: repo.namespace,
-      name: repo.name,
-      versions: seedDetail(repo.namespace, repo.name).versions,
-    });
-  }),
-
-  http.get(/\/v1\/bundles\/.+/, ({ request }) => {
-    const repo = repoFromUrl(request.url);
-    return HttpResponse.json(seedDetail(repo.namespace, repo.name));
+  http.get('/v1/seeds/:owner/:name', ({ params }) =>
+    params.name === 'missing'
+      ? HttpResponse.json({ error: 'Seed not found' }, { status: 404 })
+      : HttpResponse.json(seedDetail(String(params.owner), String(params.name))),
+  ),
+  http.post('/v1/seeds', async ({ request }) => {
+    const body = (await request.json()) as { seed: string; version: string };
+    if (body.seed.includes('did =')) {
+      return HttpResponse.json({ error: "A seed can't carry `did`" }, { status: 422 });
+    }
+    return HttpResponse.json(
+      { owner: 'testuser', name: 'ada', version: body.version, digest: 'sha256:x', downloadUrl: '', webUrl: '' },
+      { status: 201 },
+    );
   }),
 
   // ── Discovery ───────────────────────────────────────────────────────────
