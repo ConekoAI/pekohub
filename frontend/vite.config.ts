@@ -12,10 +12,14 @@ export default defineConfig(({ mode }) => ({
   },
   server: {
     port: 5173,
-    proxy: {
-      '/v2': 'http://localhost:3000',
-      '/api': 'http://localhost:3000',
-    },
+    // In dev the SPA calls the API on its own origin; forward it to the
+    // backend (`VITE_DEV_API`, default the local backend on :3000).
+    proxy: Object.fromEntries(
+      ['/v1', '/oauth', '/health', '/docs'].map((path) => [
+        path,
+        process.env.VITE_DEV_API ?? 'http://localhost:3000',
+      ]),
+    ),
   },
   build: {
     outDir: 'dist',

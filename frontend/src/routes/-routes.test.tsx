@@ -83,7 +83,9 @@ describe('page smoke tests', () => {
   it('home renders the hero and the directory lanes', async () => {
     renderAt('/');
     expect(await screen.findByRole('heading', { name: /discover pekos/i })).toBeInTheDocument();
-    expect(screen.getAllByText(/talk to them in the browser/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/message them from peko/i)).toBeInTheDocument();
+    // The website offers no chat, and says nothing that suggests it.
+    expect(screen.queryByText(/in the browser/i)).not.toBeInTheDocument();
   });
 
   it('home lists public pekos from the trendings feed', async () => {
