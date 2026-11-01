@@ -43,6 +43,40 @@ jobs:
       - name: Test
         run: pnpm test -- --run
 
+  # Tunnel contract — every message peko-runtime sends or accepts
+  # type-checks as the Hub's TunnelMessage (runtime keeps the samples in
+  # peko-rs/core/src/tunnel/fixtures/tunnel_messages.json). Checked
+  # against peko-runtime master.
+  tunnel-contract:
+    name: Tunnel contract
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        run: pnpm --filter @pekohub/shared build
+
+      - name: Check out peko-runtime
+        run: git clone --depth 1 https://github.com/ConekoAI/peko-runtime.git "$RUNNER_TEMP/peko-runtime"
+
+      - name: Check the Hub's tunnel types against the runtime's messages
+        run: node scripts/check-tunnel-contract.mjs "$RUNNER_TEMP/peko-runtime"
+
   frontend:
     name: Frontend Tests
     runs-on: ubuntu-latest

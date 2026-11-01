@@ -11,6 +11,17 @@
 - Share links preview properly: Cloudflare Pages Functions write each peko's and seed's
   title, description, OpenGraph and Twitter tags (and canonical URL) into the page for
   crawlers, from the API (`PEKOHUB_API`), and serve it unchanged when the API is down.
+
+- A tunnel contract check (`scripts/check-tunnel-contract.mjs`, CI job "Tunnel contract")
+  type-checks every message peko-runtime sends or accepts — its golden samples in
+  `peko-rs/core/src/tunnel/fixtures/tunnel_messages.json` — against the Hub's
+  `TunnelMessage`, and lists types only one side knows. It found and this fixes the drift:
+  `authorSignature` on channel envelopes, `creatorDid` and `kind` on invites, the
+  `received` channel event and `via` / `msg_id` / `reply_to` / `attachments` on posts,
+  `hubId` / `identityKey` / `name` on invite members, and `agentDid` on announces. The
+  `invite_mint` / `invite_minted` / `invite_revoke` / `invite_revoked` types are Hub-only
+  (the runtime has no handler) and are listed as known drift.
+
 - An envelope that speaks for a person (`sourcePrincipalDid = user:hub:<account>`,
   runtime ADR-090 D3) is relayed only from the runtime registered to that account. A
   person has no signing key, so their runtime vouches for them; this check stops a
