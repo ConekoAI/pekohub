@@ -26,6 +26,7 @@ import {
   withQuery,
   type OAuthClient,
 } from "../../services/oauth.js";
+import { webOrigin } from "../../services/origins.js";
 
 /**
  * OAuth 2.0 authorization server for Peko desktop and the Peko CLI.
@@ -56,9 +57,6 @@ interface AuthorizeRequestClaims {
   scope?: string;
 }
 
-function webOrigin(fastify: FastifyInstance): string {
-  return (fastify.config.FRONTEND_URL ?? fastify.config.REGISTRY_BASE_URL).replace(/\/+$/, "");
-}
 
 /** RFC 6749 §5.2 error response; token responses are never cached. */
 function oauthError(reply: FastifyReply, status: number, error: string, description?: string) {
@@ -111,7 +109,7 @@ export default async function oauthServerRoutes(fastify: FastifyInstance) {
   // ── Authorization endpoint ────────────────────────────────────────────────
   fastify.get("/oauth/authorize", async (request, reply) => {
     const q = request.query as Record<string, string | undefined>;
-    const consentPage = `${webOrigin(fastify)}/authorize`;
+    const consentPage = `${webOrigin(fastify.config)}/authorize`;
 
     // Until the client and redirect URI check out, errors go to our own
     // page — never to an unvalidated redirect target.
@@ -234,7 +232,7 @@ export default async function oauthServerRoutes(fastify: FastifyInstance) {
       }
     }
 
-    const verificationUri = `${webOrigin(fastify)}/device`;
+    const verificationUri = `${webOrigin(fastify.config)}/device`;
     return reply.header("Cache-Control", "no-store").send({
       device_code: deviceCode,
       user_code: formatUserCode(userCode),
