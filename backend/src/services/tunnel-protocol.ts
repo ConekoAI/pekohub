@@ -110,6 +110,8 @@ export interface InstanceAnnouncePayload {
   // value alone in the service layer.
   registrationId?: string;
   localId?: string;
+  /** Pre-ADR-041 spelling of `principalDid`, still sent. */
+  agentDid?: string;
   identityKey?: string;
   principalDid?: string;
   // ADR-058 D4: proof of possession for `principalDid`. A compact
@@ -165,7 +167,7 @@ export interface StatusUpdatePayload {
 // local mirror without round-tripping the source.
 
 export interface ChannelEvent {
-  kind: "created" | "posted" | "member_joined" | "member_left";
+  kind: "created" | "posted" | "member_joined" | "member_left" | "received";
   channel: string;
   // `created`
   creator?: string;
@@ -174,8 +176,17 @@ export interface ChannelEvent {
   author?: string;
   parent?: string | null;
   text?: string;
+  /** The posting agent's session path; audit metadata only. */
+  via?: string;
+  /** Stable message id, the same on every runtime's mirror. */
+  msg_id?: string;
+  /** The message this one answers. */
+  reply_to?: string;
+  attachments?: { name: string; path: string; mime: string; size: number }[];
   // `member_joined` / `member_left`
   member?: string;
+  // `received`: delivery receipts for these envelopes.
+  request_ids?: string[];
   // RFC3339 timestamp assigned by the source runtime. Receiver MUST
   // NOT re-stamp on append.
   at: string;
@@ -244,6 +255,11 @@ export interface InitialMember {
    * wire `runtimeId` is *omitted* (not `null`) for local members —
    * we mirror that by typing the field as `string | undefined`. */
   runtimeId?: string;
+  /** The member's PekoHub actor id, when registered. */
+  hubId?: string;
+  /** The member's immutable actor key. */
+  identityKey?: string;
+  name?: string;
 }
 
 export interface TunnelChannelInvitePayload {
@@ -274,10 +290,15 @@ export interface TunnelChannelInvitePayload {
    * time so the receiver doesn't need a follow-up `peek` to display
    * the channel. */
   creator: string;
+  /** The creator's signing address: a principal's `did:key`, or
+   * `user:hub:<account>` for a person (runtime ADR-090 D3). */
+  creatorDid: string;
   /** Human-readable channel name (`team`, `general`, etc.).
    * Snapshotted from the source runtime's `meta.json` at invite
    * time. */
   name: string;
+  /** A pair DM or a group (runtime ADR-082). */
+  kind: "dm" | "group";
   /** Initial membership snapshot: every principal that should
    * appear in the receiver's `members.json` row table. The
    * receiver partitions on `runtime_id` to build both the
@@ -383,36 +404,12 @@ export type TunnelMessage =
   // the source allowlist and `recipientRuntimeId` to route to the
   // correct recipient tunnel connection. The `event`, `signature`,
   // and `sourcePrincipalDid` fields are forwarded verbatim.
-  | {
-      type: "tunnel_channel_event";
-      requestId: string;
-      sourceRuntimeId: string;
-      recipientRuntimeId: string;
-      sourcePrincipalDid: string;
-      channelId: string;
-      event: ChannelEvent;
-      signature: string;
-    }
+  | ({ type: "tunnel_channel_event" } & TunnelChannelEventPayload)
   // peko-channel cross-runtime PR-3a-followup: cross-runtime
   // channel invites. Hub is pure relay (same shape as the
   // channel-event path): source allowlist + recipient lookup +
-  // forward verbatim. Invites are push-only (no request/response),
-  // so the hub does NOT carry a `tunnel_channel_invite_ack`
-  // variant. The runtime emits one `TunnelChannelInvite` per
-  // unique invitee runtime (deduped on the source side by
-  // `runtime_id`).
-  | {
-      type: "tunnel_channel_invite";
-      requestId: string;
-      sourceRuntimeId: string;
-      recipientRuntimeId: string;
-      sourcePrincipalDid: string;
-      channelId: string;
-      creator: string;
-      name: string;
-      initialMembers: InitialMember[];
-      signature: string;
-    };
+  // forward verbatim. Invites are push-only, so there is no ack.
+  | ({ type: "tunnel_channel_invite" } & TunnelChannelInvitePayload);
 
 export function encodeTunnelMessage(msg: TunnelMessage): Buffer {
   return Buffer.from(JSON.stringify(msg), "utf-8");
