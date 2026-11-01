@@ -6,6 +6,7 @@ import { hubPrincipals } from "../../db/schema.js";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { verifyDidKeyJws } from "../../services/tunnel-crypto.js";
+import { pekoShareUrl } from "../../services/origins.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Principal directory routes (issue #14).
@@ -110,7 +111,10 @@ export default async function principalDirectoryRoutes(
 
       switch (result.status) {
         case "hit":
-          return result.resolution;
+          return {
+            ...result.resolution,
+            shareUrl: pekoShareUrl(fastify.config, result.resolution!),
+          };
         case "ambiguous":
           return reply.status(409).send({ error: "Principal handle is ambiguous; use its Hub ID" });
         case "miss":
@@ -220,7 +224,10 @@ export default async function principalDirectoryRoutes(
 
       switch (result.status) {
         case "hit":
-          return result.resolution;
+          return {
+            ...result.resolution,
+            shareUrl: pekoShareUrl(fastify.config, result.resolution!),
+          };
         case "ambiguous":
           return reply.status(409).send({ error: "Principal handle is ambiguous; use its Hub ID" });
         case "miss":

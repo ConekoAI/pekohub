@@ -75,6 +75,7 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       REGISTRY_BASE_URL: ${REGISTRY_BASE_URL:-https://api.pekohub.ai}
       FRONTEND_URL: https://pekohub.ai
+      PUBLIC_ORIGIN: https://api.pekohub.ai
       ALLOW_DEV_AUTH_BYPASS: "false"
       RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-1000}
       RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-60000}

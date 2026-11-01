@@ -11,10 +11,10 @@ This guide covers deploying PekoHub using **Cloudflare** (DNS, SSL, CDN, fronten
 ### Architecture
 
 ```
-Cloudflare (pekohub.org)
-├─ Pages    → Frontend SPA (React/Vite) — FREE, auto-deploy, global CDN
+Cloudflare (pekohub.ai)
+├─ Pages    → Website on pekohub.ai (React/Vite) — FREE, auto-deploy, global CDN
 ├─ R2       → Blob storage (OCI layers) — FREE 10GB, S3-compatible
-├─ DNS      → A record → Lightsail static IP
+├─ DNS      → api.pekohub.ai A record → Lightsail static IP
 ├─ SSL/TLS  → Full Strict, auto-renew — FREE
 └─ Security → DDoS, rate limiting, bot fight
 
@@ -49,45 +49,32 @@ AWS Lightsail ($5-10/mo)
 
 ---
 
-## Runtime-Facing Hostnames (dual-hostname requirement)
+## Hostnames
 
-The peko runtime hard-codes **two** hub hostnames, and both must
-route to the same backend service:
+PekoHub has two origins:
 
-| Hostname | Used for |
-|----------|----------|
-| `pekohub.ai` | Registry pushes/pulls (`/v2/...`), search + bundle detail (`/api/v1/...`), OAuth (`/api/v1/auth/...`) |
-| `pekohub.org` | Runtime tunnel (`wss://pekohub.org/v1/tunnel`), instance API (`/v1/instances/...`), JWKS (`/v1/jwks.json`) |
+| Hostname | Serves | Hosted on |
+|----------|--------|-----------|
+| `pekohub.ai` | The website: directory, peko and seed pages, sign-in consent (`/authorize`, `/device`) | Cloudflare Pages |
+| `api.pekohub.ai` | The backend: REST (`/v1/*`), OAuth (`/oauth/*`), the runtime tunnel (`wss://api.pekohub.ai/v1/tunnel`), JWKS, OCI (`/v2/*`), `/docs` | Lightsail (nginx → Fastify) |
+| `pekohub.org` | 301 redirect to `pekohub.ai` (legacy) | Cloudflare redirect rule |
 
-- Point **both** A records at the Lightsail static IP (Step 4) and
-  proxy both through Cloudflare. The backend serves all of these
-  paths on the same port — there is nothing extra to deploy.
-- `PUBLIC_ORIGIN` (backend env) must be the origin the runtimes
-  build their bridge-token JWKS validator from — they derive
-  `{origin}/v1/jwks.json` from their pekohub credential (tunnel URL
-  with the scheme swapped to `https`). With the tunnel at
-  `wss://pekohub.org/v1/tunnel`, set `PUBLIC_ORIGIN=https://pekohub.org`.
-  A mismatch means every hub-proxied chat request fails signature
-  validation at the runtime.
-- `REGISTRY_BASE_URL` should be `https://pekohub.ai` — it is used to
-  render the `peko pull <host>/<repo>:<tag>` install command in
-  bundle detail responses.
+Clients discover both from `GET https://api.pekohub.ai/v1/meta`
+(`{ apiOrigin, webOrigin, tunnelUrl }`). Runtimes and the desktop default to `api.pekohub.ai`;
+runtimes registered against `pekohub.org` or `pekohub.ai` are migrated to it.
 
-### The `/api/v1/*` surface
+Backend environment for these hosts:
 
-The runtime CLI hard-codes the `/api/v1` prefix for its HTTP calls
-(`peko search`, bundle detail, `peko auth login`). The backend
-mounts the search, bundles, and auth route plugins under **both**
-`/v1` (canonical, used by the web SPA) and `/api/v1` (CLI):
+- `PUBLIC_ORIGIN=https://api.pekohub.ai`: the API origin. Runtimes derive the bridge-token
+  issuer and `{origin}/v1/jwks.json` from their tunnel URL (scheme swapped to `https`), so a
+  mismatch fails every hub-proxied chat at the runtime.
+- `REGISTRY_BASE_URL=https://api.pekohub.ai`: the base for GitHub/Google OAuth callbacks.
+- `FRONTEND_URL=https://pekohub.ai`: the website. Share links, the OAuth consent page, and the
+  device page are built from it, and it is the CORS origin allowed with credentials.
+- Pages build: `VITE_API_BASE_URL=https://api.pekohub.ai`.
 
-- `GET /api/v1/search?q=...`
-- `GET /api/v1/bundles/<namespace>/<name>` (namespace may be
-  multi-segment, e.g. `peko/principals`)
-- `GET /api/v1/auth/<provider>/authorize` + callback
-
-No separate deployment is needed; just make sure your Cloudflare
-page rule bypasses caching for `pekohub.ai/api/*` as well as
-`/v2/*`.
+`pekohub.ai` and `api.pekohub.ai` are the same site (`pekohub.ai`), so the website's
+`SameSite=Lax` refresh cookie set by the API is sent on its credentialed requests.
 
 ### Blob uploads require auth (breaking change)
 
@@ -104,7 +91,7 @@ stays public so unauthenticated `peko pull` keeps working.
 ## Prerequisites
 
 - [AWS account](https://aws.amazon.com)
-- [Cloudflare account](https://dash.cloudflare.com) with `pekohub.org` domain
+- [Cloudflare account](https://dash.cloudflare.com) with the `pekohub.ai` domain
 - [GitHub repository](https://github.com/ConekoAI/pekohub) with Actions enabled
 - OAuth apps: [GitHub](https://github.com/settings/developers) + [Google](https://console.cloud.google.com/apis/credentials) (optional)
 
@@ -116,18 +103,18 @@ stays public so unauthenticated `peko pull` keeps working.
 
 1. https://github.com/settings/developers → **New OAuth App**
 2. Application name: `PekoHub`
-3. Homepage URL: `https://pekohub.org`
-4. Authorization callback URL: `https://pekohub.org/api/v1/auth/github/callback`
+3. Homepage URL: `https://pekohub.ai`
+4. Authorization callback URL: `https://api.pekohub.ai/v1/auth/github/callback`
 5. Save **Client ID** and **Client Secret**
 
 ### Google OAuth 2.0 (Optional)
 
 1. https://console.cloud.google.com/apis/credentials
 2. **Create Credentials** → **OAuth client ID** → **Web application**
-3. Authorized redirect URIs: `https://pekohub.org/api/v1/auth/google/callback`
+3. Authorized redirect URIs: `https://api.pekohub.ai/v1/auth/google/callback`
 4. Save **Client ID** and **Client Secret**
 
-> **Note:** Use `https://pekohub.org` for single-domain, or `https://app.pekohub.org` if using a subdomain for the frontend.
+> **Note:** The callback lives on the API origin; after sign-in the backend redirects to `FRONTEND_URL`.
 
 ---
 
@@ -137,7 +124,7 @@ stays public so unauthenticated `peko pull` keeps working.
 
 1. Go to [Cloudflare Dashboard](https://dash.cloudflare.com) → **R2**
 2. **Create bucket**: `pekohub-blobs`
-3. **Settings** → **CORS**: Allow `GET, PUT` from `https://pekohub.org`
+3. **Settings** → **CORS**: Allow `GET, PUT` from `https://pekohub.ai`
 4. **Manage R2 API Tokens** → **Create API Token**
    - Permissions: **Object Read & Write**
    - Bucket: `pekohub-blobs`
@@ -157,12 +144,12 @@ stays public so unauthenticated `peko pull` keeps working.
    - Build output directory: `frontend/dist`
    - Root directory: `/`
 4. **Environment variables**:
-   - `VITE_API_BASE_URL`: `https://pekohub.org`
+   - `VITE_API_BASE_URL`: `https://api.pekohub.ai`
    - `NODE_VERSION`: `22`
 5. **Save and Deploy**
 
 6. **Custom domain** (optional but recommended):
-   - Pages project → **Custom domains** → Add `app.pekohub.org`
+   - Pages project → **Custom domains** → Add `pekohub.ai`
    - Or use the default `pekohub.pages.dev` for now
 
 > **Alternative:** The GitHub Actions workflow (`.github/workflows/deploy-frontend.yml`) can deploy to Pages instead of direct Git integration. Use whichever you prefer.
@@ -232,10 +219,9 @@ cd pekohub
 
 1. Go to [Cloudflare Dashboard](https://dash.cloudflare.com) → your domain
 2. **DNS → Records**
-   - **A record**: `pekohub.org` → `YOUR_LIGHTSAIL_STATIC_IP`
-   - **A record**: `pekohub.ai` → `YOUR_LIGHTSAIL_STATIC_IP` (runtime registry/search host — see *Runtime-Facing Hostnames* above)
-   - **A record**: `www` → `YOUR_LIGHTSAIL_STATIC_IP` (optional)
-   - **CNAME**: `app` → `pekohub.pages.dev` (if using Pages custom domain)
+   - **A record**: `api` → `YOUR_LIGHTSAIL_STATIC_IP` (the backend — see *Hostnames* above)
+   - `pekohub.ai` (apex) → the Pages custom domain (Cloudflare adds the record)
+   - `pekohub.org` → a redirect rule to `https://pekohub.ai` (path kept)
 3. **Proxy status**: Toggle to 🟠 **Proxied** (orange cloud)
 
 ### SSL/TLS
@@ -250,9 +236,7 @@ cd pekohub
 ### Page Rules (Free Tier: 3 Rules)
 
 1. **Rules → Page Rules**
-   - `pekohub.org/api/*` → Cache Level: **Bypass**
-   - `pekohub.org/v2/*` → Cache Level: **Bypass**
-   - `pekohub.org/docs` → Cache Level: **Bypass**
+   - `api.pekohub.ai/*` → Cache Level: **Bypass** (the API sets its own cache headers)
 
 ### Security
 
@@ -273,7 +257,7 @@ Add these **Repository secrets**:
 | `LIGHTSAIL_HOST` | Your static IP | Lightsail console |
 | `LIGHTSAIL_USER` | `ubuntu` | Default for Ubuntu |
 | `LIGHTSAIL_SSH_KEY` | Private key contents | `cat ~/.ssh/lightsail-key.pem` |
-| `REGISTRY_BASE_URL` | `https://pekohub.org` | Your domain |
+| `REGISTRY_BASE_URL` | `https://api.pekohub.ai` | The API origin |
 | `GITHUB_CLIENT_ID` | GitHub OAuth client ID | GitHub Developer Settings |
 | `GITHUB_CLIENT_SECRET` | GitHub OAuth client secret | GitHub Developer Settings |
 | `GOOGLE_CLIENT_ID` | (optional) | Google Cloud Console |
@@ -384,21 +368,21 @@ entry point runs unconditionally, which is the whole point.)
 
 ```bash
 # Backend health
-curl https://pekohub.org/health
+curl https://api.pekohub.ai/health
+
+# Where things live
+curl https://api.pekohub.ai/v1/meta
 
 # API docs
-curl https://pekohub.org/docs
-
-# OCI catalog
-curl https://pekohub.org/v2/_catalog
+curl https://api.pekohub.ai/docs
 
 # Search
-curl "https://pekohub.org/api/v1/search?q=test"
+curl "https://api.pekohub.ai/v1/search?q=test"
 ```
 
 Visit your frontend URL:
 - `https://pekohub.pages.dev` (default)
-- or `https://app.pekohub.org` (if custom domain configured)
+- or `https://pekohub.ai` (custom domain)
 
 ---
 

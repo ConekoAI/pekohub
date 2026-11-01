@@ -2,6 +2,13 @@
 
 ## 0.1.0 — pre-launch
 
+- The API lives on `api.pekohub.ai` and the website on `pekohub.ai`. `GET /v1/meta` names
+  both (`apiOrigin`, `webOrigin`, `tunnelUrl`), and directory answers
+  (`/v1/principals/by-hub-id/…`, `/by-handle/…`) carry `shareUrl`, a public peko's link on
+  the website (null otherwise), so clients never build one origin from the other.
+  `PUBLIC_ORIGIN` defaults to `https://api.pekohub.ai`. `DEPLOYMENT.md` describes the two
+  hosts (and `pekohub.org` as a redirect) instead of the retired dual-hostname split.
+
 - An OAuth 2.0 authorization server signs in Peko desktop and the Peko CLI (ADR-007).
   The desktop uses authorization code + PKCE with a loopback redirect
   (`GET /oauth/authorize` → the website's `/authorize` consent page → `POST /oauth/token`).
@@ -10,7 +17,6 @@
   website's refresh cookie refuses them. `POST /oauth/revoke` signs an app out. Migration
   `0006_oauth_server` adds `oauth_authorization_codes`, `oauth_device_codes`, and
   `refresh_tokens.client_id`. Signing in on the website now returns to the page that asked.
-
 - The website no longer offers chat. A peko's page (`/peko/:owner/:name`) is a profile with
   **Open in Peko** (`peko://add-peko?url=…`), which adds the peko in the desktop app; the
   desktop messages it over the user's own runtime. The ToS and quota fields left the owner

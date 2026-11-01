@@ -17,15 +17,16 @@ const schema = z.object({
   MEILISEARCH_URL: z.string().url(),
   MEILISEARCH_API_KEY: z.string(),
   JWT_SECRET: z.string().min(32),
-  // Public origin of this hub. Must match the origin runtimes derive
-  // from their pekohub credential (tunnel URL scheme swapped to
-  // https) — it is the bridge token's `iss` and the JWKS host.
-  PUBLIC_ORIGIN: z.string().url().default("https://pekohub.org"),
+  // The Hub's API origin. Must match the origin runtimes derive from
+  // their pekohub credential (tunnel URL scheme swapped to https) — it
+  // is the bridge token's `iss` and the JWKS host.
+  PUBLIC_ORIGIN: z.string().url().default("https://api.pekohub.ai"),
   GITHUB_CLIENT_ID: z.string().optional(),
   GITHUB_CLIENT_SECRET: z.string().optional(),
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
   REGISTRY_BASE_URL: z.string().url().default("http://localhost:3000"),
+  // The website's origin (share links, seed pages, sign-in consent).
   FRONTEND_URL: z.string().url().optional(),
   ALLOW_DEV_AUTH_BYPASS: z.enum(["true", "false"]).default("false"),
   // Anonymous visitor chat through the public chat proxy. Off: the
