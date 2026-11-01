@@ -2,6 +2,16 @@
 
 ## 0.1.0 — pre-launch
 
+- The website leads to the desktop app. A new landing page says what a peko is, shows how
+  to get one in three steps, and puts **Download Peko** first; a `/download` page offers
+  Peko desktop for macOS, Windows and Linux (the visitor's platform marked) and the `peko`
+  CLI one-liner. New `/status` (live checks of the API, directory and seed registry from
+  the browser), `/terms` and `/privacy` (plain-language drafts), per-page tab titles, and
+  a footer with Product / Resources / Legal links.
+- Share links preview properly: Cloudflare Pages Functions write each peko's and seed's
+  title, description, OpenGraph and Twitter tags (and canonical URL) into the page for
+  crawlers, from the API (`PEKOHUB_API`), and serve it unchanged when the API is down.
+
 - A tunnel contract check (`scripts/check-tunnel-contract.mjs`, CI job "Tunnel contract")
   type-checks every message peko-runtime sends or accepts — its golden samples in
   `peko-rs/core/src/tunnel/fixtures/tunnel_messages.json` — against the Hub's
@@ -11,6 +21,7 @@
   `hubId` / `identityKey` / `name` on invite members, and `agentDid` on announces. The
   `invite_mint` / `invite_minted` / `invite_revoke` / `invite_revoked` types are Hub-only
   (the runtime has no handler) and are listed as known drift.
+
 - An envelope that speaks for a person (`sourcePrincipalDid = user:hub:<account>`,
   runtime ADR-090 D3) is relayed only from the runtime registered to that account. A
   person has no signing key, so their runtime vouches for them; this check stops a

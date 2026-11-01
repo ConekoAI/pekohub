@@ -22,6 +22,7 @@ import {
 } from '~/components/oauth/ConsentCard';
 
 export const Route = createFileRoute('/authorize')({
+  head: () => ({ meta: [{ title: 'Sign in — PekoHub' }] }),
   component: AuthorizePage,
   validateSearch: (search: Record<string, unknown>) => ({
     request: typeof search.request === 'string' ? search.request : undefined,

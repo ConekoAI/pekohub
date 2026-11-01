@@ -21,6 +21,7 @@ import { useSeedList } from '~/hooks/useSeed';
 const searchSchema = z.object({ q: z.string().optional() });
 
 export const Route = createFileRoute('/seeds/')({
+  head: () => ({ meta: [{ title: 'Seeds — PekoHub' }] }),
   validateSearch: searchSchema,
   component: SeedsPage,
 });

@@ -17,6 +17,7 @@ import { SignInOptions } from '~/components/SignInModal';
 import { Spinner } from '~/components/ui';
 
 export const Route = createFileRoute('/seeds/new')({
+  head: () => ({ meta: [{ title: 'Publish a seed — PekoHub' }] }),
   component: PublishSeedPage,
 });
 

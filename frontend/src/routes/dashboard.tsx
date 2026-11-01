@@ -78,6 +78,7 @@ const CATEGORIES = [
 ] as const;
 
 export const Route = createFileRoute('/dashboard')({
+  head: () => ({ meta: [{ title: 'Your pekos — PekoHub' }] }),
   component: DashboardPage,
 });
 

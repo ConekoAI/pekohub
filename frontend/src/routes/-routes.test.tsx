@@ -80,12 +80,34 @@ describe('legacy URL redirects', () => {
 });
 
 describe('page smoke tests', () => {
-  it('home renders the hero and the directory lanes', async () => {
+  it('home leads to the desktop download and the directory', async () => {
     renderAt('/');
-    expect(await screen.findByRole('heading', { name: /discover pekos/i })).toBeInTheDocument();
-    expect(screen.getByText(/message them from peko/i)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /an ai of your own/i })).toBeInTheDocument();
+    const downloads = screen.getAllByRole('link', { name: /download peko/i });
+    expect(downloads.length).toBeGreaterThan(0);
+    for (const link of downloads) expect(link).toHaveAttribute('href', '/download');
+    expect(screen.getByRole('link', { name: /explore pekos/i })).toHaveAttribute('href', '/pekos');
     // The website offers no chat, and says nothing that suggests it.
     expect(screen.queryByText(/in the browser/i)).not.toBeInTheDocument();
+  });
+
+  it('/download offers every desktop platform and the CLI', async () => {
+    renderAt('/download');
+    expect(await screen.findByRole('heading', { name: 'Download Peko' })).toBeInTheDocument();
+    for (const id of ['macos', 'windows', 'linux']) {
+      expect(screen.getByTestId(`download-${id}`)).toHaveAttribute(
+        'href',
+        'https://github.com/ConekoAI/peko-desktop/releases/latest',
+      );
+    }
+    expect(screen.getByText(/install\.sh \| bash/)).toBeInTheDocument();
+  });
+
+  it('/terms and /privacy render', async () => {
+    renderAt('/terms');
+    expect(await screen.findByRole('heading', { name: 'Terms' })).toBeInTheDocument();
+    renderAt('/privacy');
+    expect(await screen.findByRole('heading', { name: 'Privacy' })).toBeInTheDocument();
   });
 
   it('home lists public pekos from the trendings feed', async () => {

@@ -83,9 +83,16 @@ export function SignInModal({ isOpen, onClose }: SignInModalProps) {
         <div className="divider my-6" />
 
         <p className="text-center font-mono text-2xs leading-relaxed text-slate-600">
-          By signing in you agree to the Terms of Service
+          By signing in you agree to the{' '}
+          <a href="/terms" className="underline hover:text-slate-400">
+            Terms
+          </a>
           <br />
-          and the Privacy Policy.
+          and the{' '}
+          <a href="/privacy" className="underline hover:text-slate-400">
+            Privacy policy
+          </a>
+          .
         </p>
       </div>
     </div>

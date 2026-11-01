@@ -15,9 +15,6 @@ import { PageShell } from '~/components/PageShell';
 import { ProfileHeader } from '~/components/peko/ProfileHeader';
 import { ErrorNote, Spinner } from '~/components/ui';
 
-/** Where to get the desktop app when the deep link has nothing to open. */
-export const DESKTOP_DOWNLOAD_URL = 'https://github.com/ConekoAI/peko-desktop/releases/latest';
-
 export const Route = createFileRoute('/peko/$owner/$pekoName')({
   component: PublicPekoPage,
   head: ({ params }) => {
@@ -114,15 +111,10 @@ function PublicPekoPage() {
               <MessageSquare className="h-3.5 w-3.5" />
               Open in Peko
             </a>
-            <a
-              href={DESKTOP_DOWNLOAD_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="btn-secondary btn-sm"
-            >
+            <Link to="/download" className="btn-secondary btn-sm">
               <Download className="h-3.5 w-3.5" />
               Get Peko desktop
-            </a>
+            </Link>
           </div>
         </section>
       </div>

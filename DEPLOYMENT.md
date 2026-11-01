@@ -72,6 +72,10 @@ Backend environment for these hosts:
 - `FRONTEND_URL=https://pekohub.ai`: the website. Share links, the OAuth consent page, and the
   device page are built from it, and it is the CORS origin allowed with credentials.
 - Pages build: `VITE_API_BASE_URL=https://api.pekohub.ai`.
+- Pages Functions (`functions/`, deployed with the site): `/peko/<owner>/<name>` and
+  `/seeds/<owner>/<name>` get their own title, description, OpenGraph and Twitter tags for
+  link previews, looked up on the API. Optional Pages env var `PEKOHUB_API` (default
+  `https://api.pekohub.ai`). When the API is down they serve the page unchanged.
 
 `pekohub.ai` and `api.pekohub.ai` are the same site (`pekohub.ai`), so the website's
 `SameSite=Lax` refresh cookie set by the API is sent on its credentialed requests.
