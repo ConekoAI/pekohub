@@ -194,7 +194,9 @@ export default async function oauthRoutes(fastify: FastifyInstance) {
     }
 
     const validated = await fastify.validateRefreshToken(refreshCookie);
-    if (!validated) {
+    // A token issued to an OAuth client (desktop, CLI) is refreshed only
+    // through `POST /oauth/token`, never as the website's cookie.
+    if (!validated || validated.clientId !== null) {
       return reply
         .status(401)
         .send({ error: "Invalid or expired refresh token" });

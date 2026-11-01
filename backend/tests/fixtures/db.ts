@@ -116,8 +116,32 @@ const DDL_STATEMENTS = [
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
     expires_at TIMESTAMPTZ NOT NULL,
     revoked_at TIMESTAMPTZ,
-    rotated_from TEXT REFERENCES refresh_tokens(id)
+    rotated_from TEXT REFERENCES refresh_tokens(id),
+    client_id VARCHAR(64)
   );`,
+  `CREATE TABLE IF NOT EXISTS oauth_authorization_codes (
+    code_hash VARCHAR(64) PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    client_id VARCHAR(64) NOT NULL,
+    redirect_uri TEXT NOT NULL,
+    code_challenge VARCHAR(128) NOT NULL,
+    scope VARCHAR(256),
+    expires_at TIMESTAMPTZ NOT NULL,
+    used_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+  );`,
+  `CREATE TABLE IF NOT EXISTS oauth_device_codes (
+    device_code_hash VARCHAR(64) PRIMARY KEY,
+    user_code VARCHAR(16) NOT NULL,
+    client_id VARCHAR(64) NOT NULL,
+    scope VARCHAR(256),
+    status VARCHAR(16) DEFAULT 'pending' NOT NULL,
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    last_polled_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+  );`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS oauth_device_codes_user_code_idx ON oauth_device_codes(user_code);`,
   `CREATE INDEX IF NOT EXISTS refresh_tokens_user_active_idx ON refresh_tokens(user_id, revoked_at, expires_at);`,
   `CREATE INDEX IF NOT EXISTS refresh_tokens_prefix_idx ON refresh_tokens(token_prefix);`,
 
@@ -227,6 +251,8 @@ export async function createTestDb(): Promise<TestDb> {
 export async function resetTables(client: PGlite) {
   const tables = [
     "audit_logs",
+    "oauth_authorization_codes",
+    "oauth_device_codes",
     "refresh_tokens",
     "pull_stats",
     "blobs",

@@ -14,6 +14,7 @@ import runtimeRoutes from "../../src/routes/api/runtimes.js";
 import principalDirectoryRoutes from "../../src/routes/api/principals.js";
 import adminRoutes from "../../src/routes/api/admin.js";
 import oauthRoutes from "../../src/routes/auth/oauth.js";
+import oauthServerRoutes from "../../src/routes/auth/oauth-server.js";
 import apiKeyRoutes from "../../src/routes/auth/api-keys.js";
 import ociRoutes from "../../src/routes/oci/index.js";
 
@@ -72,6 +73,14 @@ export async function buildTestApp(options: TestAppOptions) {
   });
 
   // Content type parsers
+  // OAuth token, device, and revoke requests are form-encoded (RFC 6749 §4.1.3)
+  app.addContentTypeParser(
+    "application/x-www-form-urlencoded",
+    { parseAs: "string" },
+    (_req, body, done) => {
+      done(null, Object.fromEntries(new URLSearchParams(body as string)));
+    },
+  );
   app.addContentTypeParser(
     "application/octet-stream",
     { parseAs: "buffer" },
@@ -122,6 +131,7 @@ export async function buildTestApp(options: TestAppOptions) {
   await app.register(adminRoutes, { prefix: "/v1/admin" });
   await app.register(oauthRoutes, { prefix: "/v1/auth" });
   await app.register(apiKeyRoutes, { prefix: "/v1/auth" });
+  await app.register(oauthServerRoutes);
 
   // `/api/v1` alias surface — mirrors `src/index.ts` (the runtime CLI
   // hard-codes this prefix for search / bundle detail / OAuth).

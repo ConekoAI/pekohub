@@ -13,7 +13,9 @@ import { Route as SearchRouteImport } from './routes/search'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as PekosRouteImport } from './routes/pekos'
 import { Route as DiscoverRouteImport } from './routes/discover'
+import { Route as DeviceRouteImport } from './routes/device'
 import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as AuthorizeRouteImport } from './routes/authorize'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SeedsIndexRouteImport } from './routes/seeds/index'
 import { Route as TemplatesSplatRouteImport } from './routes/templates_.$'
@@ -43,9 +45,19 @@ const DiscoverRoute = DiscoverRouteImport.update({
   path: '/discover',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DeviceRoute = DeviceRouteImport.update({
+  id: '/device',
+  path: '/device',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthorizeRoute = AuthorizeRouteImport.update({
+  id: '/authorize',
+  path: '/authorize',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -91,7 +103,9 @@ const POwnerPrincipalNameRoute = POwnerPrincipalNameRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/authorize': typeof AuthorizeRoute
   '/dashboard': typeof DashboardRoute
+  '/device': typeof DeviceRoute
   '/discover': typeof DiscoverRoute
   '/pekos': typeof PekosRoute
   '/profile': typeof ProfileRoute
@@ -106,7 +120,9 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/authorize': typeof AuthorizeRoute
   '/dashboard': typeof DashboardRoute
+  '/device': typeof DeviceRoute
   '/discover': typeof DiscoverRoute
   '/pekos': typeof PekosRoute
   '/profile': typeof ProfileRoute
@@ -122,7 +138,9 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/authorize': typeof AuthorizeRoute
   '/dashboard': typeof DashboardRoute
+  '/device': typeof DeviceRoute
   '/discover': typeof DiscoverRoute
   '/pekos': typeof PekosRoute
   '/profile': typeof ProfileRoute
@@ -139,7 +157,9 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/authorize'
     | '/dashboard'
+    | '/device'
     | '/discover'
     | '/pekos'
     | '/profile'
@@ -154,7 +174,9 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/authorize'
     | '/dashboard'
+    | '/device'
     | '/discover'
     | '/pekos'
     | '/profile'
@@ -169,7 +191,9 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/authorize'
     | '/dashboard'
+    | '/device'
     | '/discover'
     | '/pekos'
     | '/profile'
@@ -185,7 +209,9 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthorizeRoute: typeof AuthorizeRoute
   DashboardRoute: typeof DashboardRoute
+  DeviceRoute: typeof DeviceRoute
   DiscoverRoute: typeof DiscoverRoute
   PekosRoute: typeof PekosRoute
   ProfileRoute: typeof ProfileRoute
@@ -229,11 +255,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DiscoverRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/device': {
+      id: '/device'
+      path: '/device'
+      fullPath: '/device'
+      preLoaderRoute: typeof DeviceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dashboard': {
       id: '/dashboard'
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/authorize': {
+      id: '/authorize'
+      path: '/authorize'
+      fullPath: '/authorize'
+      preLoaderRoute: typeof AuthorizeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -297,7 +337,9 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthorizeRoute: AuthorizeRoute,
   DashboardRoute: DashboardRoute,
+  DeviceRoute: DeviceRoute,
   DiscoverRoute: DiscoverRoute,
   PekosRoute: PekosRoute,
   ProfileRoute: ProfileRoute,

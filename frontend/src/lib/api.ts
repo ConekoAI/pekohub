@@ -191,6 +191,29 @@ export const api = {
       if (!r.ok) throw new Error('Failed to revoke key');
     }),
 
+  // ── OAuth consent (Peko desktop + CLI sign-in) ──────────────────────────
+  describeAuthorizeRequest: (request: string) =>
+    fetchJson<OAuthConsentRequest>(
+      `/v1/oauth/authorize/describe?request=${encodeURIComponent(request)}`,
+    ),
+
+  decideAuthorizeRequest: (request: string, approve: boolean) =>
+    fetchJson<{ redirectTo: string }>('/v1/oauth/authorize/decision', {
+      method: 'POST',
+      body: JSON.stringify({ request, approve }),
+    }),
+
+  describeDeviceCode: (userCode: string) =>
+    fetchJson<OAuthDeviceRequest>(
+      `/v1/oauth/device/describe?user_code=${encodeURIComponent(userCode)}`,
+    ),
+
+  decideDeviceCode: (userCode: string, approve: boolean) =>
+    fetchJson<{ status: 'approved' | 'denied' }>('/v1/oauth/device/decision', {
+      method: 'POST',
+      body: JSON.stringify({ user_code: userCode, approve }),
+    }),
+
   getMe: () =>
     fetchJson<UserProfile>('/v1/auth/me'),
 
@@ -428,6 +451,19 @@ export interface DiscoveryHit {
 /** The handle a share link must be built from. */
 export function ownerHandle(hit: DiscoveryHit): string {
   return hit.ownerNamespace ?? hit.ownerName;
+}
+
+/** An app asking to sign in, as the consent page shows it. */
+export interface OAuthConsentRequest {
+  client: { id: string; name: string };
+  scope: string | null;
+  redirectUri: string;
+}
+
+export interface OAuthDeviceRequest {
+  client: { id: string; name: string };
+  scope: string | null;
+  userCode: string;
 }
 
 /**
