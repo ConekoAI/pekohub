@@ -10,6 +10,7 @@
   website's refresh cookie refuses them. `POST /oauth/revoke` signs an app out. Migration
   `0006_oauth_server` adds `oauth_authorization_codes`, `oauth_device_codes`, and
   `refresh_tokens.client_id`. Signing in on the website now returns to the page that asked.
+
 - The website no longer offers chat. A peko's page (`/peko/:owner/:name`) is a profile with
   **Open in Peko** (`peko://add-peko?url=…`), which adds the peko in the desktop app; the
   desktop messages it over the user's own runtime. The ToS and quota fields left the owner
