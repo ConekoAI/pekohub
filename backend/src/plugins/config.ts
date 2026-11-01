@@ -28,6 +28,11 @@ const schema = z.object({
   REGISTRY_BASE_URL: z.string().url().default("http://localhost:3000"),
   FRONTEND_URL: z.string().url().optional(),
   ALLOW_DEV_AUTH_BYPASS: z.enum(["true", "false"]).default("false"),
+  // Anonymous visitor chat through the public chat proxy. Off: the
+  // website offers no chat, and the proxy serves signed-in clients that
+  // have no runtime of their own (a future mobile app). On: callers
+  // without an account chat under a signed visitor cookie.
+  ALLOW_VISITOR_CHAT: z.enum(["true", "false"]).default("false"),
   RATE_LIMIT_MAX: z.coerce.number().default(100),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60_000),
   GC_ENABLED: z.enum(["true", "false"]).default("true"),

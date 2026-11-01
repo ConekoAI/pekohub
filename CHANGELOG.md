@@ -2,6 +2,15 @@
 
 ## 0.1.0 — pre-launch
 
+- The website no longer offers chat. A peko's page (`/peko/:owner/:name`) is a profile with
+  **Open in Peko** (`peko://add-peko?url=…`), which adds the peko in the desktop app; the
+  desktop messages it over the user's own runtime. The ToS and quota fields left the owner
+  dashboard, and the landing page drops the hard-coded "relay online" badge and the retired
+  `peko push` / `peko pull` commands.
+- The public chat proxy (`POST /v1/public/pekos/:owner/:name/chat`) stays, for clients with no
+  runtime of their own. Anonymous visitor chat is off unless `ALLOW_VISITOR_CHAT=true`: without
+  it, a caller with no `Authorization` header gets 401 `sign_in_required`, and the profile
+  endpoint sets no visitor cookie.
 - Pekos reach the discovery index again: indexing named no primary key, and Meilisearch can't
   infer one from `id` next to `ownerId`, so every peko document was rejected and the directory
   stayed empty. `indexInstance` now names `id`.

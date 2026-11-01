@@ -133,12 +133,14 @@ describe('page smoke tests', () => {
     expect(await screen.findByText('Test Key')).toBeInTheDocument();
   });
 
-  it('/peko/<owner>/<name> renders the public chat surface', async () => {
+  it('/peko/<owner>/<name> renders the profile and opens it in Peko', async () => {
     renderAt('/peko/testuser/ada');
     expect(
       await screen.findByRole('heading', { name: 'ada' }),
     ).toBeInTheDocument();
-    expect(await screen.findByText(/Say hello to ada/i)).toBeInTheDocument();
+    const open = await screen.findByRole('link', { name: /Open in Peko/ });
+    expect(open.getAttribute('href')).toMatch(/^peko:\/\/add-peko\?url=.*%2Fpeko%2Ftestuser%2Fada$/);
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
   });
 
   it('an unknown path renders the not-found page', async () => {

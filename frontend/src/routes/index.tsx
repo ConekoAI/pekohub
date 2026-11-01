@@ -45,25 +45,21 @@ function HomePage() {
       <section className="pt-10 sm:pt-16">
         <div className="mx-auto max-w-3xl text-center">
           <span className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1">
-            <span className="relative flex h-1.5 w-1.5">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
-            </span>
             <span className="font-mono text-2xs uppercase tracking-[0.16em] text-slate-400">
-              relay online · OCI v1.1
+              directory · relay · seeds
             </span>
           </span>
 
           <h1 className="display mt-7 text-[2rem] leading-[1.1] sm:text-[3.25rem]">
             Discover pekos.
             <br />
-            <span className="grad-text">Talk to them in the browser.</span>
+            <span className="grad-text">Message them from Peko.</span>
           </h1>
 
           <p className="lede mx-auto mt-6 max-w-xl">
             A peko is a persistent AI actor that lives on someone&apos;s runtime — its own identity,
             its own memory, its own schedule. PekoHub is the directory you find them in, the relay
-            that carries your messages, and the registry their DNA ships through.
+            that carries messages between runtimes, and the registry their seeds ship through.
           </p>
 
           <div className="mx-auto mt-9 flex max-w-2xl justify-center">
@@ -83,7 +79,7 @@ function HomePage() {
               <Lock className="h-3 w-3" /> keys never leave the runtime
             </span>
             <span className="flex items-center gap-1.5">
-              <Share2 className="h-3 w-3" /> share links, no sign-up required
+              <Share2 className="h-3 w-3" /> share links open in Peko desktop
             </span>
           </div>
         </div>
@@ -103,7 +99,7 @@ function HomePage() {
           icon={<Boxes className="h-4 w-4" />}
           eyebrow="DNA"
           title="Seeds"
-          body="The stripped principal.toml a peko grows from. Pull one and ground it into a brand-new identity with peko create -s. No keys, no memory, no sessions."
+          body="The stripped principal.toml a peko grows from. Download one and grow it into a brand-new identity with peko create -s. No keys, no memory, no sessions."
           to="/seeds"
           cta="Browse the registry"
           tone="iris"
@@ -193,17 +189,17 @@ function HomePage() {
           <StepCard
             step="02"
             icon={<Boxes className="h-4 w-4" />}
-            title="Push its DNA"
-            body="Optionally publish the seed — a stripped config with identity, state and keys removed — so others can start their own."
+            title="Publish its seed"
+            body="Optionally export the seed — a stripped config with identity, state and keys removed — and publish it here so others can grow their own."
           >
-            <code className="code-block text-xs">peko push ada</code>
+            <code className="code-block text-xs">peko seed ada</code>
           </StepCard>
 
           <StepCard
             step="03"
             icon={<MessageSquare className="h-4 w-4" />}
             title="Expose and share"
-            body="Set exposure and the hub opens a tunnel relay. Visitors chat through the hub; the runtime stays the authority on who may talk to it."
+            body="Set exposure and the hub relays messages between runtimes. Anyone with Peko can reach it; the runtime stays the authority on who may talk to it."
           >
             <code className="code-block text-xs">exposure = &quot;public&quot;</code>
           </StepCard>
@@ -219,8 +215,8 @@ function HomePage() {
               Ship a peko people can actually reach.
             </h2>
             <p className="lede mt-3 max-w-xl">
-              Seeds are the distribution primitive. Push a config, get an OCI artifact, and
-              anyone can pull it into a fresh identity. Your keys, sessions and knowledge base never
+              Seeds are the distribution primitive. Export a config, publish it here, and
+              anyone can grow it into a fresh identity. Your keys, sessions and knowledge base never
               leave your host — the registry is structurally incapable of carrying them.
             </p>
             <div className="mt-6 flex flex-wrap items-center gap-2">
@@ -240,15 +236,12 @@ function HomePage() {
               <p className="eyebrow text-slate-400">quickstart</p>
             </div>
             <div className="mt-4 space-y-2">
-              <code className="code-block text-xs">peko create ada</code>
-              <code className="code-block text-xs">peko push ada</code>
-              <code className="code-block text-xs">
-                peko pull pekohub.ai/peko/principals/ada:latest
-              </code>
+              <code className="code-block text-xs">peko seed ada -o ada.seed.toml</code>
+              <code className="code-block text-xs">peko create my-ada -s ada.seed.toml</code>
             </div>
             <div className="mt-4">
               <CopyButton
-                value={'peko create ada\npeko push ada'}
+                value={'peko seed ada -o ada.seed.toml\npeko create my-ada -s ada.seed.toml'}
                 label="Copy the two commands"
                 className="btn-secondary btn-sm w-full"
               />

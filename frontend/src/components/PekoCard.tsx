@@ -10,7 +10,7 @@ import { relativeTime } from '~/lib/format';
  *
  * A peko is a live actor on somebody's runtime (ADR-059), so the card
  * leads with liveness — status, owner, and how recently it was seen —
- * and offers the two things a visitor can actually do: open the chat,
+ * and offers the two things a visitor can actually do: open its page,
  * or copy the share link.
  */
 export function PekoCard({ hit }: { hit: DiscoveryHit }) {

@@ -101,6 +101,7 @@ async function main() {
   process.env.GC_ENABLED = "false";
   process.env.RATE_LIMIT_MAX = "1000";
   process.env.ALLOW_DEV_AUTH_BYPASS = "true";
+  process.env.ALLOW_VISITOR_CHAT = "true";
 
   // Replace the database instance before importing routes
   setDb(testDb.db);

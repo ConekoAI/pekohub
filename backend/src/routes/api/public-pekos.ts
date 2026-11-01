@@ -29,13 +29,12 @@ export default async function publicPekoRoutes(fastify: FastifyInstance) {
       pekoName: string;
     };
 
-    // PR-B1: ensure the visitor cookie is set on first page load
-    // so the subsequent POST .../chat can resolve the visitor
-    // without round-tripping through a redirect. `getOrMintVisitorId`
-    // returns the existing or newly-minted id; we set the cookie
-    // unconditionally because that's idempotent and keeps the
-    // expiry rolling.
-    readOrSetVisitor(request, reply, fastify.config.JWT_SECRET);
+    // With visitor chat on, set the visitor cookie on first page load
+    // so the subsequent POST .../chat can resolve the visitor without a
+    // redirect. Setting it is idempotent and keeps the expiry rolling.
+    if (fastify.config.ALLOW_VISITOR_CHAT === "true") {
+      readOrSetVisitor(request, reply, fastify.config.JWT_SECRET);
+    }
 
     const ownerRow = await db.query.users.findFirst({
       where: eq(users.namespace, owner),
@@ -79,6 +78,12 @@ export default async function publicPekoRoutes(fastify: FastifyInstance) {
   });
 
   // ── Public chat proxy ──────────────────────────────────────────────────────
+  //
+  // For clients with no runtime of their own (a future mobile app). The
+  // website and the desktop don't use it: the desktop messages pekos
+  // over its own runtime. One SSE stream per message and no Hub-side
+  // conversation — a reply produced after the stream closes is lost,
+  // and there is no history read yet.
   fastify.post(
     "/public/pekos/:owner/:pekoName/chat",
     async (request, reply) => {
@@ -86,6 +91,15 @@ export default async function publicPekoRoutes(fastify: FastifyInstance) {
         owner: string;
         pekoName: string;
       };
+
+      if (
+        !request.headers.authorization &&
+        fastify.config.ALLOW_VISITOR_CHAT !== "true"
+      ) {
+        return reply
+          .status(401)
+          .send({ error: "Sign in to message this peko", code: "sign_in_required" });
+      }
 
       // IP-based rate limiting for anonymous public access
       const rateLimitKey = `public_chat:${request.ip}`;
