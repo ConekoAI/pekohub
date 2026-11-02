@@ -437,11 +437,16 @@ export type TunnelMessage =
       ownerAddress: string;
       visibility: "invite_only" | "public";
     }
-  | { type: "group_registered"; requestId: string; groupId: string }
+  // `pageUrl` is the group's page on the website, where invite links point.
+  | { type: "group_registered"; requestId: string; groupId: string; pageUrl: string }
   | { type: "group_register_rejected"; requestId: string; message: string }
   | { type: "group_roster"; groupId: string; accounts: string[] }
   | { type: "account_groups_request"; requestId: string }
-  | { type: "account_groups"; requestId: string; groups: AccountGroup[] };
+  | { type: "account_groups"; requestId: string; groups: AccountGroup[] }
+  // Runtime ADR-092 D5: what the group's page shows, for joining by ID or
+  // link: a public group, or an invite-only one with a valid invite.
+  | { type: "group_lookup_request"; requestId: string; groupId: string; invite?: string }
+  | { type: "group_lookup"; requestId: string; group?: AccountGroup };
 
 /** Runtime ADR-092 D4: one of an account's registered groups. */
 export interface AccountGroup {

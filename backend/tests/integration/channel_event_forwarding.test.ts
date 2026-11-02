@@ -826,8 +826,9 @@ describe("Registering groups over the tunnel", () => {
     };
     socketHome.triggerMessage(register);
     await flush();
-    const [first] = reply(socketHome, "group_registered") as Array<{ groupId: string }>;
+    const [first] = reply(socketHome, "group_registered") as Array<{ groupId: string; pageUrl: string }>;
     expect(first.groupId).toMatch(/^[0-9]{15,20}$/);
+    expect(first.pageUrl).toMatch(new RegExp(`/g/${first.groupId}$`));
 
     socketHome.triggerMessage({ ...register, requestId: "r2", name: "Book Club" });
     await flush();
@@ -840,6 +841,35 @@ describe("Registering groups over the tunnel", () => {
     await flush();
     expect(reply(socketOther, "group_register_rejected")).toHaveLength(1);
     void home;
+  });
+
+  it("looks a group up by ID: a public one for anyone, an invite-only one never without an invite", async () => {
+    const { tunnelManager, peko, bobs, socketHome } = await setup();
+    const register = {
+      type: "group_register" as const,
+      requestId: "r1",
+      channelId: "chan_book",
+      name: "book club",
+      ownerAddress: `principal:hub:${peko.hubId}`,
+      visibility: "invite_only" as const,
+    };
+    socketHome.triggerMessage(register);
+    await flush();
+    const [{ groupId }] = reply(socketHome, "group_registered") as Array<{ groupId: string }>;
+    const socketBob = await connect(tunnelManager, bobs);
+    socketBob.triggerMessage({ type: "group_lookup_request", requestId: "l1", groupId });
+    await flush();
+    expect(reply(socketBob, "group_lookup")).toEqual([{ type: "group_lookup", requestId: "l1" }]);
+
+    socketHome.triggerMessage({ ...register, requestId: "r2", visibility: "public" });
+    await flush();
+    socketBob.triggerMessage({ type: "group_lookup_request", requestId: "l2", groupId });
+    await flush();
+    expect(reply(socketBob, "group_lookup")[1]).toEqual({
+      type: "group_lookup",
+      requestId: "l2",
+      group: { groupId, name: "book club", homeRuntime: expect.any(String), channelId: "chan_book" },
+    });
   });
 
   it("keeps the accounts the home reports, and lists them to each account's runtimes", async () => {

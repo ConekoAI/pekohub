@@ -20,7 +20,14 @@ import {
 } from "./tunnel-protocol.js";
 import { verifyDidKeySignature, verifyDidKeyJws, TunnelAuthError } from "./tunnel-crypto.js";
 import { instanceService, type InstanceStatus } from "./instances.js";
-import { GroupRegistrationError, groupsOfAccount, registerGroup, setGroupRoster } from "./groups.js";
+import {
+  GroupRegistrationError,
+  groupsOfAccount,
+  publicGroup,
+  registerGroup,
+  setGroupRoster,
+} from "./groups.js";
+import { groupUrl } from "./origins.js";
 import { auditService } from "./audit.js";
 import { metrics, CounterName } from "./metrics.js";
 import { db } from "../db/index.js";
@@ -814,7 +821,12 @@ export class TunnelManager {
             ownerAddress: msg.ownerAddress,
             visibility: msg.visibility,
           });
-          this.sendMessage(conn.socket, { type: "group_registered", requestId: msg.requestId, groupId });
+          this.sendMessage(conn.socket, {
+            type: "group_registered",
+            requestId: msg.requestId,
+            groupId,
+            pageUrl: groupUrl(this.fastify.config, groupId),
+          });
         } catch (err) {
           const message = err instanceof GroupRegistrationError ? err.message : "registration failed";
           if (!(err instanceof GroupRegistrationError)) {
@@ -841,6 +853,28 @@ export class TunnelManager {
         const owner = await this.resolveRuntimeOwner(conn.runtimeId);
         const groups = owner ? await groupsOfAccount(owner) : [];
         this.sendMessage(conn.socket, { type: "account_groups", requestId: msg.requestId, groups });
+        break;
+      }
+
+      case "group_lookup_request": {
+        // Runtime ADR-092 D5: what the group's page would show this
+        // runtime's person; nothing for an invite-only group without a
+        // valid invite.
+        const group = await publicGroup(msg.groupId, msg.invite);
+        this.sendMessage(conn.socket, {
+          type: "group_lookup",
+          requestId: msg.requestId,
+          ...(group
+            ? {
+                group: {
+                  groupId: group.id,
+                  name: group.name,
+                  homeRuntime: group.homeRuntime,
+                  channelId: group.channelId,
+                },
+              }
+            : {}),
+        });
         break;
       }
 
@@ -897,6 +931,7 @@ export class TunnelManager {
       case "group_registered":
       case "group_register_rejected":
       case "account_groups":
+      case "group_lookup":
       case "principal_transfer_rejected":
       case "principal_owner_changed":
       case "principal_registered": return; // Hub-to-runtime receipts; never accepted from a runtime.
