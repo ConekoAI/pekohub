@@ -18,6 +18,8 @@ const router = createRouter({
   routeTree,
   context: { queryClient },
   defaultPreload: 'intent',
+  // IDs are paths (hub ADR-009): `/alice/ada@1.2.0` keeps its `@`.
+  pathParamsAllowedCharacters: ['@'],
 });
 
 declare module '@tanstack/react-router' {

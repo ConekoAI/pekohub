@@ -2,6 +2,33 @@
 
 ## 0.1.0 — pre-launch
 
+- People, pekos and seeds share one search space with one ID format per kind (ADR-009):
+  a person is `@alice`, a peko `@alice/ada`, a seed `alice/ada` (or `alice/ada@1.2.0`), and
+  each ID is its page: `pekohub.ai/@alice`, `/@alice/ada`, `/alice/ada`. Old `/peko/…`,
+  `/p/…` and `/seeds/…` links redirect (301 at the edge, `frontend/public/_redirects`).
+  `shareUrl`, seed `webUrl` and the new `GET /v1/meta` `pages` templates use the new forms.
+- Public pekos are no longer advertised. Like an account on Discord, a public peko is
+  reachable by its exact ID only and is never listed, featured or searched by text. The
+  homepage peko section, the Pekos page and its feeds are gone (`/pekos`, `/discover` →
+  `/search`). `/v1/discovery/search`, `/v1/discovery/feed/:feed`, `/v1/instances/public`
+  and `/v1/instances/public/search` answer 410 `pekos_not_listed`. Pekos are no longer
+  indexed, and Meilisearch's old `instances` index is dropped on startup. People are
+  exact-ID only too: `GET /v1/people/:handle` and the page `/@alice` show a profile and
+  published seeds, never pekos.
+- One search box (nav, `/search`, the homepage): `GET /v1/search` reads the query as an ID
+  first. `@alice` or `@alice/ada` returns that person or public peko in `exact`, and nothing
+  else. `alice/ada` returns that seed, and a public `@alice/ada` labelled as a peko, before
+  the seed text search. Anything else searches seeds. The response adds `queryKind` and `exact`.
+- `@owner/name` always names one peko. When an owner has two public pekos with one name,
+  the one made public most recently wins (`instances.published_at`, set when a peko
+  becomes public by announce or console, cleared when it stops). The directory no longer
+  answers 409 "ambiguous".
+- Link previews follow the new pages: Pages Functions `functions/[owner]/[name].ts` (a peko
+  for `/@…`, otherwise a seed) and `functions/@[owner]/index.ts` (a person), with
+  `_routes.json` keeping built assets off Functions.
+- Fixed: without Meilisearch, seed search could report another seed's version (the
+  version subquery bound `id` to `bundle_versions`).
+
 - The API runs on nothing but Postgres. Meilisearch, Redis and blob storage are optional:
   without `MEILISEARCH_URL`, search (`/v1/search`, the directory's search and feeds) reads
   Postgres directly (`services/pg-search.ts`); without `REDIS_URL`, quotas and throttles stay

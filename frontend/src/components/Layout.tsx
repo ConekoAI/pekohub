@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
 import {
   Github,
+  Globe,
   LayoutDashboard,
   LogOut,
   Menu,
+  Search,
   User as UserIcon,
   X,
 } from 'lucide-react';
@@ -15,9 +17,12 @@ import { DOCS_URL, GETTING_STARTED_URL, RUNTIME_REPO_URL } from '~/lib/links';
 
 const REPO_URL = RUNTIME_REPO_URL;
 
-/** Primary destinations: the directory, the seed registry, and the app. */
+/**
+ * Primary destinations: the seed registry and the app. Pekos and people
+ * have no directory — they are found by their exact ID, through search
+ * (hub ADR-009).
+ */
 const NAV = [
-  { to: '/pekos', label: 'Pekos' },
   { to: '/seeds', label: 'Seeds' },
   { to: '/download', label: 'Download' },
 ] as const;
@@ -67,6 +72,7 @@ export function Layout({ children }: LayoutProps) {
           </nav>
 
           <div className="ml-auto flex items-center gap-2">
+            <NavSearch className="hidden w-56 lg:block xl:w-72" />
             <a
               href={REPO_URL}
               target="_blank"
@@ -107,6 +113,7 @@ export function Layout({ children }: LayoutProps) {
 
         {mobileOpen && (
           <div className="animate-slide-up border-t border-white/[0.06] bg-ink-950/95 px-4 py-4 md:hidden">
+            <NavSearch className="mb-3" onSearched={() => setMobileOpen(false)} />
             <nav className="flex flex-col gap-0.5">
               {NAV.map((item) => (
                 <Link
@@ -293,6 +300,14 @@ function AccountMenu({
           </div>
           <div className="p-1.5">
             <MenuItem
+              icon={<Globe className="h-4 w-4" />}
+              label="Your page"
+              onClick={() => {
+                setOpen(false);
+                void navigate({ to: '/@{$owner}', params: { owner: namespace } });
+              }}
+            />
+            <MenuItem
               icon={<LayoutDashboard className="h-4 w-4" />}
               label="Dashboard"
               onClick={() => {
@@ -353,6 +368,39 @@ function MenuItem({
   );
 }
 
+/**
+ * The one search box (hub ADR-009): an exact `@person` or `@person/peko`
+ * ID, or words to search seeds by. Results on `/search`.
+ */
+function NavSearch({ className = '', onSearched }: { className?: string; onSearched?: () => void }) {
+  const navigate = useNavigate();
+  const [value, setValue] = useState('');
+  return (
+    <form
+      role="search"
+      className={`relative ${className}`}
+      onSubmit={(event) => {
+        event.preventDefault();
+        const q = value.trim();
+        if (!q) return;
+        setValue('');
+        onSearched?.();
+        void navigate({ to: '/search', search: { q } });
+      }}
+    >
+      <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" aria-hidden />
+      <input
+        type="search"
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+        placeholder="@alice/ada, or search seeds"
+        aria-label="Search PekoHub"
+        className="input h-8 py-1 pl-8 text-[13px]"
+      />
+    </form>
+  );
+}
+
 function SiteFooter() {
   return (
     <footer className="relative mt-20 border-t border-white/[0.06] bg-ink-950/60">
@@ -366,14 +414,13 @@ function SiteFooter() {
               </span>
             </div>
             <p className="lede mt-4 max-w-sm">
-              Find pekos people have made public, open them in Peko, and grow your own from a
-              seed.
+              Grow a peko from a seed, find people and pekos by their ID, and open them in
+              Peko.
             </p>
           </div>
 
           <FooterColumn title="Product">
             <FooterLink to="/download">Download</FooterLink>
-            <FooterLink to="/pekos">Pekos</FooterLink>
             <FooterLink to="/seeds">Seeds</FooterLink>
           </FooterColumn>
 
@@ -413,7 +460,7 @@ function FooterLink({
   to,
   children,
 }: {
-  to: '/pekos' | '/seeds' | '/download' | '/status' | '/terms' | '/privacy';
+  to: '/seeds' | '/download' | '/status' | '/terms' | '/privacy';
   children: React.ReactNode;
 }) {
   return (

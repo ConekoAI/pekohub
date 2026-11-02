@@ -219,7 +219,6 @@ export interface UpdateInstanceInput {
   tosText?: string;
   dailyQuota?: number;
   weeklyQuota?: number;
-  publishedAt?: Date | null;
   featured?: boolean;
 
   // Transport preference for cross-runtime principal_send.
@@ -256,14 +255,15 @@ export interface ListInstancesResult {
   total: number;
 }
 
-export class AmbiguousPrincipalReference extends Error {
-  constructor() { super("Principal handle is ambiguous; use its DID"); }
-}
-
-/** Route to the exposed host before private migration replicas. No implicit DB order. */
+/**
+ * Which of an owner's same-named pekos `@owner/name` means (hub ADR-009
+ * D3): a public one before any other, and among those the one made public
+ * most recently; then the most recently seen. No implicit DB order.
+ */
 function resolutionOrder() {
   return [
-    sql`CASE WHEN ${instances.exposure} IN ('public', 'public') THEN 0 ELSE 1 END`,
+    sql`CASE WHEN ${instances.exposure} = 'public' THEN 0 ELSE 1 END`,
+    sql`${instances.publishedAt} DESC NULLS LAST`,
     desc(instances.principalDidVerified),
     sql`${instances.lastSeenAt} DESC NULLS LAST`,
     desc(instances.createdAt),
@@ -312,7 +312,7 @@ export interface PrincipalTargetResolution {
  *                distinction is preserved for legitimate callers per
  *                the issue's acceptance criteria.
  */
-export type PrincipalTargetResolutionStatus = "hit" | "miss" | "denied" | "ambiguous";
+export type PrincipalTargetResolutionStatus = "hit" | "miss" | "denied";
 
 export interface PrincipalTargetResolutionResult {
   status: PrincipalTargetResolutionStatus;
@@ -415,6 +415,8 @@ export class InstanceService {
         bundleRef: input.bundleRef ?? null,
         status: input.status ?? "offline",
         exposure: input.exposure ?? "local_only",
+        // When it was made public: the newest public peko owns its `@owner/name`.
+        publishedAt: input.exposure === "public" ? new Date() : null,
         capabilities: input.capabilities ?? [],
         metadata: input.metadata ?? {},
         lastSeenAt: input.status === "online" ? new Date() : null,
@@ -522,7 +524,13 @@ export class InstanceService {
         values.lastSeenAt = new Date();
       }
     }
-    if (input.exposure !== undefined) values.exposure = input.exposure;
+    if (input.exposure !== undefined) {
+      values.exposure = input.exposure;
+      // Made public now, or no longer public. Hub ADR-009 D3: when an
+      // owner has two public pekos with one name, the newest owns it.
+      if (input.exposure !== "public") values.publishedAt = null;
+      else if (existing.exposure !== "public") values.publishedAt = new Date();
+    }
     if (input.capabilities !== undefined)
       values.capabilities = input.capabilities;
     if (input.metadata !== undefined) values.metadata = input.metadata;
@@ -535,7 +543,6 @@ export class InstanceService {
     if (input.tosText !== undefined) values.tosText = input.tosText;
     if (input.dailyQuota !== undefined) values.dailyQuota = input.dailyQuota;
     if (input.weeklyQuota !== undefined) values.weeklyQuota = input.weeklyQuota;
-    if (input.publishedAt !== undefined) values.publishedAt = input.publishedAt;
     if (input.featured !== undefined) values.featured = input.featured;
     if (input.hubId !== undefined) values.hubId = input.hubId;
     if (input.localId !== undefined) values.localId = input.localId;
@@ -736,6 +743,11 @@ export class InstanceService {
    * the owner has no instance with that name. The route layer
    * collapses those to 404; the access check then runs in
    * {@link resolvePrincipalTarget}.
+   *
+   * Names are not unique per owner — two pekos on different computers
+   * may share one — but a handle always means one of them (hub ADR-009
+   * D3, {@link resolutionOrder}): a public one if any, the one made
+   * public most recently.
    */
   async getByHandle(
     owner: string,
@@ -763,11 +775,8 @@ export class InstanceService {
       ),
       orderBy: resolutionOrder(),
     });
-    const registered = rows.filter(r => r.hubId && r.localId && r.exposure !== "local_only");
-    const exposed = registered.filter(r => r.exposure === "public");
-    const candidates = exposed.length > 0 ? exposed : registered;
-    if (new Set(candidates.map(r => r.hubId ?? r.id)).size > 1) throw new AmbiguousPrincipalReference();
-    return candidates[0] ? this.toRecord(candidates[0]) : null;
+    const registered = rows.find(r => r.hubId && r.localId && r.exposure !== "local_only");
+    return registered ? this.toRecord(registered) : null;
   }
 
   /**
@@ -790,15 +799,9 @@ export class InstanceService {
     spec: import("@pekohub/shared").TargetSpec,
     caller: CallerSubject,
   ): Promise<PrincipalTargetResolutionResult> {
-    let instance: InstanceRecord | null;
-    try {
-      instance = spec.kind === "by-hub-id"
-        ? await this.getByHubId(spec.hubId)
-        : await this.getByHandle(spec.owner, spec.principalName);
-    } catch (error) {
-      if (error instanceof AmbiguousPrincipalReference) return { status: "ambiguous" };
-      throw error;
-    }
+    const instance = spec.kind === "by-hub-id"
+      ? await this.getByHubId(spec.hubId)
+      : await this.getByHandle(spec.owner, spec.principalName);
 
     if (!instance) {
       return { status: "miss" };

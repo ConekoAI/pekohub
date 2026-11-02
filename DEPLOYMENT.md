@@ -72,9 +72,12 @@ Backend environment for these hosts:
 - `FRONTEND_URL=https://pekohub.ai`: the website. Share links, the OAuth consent page, and the
   device page are built from it, and it is the CORS origin allowed with credentials.
 - Pages build: `VITE_API_BASE_URL=https://api.pekohub.ai`.
-- Pages Functions (`functions/`, deployed with the site): `/peko/<owner>/<name>` and
-  `/seeds/<owner>/<name>` get their own title, description, OpenGraph and Twitter tags for
-  link previews, looked up on the API. Optional Pages env var `PEKOHUB_API` (default
+- Pages Functions (`functions/`, deployed with the site): `/@<owner>` (a person),
+  `/@<owner>/<name>` (a peko) and `/<owner>/<name>` (a seed) get their own title,
+  description, OpenGraph and Twitter tags for link previews, looked up on the API. Pages
+  routes every two-segment path, `/@…` included, to `functions/[owner]/[name].ts`, so
+  `frontend/public/_routes.json` keeps `/assets/*` off Functions, and
+  `frontend/public/_redirects` 301s the old `/peko/…`, `/p/…` and `/seeds/…` links. Optional Pages env var `PEKOHUB_API` (default
   `https://api.pekohub.ai`). When the API is down they serve the page unchanged.
 
 `pekohub.ai` and `api.pekohub.ai` are the same site (`pekohub.ai`), so the website's

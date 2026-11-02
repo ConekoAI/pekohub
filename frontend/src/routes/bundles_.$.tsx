@@ -14,9 +14,12 @@
  */
 
 import { createFileRoute, redirect } from '@tanstack/react-router';
+import { hubRefPath, parseHubRef } from '@pekohub/shared';
 
 export const Route = createFileRoute('/bundles_/$')({
   beforeLoad: ({ params }) => {
-    throw redirect({ href: `/seeds/${params._splat ?? ''}`, replace: true });
+    // A seed's page is its ID (hub ADR-009); anything else, the directory.
+    const ref = parseHubRef(`/seeds/${params._splat ?? ''}`);
+    throw redirect({ href: ref?.kind === 'seed' ? hubRefPath(ref) : '/seeds', replace: true });
   },
 });

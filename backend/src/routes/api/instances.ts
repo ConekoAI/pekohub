@@ -1,6 +1,4 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
-import { db } from "../../db/index.js";
-import { instances, users } from "../../db/schema.js";
 import {
   instanceService,
   type CallerSubject,
@@ -8,9 +6,7 @@ import {
   type InstanceStatus,
   type InstanceType,
 } from "../../services/instances.js";
-import { eq, and, sql, inArray } from "drizzle-orm";
 import { z } from "zod";
-import type { Subject } from "@pekohub/shared";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Caller extraction (issue #11, review #12 P1 fix)
@@ -46,39 +42,6 @@ async function extractCallerSubject(
   } catch {
     return null;
   }
-}
-
-/**
- * Derive the `ownerId` field for the search index from the typed
- * `ownerSubject`. Post-H1 the column is gone; the Meilisearch
- * document keeps an `ownerId` field for filterability (only
- * user-owned instances can be indexed today — principal-owned
- * instances would need a separate index key).
- *
- * Returns `null` when:
- *   - the instance has no owner (`ownerSubject` is null or the empty
- *     sentinel)
- *   - the owner is not a `user` Subject (a Principal-owned instance
- *     gets no `ownerId` in the index)
- *   - the user-id is not a valid UUID (the typed `ownerSubject.id`
- *     is always stored as a JSON string; pre-launch we don't
- *     attempt to coerce non-UUID values — null is the safe default)
- *
- * Post-H3 the `id` is a UUID string and the `indexInstance`
- * signature is `string | null`.
- */
-function ownerSubjectUserId(
-  ownerSubject: Subject | null | undefined,
-): string | null {
-  if (!ownerSubject || ownerSubject.kind !== "user") return null;
-  // Bare UUID check — the runtime emits UUID strings, the typed
-  // owner_subject carries the same shape, and an arbitrary string
-  // ("42", "abc") would never match a users.id row.
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-    ownerSubject.id,
-  )
-    ? ownerSubject.id
-    : null;
 }
 
 const ListQuerySchema = z.object({
@@ -318,32 +281,6 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         weeklyQuota: body.data.weekly_quota,
       });
 
-      // Index public instances into search
-      if (instance.exposure === "public") {
-        try {
-          await fastify.search.indexInstance({
-            objectID: instance.id,
-            id: instance.id,
-            name: instance.name,
-            type: instance.type,
-            bundleRef: instance.bundleRef ?? undefined,
-            status: instance.status,
-            capabilities: instance.capabilities,
-            ownerId: ownerSubjectUserId(instance.ownerSubject),
-            runtimeDisplayName: instance.runtimeDisplayName ?? undefined,
-            createdAt: instance.createdAt.toISOString(),
-            publicName: instance.publicName ?? undefined,
-            description: instance.description ?? undefined,
-            tags: instance.tags,
-            category: instance.category ?? undefined,
-            featured: instance.featured,
-            publishedAt: instance.publishedAt?.toISOString(),
-          });
-        } catch (err) {
-          fastify.log.warn({ err }, "Failed to index instance in Meilisearch");
-        }
-      }
-
       return reply.status(201).send(instance);
     },
   );
@@ -393,34 +330,6 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         dailyQuota: body.data.daily_quota,
         weeklyQuota: body.data.weekly_quota,
       });
-
-      // Sync search index
-      try {
-        if (updated!.exposure === "public") {
-          await fastify.search.indexInstance({
-            objectID: updated!.id,
-            id: updated!.id,
-            name: updated!.name,
-            type: updated!.type,
-            bundleRef: updated!.bundleRef ?? undefined,
-            status: updated!.status,
-            capabilities: updated!.capabilities,
-            ownerId: ownerSubjectUserId(updated!.ownerSubject),
-            runtimeDisplayName: updated!.runtimeDisplayName ?? undefined,
-            createdAt: updated!.createdAt.toISOString(),
-            publicName: updated!.publicName ?? undefined,
-            description: updated!.description ?? undefined,
-            tags: updated!.tags,
-            category: updated!.category ?? undefined,
-            featured: updated!.featured,
-            publishedAt: updated!.publishedAt?.toISOString(),
-          });
-        } else {
-          await fastify.search.deleteInstance(updated!.id);
-        }
-      } catch (err) {
-        fastify.log.warn({ err }, "Failed to sync instance in Meilisearch");
-      }
 
       return updated;
     },
@@ -499,46 +408,11 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
         updateInput.tosText = public_profile.tos_text ?? undefined;
         updateInput.dailyQuota = public_profile.daily_quota ?? undefined;
         updateInput.weeklyQuota = public_profile.weekly_quota ?? undefined;
-        updateInput.publishedAt = new Date();
-      }
-      if (exposure !== "public") {
-        updateInput.publishedAt = null;
       }
 
       const updated = await instanceService.update(id, updateInput);
 
-      // Side effects: sync search index
       let tunnelStatus: "opened" | "already_open" | "closed" = "already_open";
-      try {
-        if (updated!.exposure === "public") {
-          await fastify.search.indexInstance({
-            objectID: updated!.id,
-            id: updated!.id,
-            name: updated!.name,
-            type: updated!.type,
-            bundleRef: updated!.bundleRef ?? undefined,
-            status: updated!.status,
-            capabilities: updated!.capabilities,
-            ownerId: ownerSubjectUserId(updated!.ownerSubject),
-            runtimeDisplayName: updated!.runtimeDisplayName ?? undefined,
-            createdAt: updated!.createdAt.toISOString(),
-            publicName: updated!.publicName ?? undefined,
-            description: updated!.description ?? undefined,
-            tags: updated!.tags,
-            category: updated!.category ?? undefined,
-            featured: updated!.featured,
-            publishedAt: updated!.publishedAt?.toISOString(),
-          });
-        } else {
-          await fastify.search.deleteInstance(updated!.id);
-        }
-      } catch (err) {
-        fastify.log.warn(
-          { err },
-          "Failed to sync instance in Meilisearch during exposure update",
-        );
-      }
-
       // Notify runtime via tunnel control channel
       if (fastify.tunnelManager.isRuntimeConnected(instance.runtimeId)) {
         tunnelStatus = "opened";
@@ -634,12 +508,6 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       }
 
       await instanceService.delete(id);
-
-      try {
-        await fastify.search.deleteInstance(id);
-      } catch (err) {
-        fastify.log.warn({ err }, "Failed to delete instance from Meilisearch");
-      }
 
       return reply.status(204).send();
     },
@@ -756,231 +624,23 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // ── List public instances ──────────────────────────────────────────────────
-  fastify.get("/instances/public", async (request, reply) => {
-    const query = ListQuerySchema.safeParse(request.query);
-    if (!query.success) {
-      return reply
-        .status(400)
-        .send({
-          error: "Invalid query parameters",
-          details: query.error.format(),
-        });
-    }
-
-    const result = await instanceService.list({
-      exposure: "public",
-      status: query.data.status as InstanceStatus | undefined,
-      type: query.data.type as InstanceType | undefined,
-      page: query.data.page,
-      perPage: query.data.per_page,
-    });
-
-    return result;
-  });
-
-  // ── Search public instances ────────────────────────────────────────────────
-  fastify.get("/instances/public/search", async (request, reply) => {
-    const { q, page, per_page } = request.query as Record<string, string>;
-    const searchQuery = q ?? "";
-    const pageNum = Math.max(1, Number(page ?? 1));
-    const perPageNum = Math.min(100, Math.max(1, Number(per_page ?? 20)));
-
-    const result = await fastify.search.searchInstances(searchQuery, {
-      page: pageNum - 1,
-      hitsPerPage: perPageNum,
-      filter: ["exposure = public"],
-    });
-
-    return {
-      items: result.hits,
-      total: result.total,
-      page: result.page,
-      perPage: result.perPage,
-      totalPages: Math.ceil(result.total / result.perPage),
-    };
-  });
-
-  // ADR-059: the web-facing "accessible pekos" endpoint moved to
-  // `public-pekos.ts` as `GET /v1/me/accessible-pekos` (clean rename —
-  // the old `/v1/me/accessible-principals` path 404s).
-
-  // ── Public discovery: search ───────────────────────────────────────────────
-  fastify.get("/discovery/search", async (request, reply) => {
-    const { q, category, sort, page, per_page } = request.query as Record<
-      string,
-      string
-    >;
-    const searchQuery = q ?? "";
-    const pageNum = Math.max(1, Number(page ?? 1));
-    const perPageNum = Math.min(100, Math.max(1, Number(per_page ?? 20)));
-
-    const meiliFilters: string[] = ["exposure = public"];
-    if (category) meiliFilters.push(`category = ${category}`);
-
-    const sortBy: string[] = [];
-    if (sort === "trending") {
-      // Meilisearch doesn't have native trending; fallback to createdAt desc
-      sortBy.push("createdAt:desc");
-    } else if (sort === "new") {
-      sortBy.push("publishedAt:desc");
-    } else if (sort === "featured") {
-      meiliFilters.push("featured = true");
-      sortBy.push("createdAt:desc");
-    } else {
-      sortBy.push("createdAt:desc");
-    }
-
-    const result = await fastify.search.searchInstances(searchQuery, {
-      page: pageNum - 1,
-      hitsPerPage: perPageNum,
-      filter: meiliFilters,
-      sort: sortBy,
-    });
-
-    // Hydrate owner info from DB
-    const hitIds = result.hits.map((h: any) => h.id as string).filter(Boolean);
-    const ownerRows =
-      hitIds.length > 0
-        ? await db
-            .select({
-              id: instances.id,
-              namespace: users.namespace,
-              displayName: users.displayName,
-              avatarUrl: users.avatarUrl,
-              pekoAvatar: instances.avatar,
-            })
-            .from(instances)
-            // Post-H1: typed `owner_subject` JSONB. `users.id` cast
-            // to text matches `owner_subject->>'id'` for user-owned
-            // instances; principal-owned instances drop out via
-            // innerJoin.
-            .innerJoin(
-              users,
-              sql`${users.id}::text = ${instances.ownerSubject}->>'id'`,
-            )
-            .where(inArray(instances.id, hitIds))
-        : [];
-
-    const ownerMap = new Map(ownerRows.map((r) => [r.id, r]));
-
-    return {
-      hits: result.hits.map((h: any) => {
-        const owner = ownerMap.get(h.id);
-        return {
-          id: h.id,
-          publicName: h.publicName ?? h.name,
-          description: h.description,
-          ownerName: owner?.displayName ?? owner?.namespace ?? "unknown",
-          // `ownerName` is the *display* name and is not addressable. The
-          // share URL `/peko/:owner/:pekoName` resolves `:owner` against
-          // `users.namespace`, so the SPA needs both: `ownerNamespace`
-          // for the link, `ownerName` for the label.
-          ownerNamespace: owner?.namespace ?? null,
-          ownerAvatarUrl: owner?.avatarUrl ?? null,
-          // Read from the row, not the search index: the runtime
-          // re-announces it whenever the owner changes it.
-          avatar: owner?.pekoAvatar ?? null,
-          category: h.category,
-          tags: h.tags ?? [],
-          status: h.status,
-          publishedAt: h.publishedAt,
-          featured: h.featured ?? false,
-        };
+  // ── Retired: listing, searching and featuring pekos (hub ADR-009 D2) ───────
+  // Public pekos are reachable only by their exact ID, `@owner/name`
+  // (`GET /v1/public/pekos/:owner/:name`), never enumerated. These paths
+  // answer 410 so an older client can say why its list is empty.
+  for (const path of [
+    "/instances/public",
+    "/instances/public/search",
+    "/discovery/search",
+    "/discovery/feed/:feed",
+  ]) {
+    fastify.get(path, async (_request, reply) =>
+      reply.status(410).send({
+        error: "Pekos are not listed. Look one up by its ID, like @alice/ada.",
+        code: "pekos_not_listed",
       }),
-      total: result.total,
-      page: result.page,
-    };
-  });
-
-  // ── Public discovery: curated feeds ────────────────────────────────────────
-  fastify.get("/discovery/feed/:feed", async (request, reply) => {
-    const { feed } = request.params as { feed: string };
-    const { page, per_page } = request.query as Record<string, string>;
-    const pageNum = Math.max(1, Number(page ?? 1));
-    const perPageNum = Math.min(100, Math.max(1, Number(per_page ?? 20)));
-
-    if (!["trending", "new", "featured"].includes(feed)) {
-      return reply
-        .status(400)
-        .send({
-          error: "Invalid feed. Must be one of: trending, new, featured",
-        });
-    }
-
-    const meiliFilters: string[] = ["exposure = public"];
-    const sortBy: string[] = [];
-
-    if (feed === "trending") {
-      sortBy.push("createdAt:desc");
-    } else if (feed === "new") {
-      sortBy.push("publishedAt:desc");
-    } else if (feed === "featured") {
-      meiliFilters.push("featured = true");
-      sortBy.push("createdAt:desc");
-    }
-
-    const result = await fastify.search.searchInstances("", {
-      page: pageNum - 1,
-      hitsPerPage: perPageNum,
-      filter: meiliFilters,
-      sort: sortBy,
-    });
-
-    const hitIds = result.hits.map((h: any) => h.id as string).filter(Boolean);
-    const ownerRows =
-      hitIds.length > 0
-        ? await db
-            .select({
-              id: instances.id,
-              namespace: users.namespace,
-              displayName: users.displayName,
-              avatarUrl: users.avatarUrl,
-              pekoAvatar: instances.avatar,
-            })
-            .from(instances)
-            // Post-H1: typed `owner_subject` JSONB. `users.id` cast
-            // to text matches `owner_subject->>'id'` for user-owned
-            // instances; principal-owned instances drop out via
-            // innerJoin.
-            .innerJoin(
-              users,
-              sql`${users.id}::text = ${instances.ownerSubject}->>'id'`,
-            )
-            .where(inArray(instances.id, hitIds))
-        : [];
-
-    const ownerMap = new Map(ownerRows.map((r) => [r.id, r]));
-
-    return {
-      hits: result.hits.map((h: any) => {
-        const owner = ownerMap.get(h.id);
-        return {
-          id: h.id,
-          publicName: h.publicName ?? h.name,
-          description: h.description,
-          ownerName: owner?.displayName ?? owner?.namespace ?? "unknown",
-          // `ownerName` is the *display* name and is not addressable. The
-          // share URL `/peko/:owner/:pekoName` resolves `:owner` against
-          // `users.namespace`, so the SPA needs both: `ownerNamespace`
-          // for the link, `ownerName` for the label.
-          ownerNamespace: owner?.namespace ?? null,
-          ownerAvatarUrl: owner?.avatarUrl ?? null,
-          // Read from the row, not the search index: the runtime
-          // re-announces it whenever the owner changes it.
-          avatar: owner?.pekoAvatar ?? null,
-          category: h.category,
-          tags: h.tags ?? [],
-          status: h.status,
-          publishedAt: h.publishedAt,
-          featured: h.featured ?? false,
-        };
-      }),
-      total: result.total,
-      page: result.page,
-      feed,
-    };
-  });
+    );
+  }
 
   // ADR-059: the public peko page + public chat proxy moved to
   // `public-pekos.ts` as `/v1/public/pekos/:owner/:pekoName[/chat]`

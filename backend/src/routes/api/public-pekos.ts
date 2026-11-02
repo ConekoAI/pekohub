@@ -3,7 +3,7 @@ import { db } from "../../db/index.js";
 import { instances, users } from "../../db/schema.js";
 import { eq, and, sql, desc, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { instanceService, AmbiguousPrincipalReference, type InstanceStatus } from "../../services/instances.js";
+import { instanceService, type InstanceStatus } from "../../services/instances.js";
 import { readOrSetVisitor } from "../../services/visitor-cookie.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -43,13 +43,9 @@ export default async function publicPekoRoutes(fastify: FastifyInstance) {
       return reply.status(404).send({ error: "Owner not found" });
     }
 
-    // Use the same owner/name resolver as directory lookup and chat.
-    let instance;
-    try { instance = await instanceService.getByHandle(owner, pekoName); }
-    catch (error) {
-      if (error instanceof AmbiguousPrincipalReference) return reply.status(409).send({ error: error.message });
-      throw error;
-    }
+    // `@owner/name`, by the same resolver as directory lookup and chat:
+    // the newest public peko of that name (hub ADR-009 D3).
+    let instance = await instanceService.getByHandle(owner, pekoName);
     if (instance && instance.exposure !== "public") instance = null;
 
     if (!instance) {
@@ -127,12 +123,7 @@ export default async function publicPekoRoutes(fastify: FastifyInstance) {
         return reply.status(404).send({ error: "Owner not found" });
       }
 
-      let instance;
-      try { instance = await instanceService.getByHandle(owner, pekoName); }
-      catch (error) {
-        if (error instanceof AmbiguousPrincipalReference) return reply.status(409).send({ error: error.message });
-        throw error;
-      }
+      let instance = await instanceService.getByHandle(owner, pekoName);
       if (instance && instance.exposure !== "public") instance = null;
 
       if (!instance) {

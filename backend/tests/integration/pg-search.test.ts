@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import { createTestDb, resetTables } from "../fixtures/db.js";
-import { createBundle, createInstance, createUser } from "../fixtures/factories.js";
+import { createBundle } from "../fixtures/factories.js";
 import type { TestDb } from "../fixtures/db.js";
 import { createPostgresSearch, parseFilters } from "../../src/services/pg-search.js";
 import type { SearchService } from "../../src/plugins/search.js";
@@ -66,6 +66,19 @@ describe("Postgres search", () => {
     expect((await search.search("")).total).toBe(2);
   });
 
+  it("offers each seed its own version, whatever the row ids", async () => {
+    // Ids interleave: one seed's version row id equals the other seed's id.
+    await seed("ada", "Reads papers", [["1.2.0", false]]);
+    await seed("bob", "Reads papers too", [["0.1.0", false]]);
+    await seed("cy", "Reads papers three", [["3.0.0", false]]);
+    const result = await search.search("papers");
+    expect(Object.fromEntries(result.hits.map((hit) => [hit.name, hit.version]))).toEqual({
+      ada: "1.2.0",
+      bob: "0.1.0",
+      cy: "3.0.0",
+    });
+  });
+
   it("matches a query literally, not as a LIKE pattern", async () => {
     await seed("ada", "Reads papers", [["1.0.0", false]]);
     expect((await search.search("%")).total).toBe(0);
@@ -77,68 +90,12 @@ describe("Postgres search", () => {
     expect((await search.search("")).total).toBe(0);
   });
 
-  it("filters, sorts, and pages public pekos", async () => {
-    const alice = await createUser(testDb.client, { namespace: "alice" });
-    const owner = { kind: "user", id: alice.id };
-    await createInstance(testDb.client, {
-      ownerSubject: owner,
-      name: "ada",
-      publicName: "Ada",
-      description: "Research partner",
-      exposure: "public",
-      category: "research",
-      featured: true,
-      publishedAt: new Date("2026-10-01T00:00:00Z"),
-    } as never);
-    await createInstance(testDb.client, {
-      ownerSubject: owner,
-      name: "bob",
-      description: "Travel research",
-      exposure: "public",
-      category: "travel",
-      publishedAt: new Date("2026-10-02T00:00:00Z"),
-    } as never);
-    await createInstance(testDb.client, {
-      ownerSubject: owner,
-      name: "carol",
-      description: "Private research",
-      exposure: "private",
-    } as never);
-
-    const all = await search.searchInstances("research", {
-      filter: ["exposure = public"],
-      sort: ["publishedAt:desc"],
-    });
-    expect(all.total).toBe(2);
-    expect(all.hits.map((h) => h.name)).toEqual(["bob", "ada"]);
-    expect(all.hits[1]).toMatchObject({ publicName: "Ada", ownerId: alice.id, featured: true });
-
-    const featured = await search.searchInstances("", {
-      filter: ["exposure = public", "featured = true"],
-    });
-    expect(featured.hits.map((h) => h.name)).toEqual(["ada"]);
-
-    const travel = await search.searchInstances("", {
-      filter: ["exposure = public", "category = travel"],
-    });
-    expect(travel.hits.map((h) => h.name)).toEqual(["bob"]);
-
-    const second = await search.searchInstances("", {
-      filter: ["exposure = public"],
-      sort: ["publishedAt:desc"],
-      page: 1,
-      hitsPerPage: 1,
-    });
-    expect(second).toMatchObject({ total: 2, page: 2, perPage: 1 });
-    expect(second.hits.map((h) => h.name)).toEqual(["ada"]);
-  });
-
   it("refuses a filter it can't express", async () => {
     expect(parseFilters(["a = b", ["c = 'd'"]])).toEqual([["a", "b"], ["c", "d"]]);
-    await expect(search.searchInstances("", { filter: ["ownerId = x"] })).rejects.toThrow(
+    await expect(search.search("", { filter: ["exposure = public"] })).rejects.toThrow(
       /unsupported search filter field/,
     );
-    await expect(search.searchInstances("", { filter: ["featured > 1"] })).rejects.toThrow(
+    await expect(search.search("", { filter: ["bundleType > 1"] })).rejects.toThrow(
       /unsupported search filter/,
     );
   });

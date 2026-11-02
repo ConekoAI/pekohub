@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "description": "Pages Functions write link previews into page loads (functions/); built assets never need one.",
+  "include": ["/*"],
+  "exclude": ["/assets/*", "/favicon.svg"]
+}
