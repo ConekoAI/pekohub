@@ -67,6 +67,10 @@ export const CounterName = {
   HubHistoryForwarded: "hub.channel_history.forwarded",
   HubHistoryRequestRejectedPerson: "hub.channel_history.rejected_person",
   HubHistoryRequestRateLimited: "hub.channel_history.rate_limited",
+  HubGroupInvitationForwarded: "hub.group_invitation.forwarded",
+  HubGroupInvitationRateLimited: "hub.group_invitation.rate_limited",
+  HubGroupJoinForwarded: "hub.group_join.forwarded",
+  HubGroupJoinRejectedPerson: "hub.group_join.rejected_person",
   // Runtime ADR-090 D3: an envelope speaking for a person
   // (`user:hub:<account>`) from a runtime registered to another account.
   HubChannelEventRejectedPersonAccount: "hub.channel_event.rejected_person_account",

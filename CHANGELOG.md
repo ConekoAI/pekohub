@@ -2,6 +2,12 @@
 
 ## 0.1.0 — pre-launch
 
+- People can be invited to groups on other computers (peko-runtime ADR-092 D2). The relay
+  carries `tunnel_group_invitation`, which a group's home sends to a person's account and
+  the Hub delivers to every runtime registered to that account (an offline one wakes the
+  home when it connects; at most 60 a minute per runtime), and `tunnel_group_join`, the
+  person's answer, relayed to the home only from a runtime registered to that person.
+  Neither is stored. Metrics: `hub.group_invitation.*`, `hub.group_join.*`.
 - Your history with a remote peko follows you (peko-runtime ADR-091). The relay carries two
   new tunnel messages, `tunnel_channel_history_request` and `tunnel_channel_history`: a
   person's runtime asks a peko's host for a page of their conversation, and the host answers.

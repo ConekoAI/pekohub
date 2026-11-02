@@ -417,7 +417,37 @@ export type TunnelMessage =
   // their DM, and the host answers. Relayed like channel envelopes; the
   // request only from the runtime registered to the person's account.
   | ({ type: "tunnel_channel_history_request" } & TunnelChannelHistoryRequestPayload)
-  | ({ type: "tunnel_channel_history" } & TunnelChannelHistoryPayload);
+  | ({ type: "tunnel_channel_history" } & TunnelChannelHistoryPayload)
+  // Runtime ADR-092 D2: a group's home invites a person by account (the
+  // Hub delivers it to each runtime registered to that account), and the
+  // person answers from one of them.
+  | ({ type: "tunnel_group_invitation" } & TunnelGroupInvitationPayload)
+  | ({ type: "tunnel_group_join" } & TunnelGroupJoinPayload);
+
+/** Runtime ADR-092 D2: a group's invitation to a person, by account. */
+export interface TunnelGroupInvitationPayload {
+  requestId: string;
+  sourceRuntimeId: string;
+  /** `user:hub:<account>`: delivered to every runtime registered to it. */
+  recipientAccount: string;
+  channelId: string;
+  name: string;
+  inviter: string;
+  initialMembers: InitialMember[];
+  signature: string;
+}
+
+/** Runtime ADR-092 D2: a person's answer, to the group's home. */
+export interface TunnelGroupJoinPayload {
+  requestId: string;
+  sourceRuntimeId: string;
+  recipientRuntimeId: string;
+  /** The person, `user:hub:<account>`. */
+  sourcePrincipalDid: string;
+  channelId: string;
+  accept: boolean;
+  signature: string;
+}
 
 /** Runtime ADR-091 D2: one page of a person's DM, asked of its host. */
 export interface TunnelChannelHistoryRequestPayload {
