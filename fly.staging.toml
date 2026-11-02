@@ -21,6 +21,7 @@ primary_region = "iad" # next to Neon's aws-us-east-1
 
 [build]
   dockerfile = "backend/Dockerfile"
+  ignorefile = "backend/Dockerfile.dockerignore"
 
 [deploy]
   # drizzle-kit is a runtime dependency; the journal makes this idempotent.

@@ -1,0 +1,13 @@
+# Keep the build context small: the Dockerfile installs its own deps.
+**/node_modules
+**/dist
+**/.turbo
+.git
+.claude
+functions
+docs
+infra
+nginx
+*.md
+!backend/drizzle/**
+frontend
