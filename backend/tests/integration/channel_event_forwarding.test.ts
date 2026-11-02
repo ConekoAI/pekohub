@@ -655,3 +655,103 @@ describe("Relaying a person's history requests", () => {
     expect(socketP.sent.filter((m) => m.type === "peer_runtime_online")).toHaveLength(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Runtime ADR-092 D2: a group's invitation reaches every runtime of the
+// invited account; the person's answer comes only from one of theirs.
+// ---------------------------------------------------------------------------
+
+describe("Relaying group invitations and answers", () => {
+  let testDb: TestDb;
+
+  beforeAll(async () => {
+    testDb = await createTestDb();
+  });
+
+  beforeEach(async () => {
+    await resetTables(testDb.client);
+    metrics.reset();
+  });
+
+  afterAll(async () => {
+    await testDb.client.close();
+  });
+
+  async function connect(tunnelManager: TunnelManager, id: { did: string; privateKey: Uint8Array }) {
+    const socket = new MockWebSocket();
+    tunnelManager.handleSocket(socket.asWebSocket());
+    await completeHandshake(socket, id.did, id.privateKey);
+    return socket;
+  }
+
+  async function setup() {
+    const { tunnelManager } = await buildForwardingTestApp(testDb);
+    const person = await createUser(testDb.client, { namespace: "alice" });
+    const host = await createUser(testDb.client, { namespace: "bob" });
+    const laptop = makeRuntimeIdentity();
+    const desktop = makeRuntimeIdentity();
+    const phone = makeRuntimeIdentity();
+    const home = makeRuntimeIdentity();
+    for (const id of [laptop, desktop, phone]) await seedRuntime(testDb, id.did, person.id);
+    await seedRuntime(testDb, home.did, host.id);
+    const socketHome = await connect(tunnelManager, home);
+    const socketLaptop = await connect(tunnelManager, laptop);
+    const socketDesktop = await connect(tunnelManager, desktop);
+    return { tunnelManager, person, host, laptop, desktop, phone, home, socketHome, socketLaptop, socketDesktop };
+  }
+
+  const invitation = (from: string, account: string) => ({
+    type: "tunnel_group_invitation" as const,
+    requestId: "ginv-1",
+    sourceRuntimeId: from,
+    recipientAccount: `user:hub:${account}`,
+    channelId: "chan_abcdefgh",
+    name: "book club",
+    inviter: "principal:hub:x",
+    initialMembers: [],
+    signature: "x",
+  });
+
+  const join = (from: string, to: string, account: string) => ({
+    type: "tunnel_group_join" as const,
+    requestId: "gjoin-1",
+    sourceRuntimeId: from,
+    recipientRuntimeId: to,
+    sourcePrincipalDid: `user:hub:${account}`,
+    channelId: "chan_abcdefgh",
+    accept: true,
+    signature: "x",
+  });
+
+  const of = (socket: MockWebSocket, type: string) => socket.sent.filter((m) => m.type === type);
+
+  it("delivers an invitation to every connected runtime of the account, and wakes the home for the others", async () => {
+    const { tunnelManager, person, home, phone, socketHome, socketLaptop, socketDesktop } = await setup();
+    socketHome.triggerMessage(invitation(home.did, person.id));
+    await flush();
+    expect(of(socketLaptop, "tunnel_group_invitation")).toHaveLength(1);
+    expect(of(socketDesktop, "tunnel_group_invitation")).toHaveLength(1);
+    expect(of(socketHome, "tunnel_group_invitation")).toHaveLength(0);
+    expect(tunnelManager.waitingOn(home.did)).toEqual([phone.did]);
+    expect(metrics.snapshot()[CounterName.HubGroupInvitationForwarded]).toBe(2);
+  });
+
+  it("relays a person's answer from their own runtime only", async () => {
+    const { person, host, home, laptop, socketHome, socketLaptop } = await setup();
+    socketLaptop.triggerMessage(join(laptop.did, home.did, person.id));
+    socketLaptop.triggerMessage({ ...join(laptop.did, home.did, host.id), requestId: "gjoin-2" });
+    await flush();
+    const answers = of(socketHome, "tunnel_group_join");
+    expect(answers).toHaveLength(1);
+    expect(answers[0]).toMatchObject({ requestId: "gjoin-1" });
+    expect(metrics.snapshot()[CounterName.HubGroupJoinRejectedPerson]).toBe(1);
+  });
+
+  it("closes a runtime that claims another runtime's id", async () => {
+    const { person, home, laptop, socketLaptop } = await setup();
+    socketLaptop.triggerMessage(invitation(home.did, person.id));
+    await flush();
+    expect(socketLaptop.closed).toBe(true);
+    void laptop;
+  });
+});

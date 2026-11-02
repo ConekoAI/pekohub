@@ -41,6 +41,8 @@ const MAX_WAITING_RECIPIENTS = 10_000;
 const MAX_WAITERS_PER_RECIPIENT = 1_000;
 // Runtime ADR-091 D7: a catch-up pass is at most 20 pages per DM.
 const HISTORY_REQUESTS_PER_MINUTE = 120;
+// Runtime ADR-092 D2: invitations a group home may send a minute.
+const INVITATIONS_PER_MINUTE = 60;
 const REAPER_INTERVAL_MS = 30_000;
 const CHALLENGE_NONCE_BYTES = 32;
 /** ADR-058 D4: freshness leeways for the announce `principalPop`
@@ -148,6 +150,8 @@ export class TunnelManager {
   private waiting = new Map<string, Map<string, number>>();
   /** Recent history request times per runtime (runtime ADR-091 D7). */
   private historyRequests = new Map<string, number[]>();
+  /** Recent group invitation times per runtime (runtime ADR-092 D2). */
+  private invitationsSent = new Map<string, number[]>();
   private static readonly MAX_TRACKED_CHALLENGES = 4_096;
 
   constructor(private fastify: FastifyInstance) {}
@@ -443,6 +447,100 @@ export class TunnelManager {
     this.sendMessage(target.socket, msg);
   }
 
+  /**
+   * Runtime ADR-092 D2: a group's home invites a person by account. The
+   * source must be the authenticated runtime; the invitation goes to every
+   * runtime registered to that account that is connected, and an offline
+   * one wakes the home when it connects (the home's outbox resends). At
+   * most `INVITATIONS_PER_MINUTE` a minute per runtime. Never stored.
+   */
+  private async handleGroupInvitation(
+    conn: RuntimeConnection,
+    msg: Extract<TunnelMessage, { type: "tunnel_group_invitation" }>,
+  ): Promise<void> {
+    if (conn.runtimeId !== msg.sourceRuntimeId) {
+      this.fastify.log.warn(
+        { connRuntime: conn.runtimeId, claim: msg.sourceRuntimeId },
+        "group invitation source allowlist mismatch — closing tunnel (impersonation)",
+      );
+      this.closeConnection(conn, "source allowlist mismatch");
+      this.handleDisconnect(conn);
+      return;
+    }
+    if (!msg.recipientAccount.startsWith("user:hub:")) return;
+    if (!this.allowInvitation(conn.runtimeId)) {
+      metrics.inc(CounterName.HubGroupInvitationRateLimited);
+      return;
+    }
+    const account = msg.recipientAccount.slice("user:hub:".length);
+    const targets = await this.runtimesOfAccount(account);
+    for (const runtimeId of targets) {
+      if (runtimeId === conn.runtimeId) continue;
+      const target = this.getConnection(runtimeId);
+      if (target) {
+        metrics.inc(CounterName.HubGroupInvitationForwarded);
+        this.sendMessage(target.socket, msg);
+      } else {
+        this.noteWaiting(runtimeId, conn.runtimeId);
+      }
+    }
+  }
+
+  /**
+   * Runtime ADR-092 D2: a person answers a group's invitation, relayed to
+   * the group's home only from a runtime registered to that person.
+   */
+  private async handleGroupJoin(
+    conn: RuntimeConnection,
+    msg: Extract<TunnelMessage, { type: "tunnel_group_join" }>,
+  ): Promise<void> {
+    if (conn.runtimeId !== msg.sourceRuntimeId) {
+      this.fastify.log.warn(
+        { connRuntime: conn.runtimeId, claim: msg.sourceRuntimeId },
+        "group join source allowlist mismatch — closing tunnel (impersonation)",
+      );
+      this.closeConnection(conn, "source allowlist mismatch");
+      this.handleDisconnect(conn);
+      return;
+    }
+    if (
+      !msg.sourcePrincipalDid.startsWith("user:hub:") ||
+      !(await this.speaksForItsOwnPerson(conn, msg.sourcePrincipalDid))
+    ) {
+      metrics.inc(CounterName.HubGroupJoinRejectedPerson);
+      return;
+    }
+    const target = this.getConnection(msg.recipientRuntimeId);
+    if (!target) {
+      this.noteWaiting(msg.recipientRuntimeId, conn.runtimeId);
+      return;
+    }
+    metrics.inc(CounterName.HubGroupJoinForwarded);
+    this.sendMessage(target.socket, msg);
+  }
+
+  /** The runtimes registered to `account` (runtime ADR-081 D3). */
+  protected async runtimesOfAccount(account: string): Promise<string[]> {
+    const rows = await db
+      .select({ runtimeDid: runtimes.runtimeDid })
+      .from(runtimes)
+      .where(eq(runtimes.ownerId, account));
+    return rows.map((r) => r.runtimeDid);
+  }
+
+  /** Sliding one-minute window of group invitations per runtime. */
+  private allowInvitation(runtimeId: string): boolean {
+    const now = Date.now();
+    const recent = (this.invitationsSent.get(runtimeId) ?? []).filter((t) => now - t < 60_000);
+    if (recent.length >= INVITATIONS_PER_MINUTE) {
+      this.invitationsSent.set(runtimeId, recent);
+      return false;
+    }
+    recent.push(now);
+    this.invitationsSent.set(runtimeId, recent);
+    return true;
+  }
+
   /** Sliding one-minute window of history requests per runtime. */
   private allowHistoryRequest(runtimeId: string): boolean {
     const now = Date.now();
@@ -680,6 +778,18 @@ export class TunnelManager {
         // its local mirror via `ChannelStore::join_remote` (no
         // follow-up `peek` round-trip needed).
         await this.handleChannelInviteForward(conn, msg);
+        break;
+      }
+
+      case "tunnel_group_invitation": {
+        // Runtime ADR-092 D2: deliver to every runtime of the account.
+        await this.handleGroupInvitation(conn, msg);
+        break;
+      }
+
+      case "tunnel_group_join": {
+        // Runtime ADR-092 D2: a person's answer, from their own runtime.
+        await this.handleGroupJoin(conn, msg);
         break;
       }
 
@@ -1451,6 +1561,7 @@ export class TunnelManager {
     if (this.connections.get(conn.runtimeId) === conn) {
       this.connections.delete(conn.runtimeId);
       this.historyRequests.delete(conn.runtimeId);
+      this.invitationsSent.delete(conn.runtimeId);
     }
 
     // Mark hosted instances offline and propagate via tunnel if still connected
