@@ -2,6 +2,13 @@
 
 ## 0.1.0 — pre-launch
 
+- A message to a runtime that was offline goes out as soon as that runtime reconnects. When
+  the relay drops a channel envelope because its recipient is offline, it remembers that the
+  sender waits on it (runtime ids only, in memory, up to 30 days; never the envelope). When the
+  recipient connects, each waiting sender still connected gets `peer_runtime_online
+  { runtimeId }` and resends from its outbox at once, instead of at its next backoff tick (up to
+  an hour). Needs peko-runtime with the matching change (peko-runtime#543). Metric:
+  `hub.peer_runtime_online.sent`.
 - People, pekos and seeds share one search space with one ID format per kind (ADR-009):
   a person is `@alice`, a peko `@alice/ada`, a seed `alice/ada` (or `alice/ada@1.2.0`), and
   each ID is its page: `pekohub.ai/@alice`, `/@alice/ada`, `/alice/ada`. Old `/peko/…`,
