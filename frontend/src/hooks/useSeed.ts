@@ -14,11 +14,11 @@ export function useSeed(owner: string, name: string) {
   });
 }
 
-/** Newest seeds first — the registry's default listing. */
-export function useSeedList(page = 1, perPage = 24) {
+/** Newest seeds first — the registry's default listing; `owner` for one person's. */
+export function useSeedList(page = 1, perPage = 24, owner?: string) {
   return useQuery({
-    queryKey: ['seeds', page, perPage],
-    queryFn: () => api.listSeeds({ page, perPage }),
+    queryKey: ['seeds', page, perPage, owner ?? null],
+    queryFn: () => api.listSeeds({ page, perPage, owner }),
     staleTime: 1000 * 60,
   });
 }

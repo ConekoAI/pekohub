@@ -46,8 +46,8 @@ export function AppShell({ children }: { children: ReactNode }) {
               <button onClick={() => setSignInOpen(true)} className="btn-primary">
                 Sign in
               </button>
-              <Link to="/pekos" className="btn-secondary">
-                Browse the directory
+              <Link to="/seeds" className="btn-secondary">
+                Browse seeds
               </Link>
             </div>
             <p className="mt-5 font-mono text-2xs text-slate-600">

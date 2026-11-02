@@ -34,6 +34,11 @@ describe("Hub origins", () => {
         apiOrigin: "https://api.hub.test",
         webOrigin: "https://hub.test",
         tunnelUrl: "wss://api.hub.test/v1/tunnel",
+        pages: {
+          person: "https://hub.test/@{owner}",
+          peko: "https://hub.test/@{owner}/{name}",
+          seed: "https://hub.test/{owner}/{name}",
+        },
       });
     } finally {
       delete process.env.PUBLIC_ORIGIN;
@@ -58,7 +63,7 @@ describe("Hub origins", () => {
         headers: await authHeaders(owner),
       });
       expect(res.statusCode).toBe(200);
-      expect(res.json().shareUrl).toBe("https://hub.test/peko/alice/helper");
+      expect(res.json().shareUrl).toBe("https://hub.test/@alice/helper");
     } finally {
       delete process.env.FRONTEND_URL;
     }

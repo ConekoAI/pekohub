@@ -1,9 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import {
   clip,
   escapeHtml,
   headTags,
+  pagePreview,
   pekoPreview,
+  personPreview,
   seedPreview,
   withPreview,
   type Context,
@@ -15,12 +17,12 @@ describe('link previews (Pages Functions)', () => {
       { liveInstance: { publicName: 'Ada', description: 'Reads   papers\nand keeps notes', owner: { name: 'Alice' } } },
       'alice',
       'ada',
-      'https://pekohub.ai/peko/alice/ada',
+      'https://pekohub.ai/@alice/ada',
     );
     expect(preview).toEqual({
       title: "Ada — Alice's peko on PekoHub",
       description: 'Reads papers and keeps notes',
-      url: 'https://pekohub.ai/peko/alice/ada',
+      url: 'https://pekohub.ai/@alice/ada',
       type: 'profile',
     });
     expect(pekoPreview({ error: 'Peko not found' }, 'a', 'b', 'u')).toBeNull();
@@ -31,6 +33,49 @@ describe('link previews (Pages Functions)', () => {
     expect(preview?.title).toBe('ada — a seed by alice on PekoHub');
     expect(preview?.description).toContain('grow your own peko');
     expect(seedPreview(null, 'a', 'b', 'u')).toBeNull();
+  });
+
+  it("builds a person's preview, naming no pekos", () => {
+    const preview = personPreview({ handle: 'alice', displayName: 'Alice' }, 'alice', 'https://pekohub.ai/@alice');
+    expect(preview).toEqual({
+      title: 'Alice (@alice) on PekoHub',
+      description: 'Alice on PekoHub, and the seeds they publish.',
+      url: 'https://pekohub.ai/@alice',
+      type: 'profile',
+    });
+    expect(personPreview({ error: 'No one has that handle' }, 'x', 'u')).toBeNull();
+  });
+
+  describe('a two-segment page is a peko or a seed by its ID', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    function stubApi() {
+      const fetched: string[] = [];
+      vi.stubGlobal('fetch', async (url: string) => {
+        fetched.push(url);
+        const body = url.includes('/v1/public/pekos/')
+          ? { liveInstance: { publicName: 'Ada', owner: { name: 'Alice' } } }
+          : { name: 'ada', displayName: 'Ada seed' };
+        return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+      });
+      return fetched;
+    }
+
+    it('/@alice/ada looks up the public peko', async () => {
+      const fetched = stubApi();
+      const preview = await pagePreview('https://api.test', '@Alice', 'ada', 'u');
+      expect(fetched).toEqual(['https://api.test/v1/public/pekos/alice/ada']);
+      expect(preview?.title).toBe("Ada — Alice's peko on PekoHub");
+    });
+
+    it('/alice/ada@1.2.0 looks up the seed', async () => {
+      const fetched = stubApi();
+      const preview = await pagePreview('https://api.test', 'alice', 'ada@1.2.0', 'u');
+      expect(fetched).toEqual(['https://api.test/v1/seeds/alice/ada']);
+      expect(preview?.title).toBe('Ada seed — a seed by alice on PekoHub');
+    });
   });
 
   it('escapes everything that lands in the head', () => {
@@ -53,7 +98,7 @@ describe('link previews (Pages Functions)', () => {
       headers: { 'content-type': 'text/html' },
     });
     const context: Context = {
-      request: new Request('https://pekohub.ai/peko/alice/missing'),
+      request: new Request('https://pekohub.ai/@alice/missing'),
       env: {},
       params: { owner: 'alice', name: 'missing' },
       next: async () => page,

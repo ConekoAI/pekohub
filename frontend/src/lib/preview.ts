@@ -2,9 +2,9 @@
  * Link previews for share links, used by the Cloudflare Pages Functions in
  * `functions/` (not by the app).
  *
- * The website is a client-rendered app, so a crawler fetching
- * `/peko/<owner>/<name>` or `/seeds/<owner>/<name>` sees only the generic
- * `index.html`. These functions look the page up on the API and write its
+ * The website is a client-rendered app, so a crawler fetching a page —
+ * `/@alice` (a person), `/@alice/ada` (a peko), `/alice/ada` (a seed);
+ * hub ADR-009 — sees only the generic `index.html`. These functions look the page up on the API and write its
  * own title, description, OpenGraph and Twitter tags, and canonical URL
  * into the page before it is served. Everything else is untouched.
  */
@@ -13,7 +13,7 @@ export interface Preview {
   title: string;
   description: string;
   url: string;
-  /** `profile` for a peko, `website` for a seed. */
+  /** `profile` for a person or peko, `website` for a seed. */
   type: 'profile' | 'website';
 }
 
@@ -70,6 +70,19 @@ export function pekoPreview(profile: unknown, owner: string, name: string, url: 
   return { title: `${shown} — ${ownerName}'s peko on PekoHub`, description, url, type: 'profile' };
 }
 
+/** A person's preview from `GET /v1/people/:handle`. Their pekos are never named. */
+export function personPreview(person: unknown, handle: string, url: string): Preview | null {
+  const p = person as Record<string, unknown> | null;
+  if (!p || typeof p.handle !== 'string') return null;
+  const shown = typeof p.displayName === 'string' && p.displayName ? p.displayName : `@${handle}`;
+  return {
+    title: `${shown} (@${p.handle}) on PekoHub`,
+    description: `${shown} on PekoHub, and the seeds they publish.`,
+    url,
+    type: 'profile',
+  };
+}
+
 /** A seed's preview from `GET /v1/seeds/:owner/:name`. */
 export function seedPreview(seed: unknown, owner: string, name: string, url: string): Preview | null {
   const s = seed as Record<string, unknown> | null;
@@ -103,6 +116,16 @@ export interface Context {
   next(): Promise<Response>;
 }
 
+/** A route param as written in the URL (`%40alice` is `@alice`). */
+function param(value: string | string[] | undefined): string {
+  const raw = String(value ?? '');
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
 /**
  * Serve the app with `lookup`'s preview written in. Any failure — the API
  * down, the page not found, a non-HTML asset — serves the page unchanged.
@@ -113,8 +136,8 @@ export async function withPreview(
 ): Promise<Response> {
   const page = await context.next();
   if (!(page.headers.get('content-type') ?? '').includes('text/html')) return page;
-  const owner = String(context.params.owner ?? '');
-  const name = String(context.params.name ?? '');
+  const owner = param(context.params.owner);
+  const name = param(context.params.name);
   const url = new URL(context.request.url);
   url.search = '';
   let preview: Preview | null = null;
@@ -134,6 +157,20 @@ export async function withPreview(
       },
     })
     .transform(page);
+}
+
+/**
+ * The preview for a two-segment page: `/@alice/ada` is a peko, `/alice/ada`
+ * (or `/alice/ada@1.2.0`) a seed. Pages routes both to one function.
+ */
+export async function pagePreview(api: string, first: string, second: string, url: string): Promise<Preview | null> {
+  const enc = encodeURIComponent;
+  if (first.startsWith('@')) {
+    const owner = first.slice(1).toLowerCase();
+    return pekoPreview(await fetchJson(`${api}/v1/public/pekos/${enc(owner)}/${enc(second)}`), owner, second, url);
+  }
+  const name = second.split('@')[0];
+  return seedPreview(await fetchJson(`${api}/v1/seeds/${enc(first)}/${enc(name)}`), first, name, url);
 }
 
 export async function fetchJson(url: string): Promise<unknown> {

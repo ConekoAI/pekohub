@@ -53,7 +53,7 @@ describe("Seed registry", () => {
     expect(body).toMatchObject({ owner: "alice", name: "ada", version: "1.0.0" });
     expect(body.digest).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(body.downloadUrl).toMatch(/\/v1\/seeds\/alice\/ada\/versions\/1\.0\.0\/seed\.toml$/);
-    expect(body.webUrl).toMatch(/\/seeds\/alice\/ada$/);
+    expect(body.webUrl).toMatch(/^https?:\/\/[^/]+\/alice\/ada$/);
 
     const detail = await app.inject({ method: "GET", url: "/v1/seeds/alice/ada" });
     expect(detail.statusCode).toBe(200);

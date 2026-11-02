@@ -1,5 +1,4 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
 import {
   ArrowRight,
   BrainCircuit,
@@ -9,13 +8,10 @@ import {
   Lock,
   MessagesSquare,
   ShieldCheck,
-  Sparkles,
   Sprout,
 } from 'lucide-react';
-import { api } from '~/lib/api';
 import { PageShell } from '~/components/PageShell';
 import { SearchBar } from '~/components/SearchBar';
-import { PekoCard } from '~/components/PekoCard';
 import { SeedCard } from '~/components/SeedCard';
 import { EmptyState, SectionHeading } from '~/components/ui';
 import { useSeedList } from '~/hooks/useSeed';
@@ -23,7 +19,8 @@ import { useSeedList } from '~/hooks/useSeed';
 /**
  * The front door. Most visitors arrive from a share link or a search and
  * have never heard of Peko: say what a peko is, get them to the desktop
- * download, and show what people have grown and published.
+ * download, and show the seeds people have published. Pekos are never
+ * shown here: they are found only by their exact ID (hub ADR-009).
  */
 export const Route = createFileRoute('/')({
   component: HomePage,
@@ -77,7 +74,7 @@ const FAQ = [
   },
   {
     q: 'Does PekoHub see my conversations?',
-    a: 'Conversations live on the computers taking part. PekoHub relays messages between computers without storing them, and lists the pekos you choose to make public.',
+    a: 'Conversations live on the computers taking part. PekoHub relays messages between computers without storing them. A peko you make public is reachable by its ID, like @alice/ada, and is never listed.',
   },
   {
     q: 'Which models does it use?',
@@ -91,13 +88,7 @@ const FAQ = [
 
 function HomePage() {
   const navigate = useNavigate();
-  const trending = useQuery({
-    queryKey: ['feed', 'trending'],
-    queryFn: () => api.discoveryFeed('trending', { perPage: 6 }),
-    staleTime: 1000 * 60 * 5,
-  });
   const seeds = useSeedList(1, 3);
-  const trendingHits = trending.data?.hits ?? [];
   const seedItems = seeds.data?.items ?? [];
 
   return (
@@ -119,8 +110,8 @@ function HomePage() {
               <Download className="h-4 w-4" />
               Download Peko
             </Link>
-            <Link to="/pekos" className="btn-secondary px-5 py-2.5">
-              Explore pekos
+            <Link to="/seeds" className="btn-secondary px-5 py-2.5">
+              Browse seeds
               <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
@@ -167,54 +158,19 @@ function HomePage() {
         </div>
       </section>
 
-      {/* ── Directory ────────────────────────────────────────────────── */}
+      {/* ── Find someone ─────────────────────────────────────────────── */}
       <section className="mt-24">
         <SectionHeading
-          eyebrow="directory"
-          title="Pekos people have made public"
-          description="Open one in Peko to message it."
-          action={
-            <Link to="/pekos" className="btn-secondary btn-sm">
-              View all
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
-          }
+          eyebrow="find"
+          title="Know someone's ID?"
+          description="People and pekos are found by their exact ID — PekoHub lists no one. Seeds can be searched by name."
         />
         <div className="mt-6 max-w-2xl">
           <SearchBar
-            onSearch={(query) => void navigate({ to: '/pekos', search: query ? { q: query } : {} })}
-            placeholder="Search pekos by name, description or tag…"
+            onSearch={(query) => void navigate({ to: '/search', search: { q: query || undefined } })}
+            placeholder="@alice, @alice/ada, or search seeds…"
             size="md"
           />
-        </div>
-        <div className="mt-6">
-          {trending.isLoading ? (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {[0, 1, 2].map((key) => (
-                <div key={key} className="card h-[15.5rem] p-5">
-                  <div className="skeleton h-4 w-2/3" />
-                  <div className="skeleton mt-3 h-3 w-1/3" />
-                  <div className="skeleton mt-5 h-3 w-full" />
-                </div>
-              ))}
-            </div>
-          ) : trendingHits.length === 0 ? (
-            <EmptyState
-              icon={<Sparkles className="h-5 w-5" />}
-              title={trending.isError ? 'The directory is resting' : 'No public pekos yet'}
-              body={
-                trending.isError
-                  ? 'PekoHub isn’t answering right now. Try again in a moment.'
-                  : 'Make one of yours public from Peko and it shows up here.'
-              }
-            />
-          ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {trendingHits.map((hit) => (
-                <PekoCard key={hit.id} hit={hit} />
-              ))}
-            </div>
-          )}
         </div>
       </section>
 

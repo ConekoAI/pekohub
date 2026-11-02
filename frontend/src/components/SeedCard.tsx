@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { ArrowUpRight, Cpu, Download } from 'lucide-react';
 import { compactNumber, relativeTime } from '~/lib/format';
+import { Badge } from '~/components/ui';
 
 /**
  * A seed in the registry: the stripped `principal.toml` a peko grows from
@@ -21,11 +22,12 @@ export interface SeedCardItem {
   updatedAt: string;
 }
 
-export function SeedCard({ item }: { item: SeedCardItem }) {
+/** `showKind`: label it a seed, where results mix kinds (search). */
+export function SeedCard({ item, showKind = false }: { item: SeedCardItem; showKind?: boolean }) {
   return (
     <Link
-      to="/seeds/$"
-      params={{ _splat: `${item.owner}/${item.name}` }}
+      to="/$owner/$name"
+      params={{ owner: item.owner, name: item.name }}
       className="card card-hover group flex flex-col p-5"
     >
       <header className="flex items-start gap-3">
@@ -33,9 +35,12 @@ export function SeedCard({ item }: { item: SeedCardItem }) {
           {item.avatar ?? <span className="font-mono text-xs text-iris-300">{item.name.slice(0, 2)}</span>}
         </span>
         <div className="min-w-0 flex-1">
-          <h3 className="truncate text-[15px] font-semibold tracking-tight text-slate-100">
-            {item.displayName ?? item.name}
-          </h3>
+          <div className="flex items-center gap-2">
+            <h3 className="truncate text-[15px] font-semibold tracking-tight text-slate-100">
+              {item.displayName ?? item.name}
+            </h3>
+            {showKind && <Badge tone="iris">seed</Badge>}
+          </div>
           <p className="truncate font-mono text-2xs text-slate-500">
             {item.owner}/{item.name}
           </p>

@@ -108,7 +108,8 @@ that carries `id`, `did`, `actor_key`, `owner`, `permissions`, `boot_state`, `st
 | `POST /v1/seeds` | Publish `{ seed, version, readme? }` (signed in). 422 explains a refused seed; 409 on a repeated version. |
 | `POST /v1/seeds/:owner/:name/versions/:version/deprecate` | `{ deprecated, message? }` (publisher). |
 | `DELETE /v1/seeds/:owner/:name[/versions/:version]` | Remove a version or the seed (publisher). |
-| `GET /v1/search?q=` | Full-text search over seeds. |
+| `GET /v1/search?q=` | One search space (ADR-009): an exact person or peko ID (`@alice`, `@alice/ada`) finds that one in `exact`, if it exists and is public; anything else is a full-text search over seeds in `items` (a seed ID, `alice/ada`, puts that seed — and a public peko `@alice/ada` — in `exact` first). |
+| `GET /v1/people/:handle` | A person's profile, by exact handle. Their seeds: `GET /v1/seeds?owner=`. |
 
 The OCI Distribution surface (`/v2/*`), the `/v1/bundles/*` API, the `/api/v1` aliases, and
 blob GC are gone: their only producer was the runtime registry client, deleted in runtime
@@ -136,21 +137,17 @@ A "peko" is a runtime-owned AI actor (`did:key:...`; wire field `principal_did`)
 `exposure` is one of:
 - `unexposed` — not visible to anyone; not chat-able.
 - `private` — chat-able only by subjects explicitly listed in `PrincipalConfig.permissions` on the runtime.
-- `public` — chat-able by anyone; indexed in `/v1/discovery/*`.
-- `unlisted` — chat-able by anyone with the URL; **not** indexed in discovery. The default for share-link use cases.
+- `public` — chat-able by anyone, and found by its exact ID, `@owner/name`. Never listed, featured, or searched by text (ADR-009).
 
 Per runtime ADR-056 D7, at most one instance per `principal_did` may be `public` or `unlisted` at a time — conflicting announces/exposure changes are rejected (409).
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /v1/public/pekos/:owner/:pekoName` | Public profile for any `public` or `unlisted` peko. |
+| `GET /v1/public/pekos/:owner/:pekoName` | Public profile of the peko `@owner/pekoName` (ADR-009: of an owner's same-named public pekos, the one made public last). |
 | `POST /v1/public/pekos/:owner/:pekoName/chat` | Chat via SSE for runtime-less clients. Signed-in callers only unless `ALLOW_VISITOR_CHAT=true` (default `false`), which lets anonymous callers in under a signed visitor cookie (HMAC, 365-day HttpOnly/SameSite=Lax) identifies the caller to the runtime. 20 req/60s/IP rate limit; per-instance `dailyQuota`/`weeklyQuota`; optional ToS gate (returns 428). |
-| `GET /v1/instances/public` | List public pekos (paginated). |
-| `GET /v1/instances/public/search` | Full-text search over public pekos. |
-| `GET /v1/discovery/search` | Faceted search: `q`, `category`, `sort` (`relevance` / `recent` / `popular`). Returns only `exposure = public`. |
-| `GET /v1/discovery/feed/:feed` | Curated feed (`trending` / `new` / `featured`). |
+| `GET /v1/instances/public`, `/v1/instances/public/search`, `/v1/discovery/search`, `/v1/discovery/feed/:feed` | Retired (ADR-009): `410 { code: "pekos_not_listed" }`. Pekos are not enumerated. |
 
-The SPA's canonical share URL is `/peko/:owner/:name` (`/p/:owner/:name` redirects).
+Website pages are IDs (ADR-009): `/@alice` (a person), `/@alice/ada` (a peko), `/alice/ada` or `/alice/ada@1.2.0` (a seed). The old `/peko/:owner/:name`, `/p/:owner/:name` and `/seeds/:owner/:name` links redirect (301 at the edge, `frontend/public/_redirects`).
 
 ### Authenticated instance management
 

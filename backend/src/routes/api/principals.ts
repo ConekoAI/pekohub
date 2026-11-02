@@ -115,8 +115,6 @@ export default async function principalDirectoryRoutes(
             ...result.resolution,
             shareUrl: pekoShareUrl(fastify.config, result.resolution!),
           };
-        case "ambiguous":
-          return reply.status(409).send({ error: "Principal handle is ambiguous; use its Hub ID" });
         case "miss":
           return reply.status(404).send({ error: "Principal not found" });
         case "denied":
@@ -239,8 +237,6 @@ export default async function principalDirectoryRoutes(
             ...result.resolution,
             shareUrl: pekoShareUrl(fastify.config, result.resolution!),
           };
-        case "ambiguous":
-          return reply.status(409).send({ error: "Principal handle is ambiguous; use its Hub ID" });
         case "miss":
           return reply.status(404).send({ error: "Principal not found" });
         case "denied":

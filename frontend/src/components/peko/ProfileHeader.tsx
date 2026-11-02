@@ -3,8 +3,8 @@
  *
  * Renders the peko's public face: display name, owner, status and the
  * capabilities the runtime chose to advertise. No runtime metadata
- * leaks — the public endpoint returns only what `/peko/:owner/:name`
- * needs to render.
+ * leaks — the public endpoint returns only what `/@owner/name` needs
+ * to render.
  */
 
 import { Cpu, Share2 } from 'lucide-react';
@@ -13,10 +13,12 @@ import { Avatar, CopyButton, StatusPill } from '~/components/ui';
 
 interface ProfileHeaderProps {
   profile: PublicProfile;
+  /** The peko's ID, `@alice/ada`. */
+  id?: string;
   shareUrl?: string;
 }
 
-export function ProfileHeader({ profile, shareUrl }: ProfileHeaderProps) {
+export function ProfileHeader({ profile, id, shareUrl }: ProfileHeaderProps) {
   const { liveInstance } = profile;
 
   return (
@@ -38,6 +40,7 @@ export function ProfileHeader({ profile, shareUrl }: ProfileHeaderProps) {
               <h1 className="display truncate text-2xl">{liveInstance.publicName}</h1>
               <StatusPill status={liveInstance.status} />
             </div>
+            {id && <p className="mt-1 font-mono text-2xs text-slate-500">{id}</p>}
 
             <div className="mt-2.5 flex items-center gap-2">
               <Avatar

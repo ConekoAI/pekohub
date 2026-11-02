@@ -22,6 +22,7 @@ import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AuthorizeRouteImport } from './routes/authorize'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SeedsIndexRouteImport } from './routes/seeds/index'
+import { Route as AtChar123ownerChar125IndexRouteImport } from './routes/@{$owner}/index'
 import { Route as TemplatesSplatRouteImport } from './routes/templates_.$'
 import { Route as SeedsNewRouteImport } from './routes/seeds/new'
 import { Route as SeedsSplatRouteImport } from './routes/seeds/$'
@@ -29,6 +30,8 @@ import { Route as DashboardSeedsRouteImport } from './routes/dashboard_.seeds'
 import { Route as DashboardRuntimesRouteImport } from './routes/dashboard_.runtimes'
 import { Route as BundlesSplatRouteImport } from './routes/bundles_.$'
 import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
+import { Route as AtChar123ownerChar125NameRouteImport } from './routes/@{$owner}/$name'
+import { Route as OwnerNameRouteImport } from './routes/$owner/$name'
 import { Route as PekoOwnerPekoNameRouteImport } from './routes/peko.$owner.$pekoName'
 import { Route as POwnerPrincipalNameRouteImport } from './routes/p.$owner.$principalName'
 
@@ -97,6 +100,12 @@ const SeedsIndexRoute = SeedsIndexRouteImport.update({
   path: '/seeds/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AtChar123ownerChar125IndexRoute =
+  AtChar123ownerChar125IndexRouteImport.update({
+    id: '/@{$owner}/',
+    path: '/@{$owner}/',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const TemplatesSplatRoute = TemplatesSplatRouteImport.update({
   id: '/templates_/$',
   path: '/templates/$',
@@ -132,6 +141,17 @@ const AuthCallbackRoute = AuthCallbackRouteImport.update({
   path: '/auth/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AtChar123ownerChar125NameRoute =
+  AtChar123ownerChar125NameRouteImport.update({
+    id: '/@{$owner}/$name',
+    path: '/@{$owner}/$name',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const OwnerNameRoute = OwnerNameRouteImport.update({
+  id: '/$owner/$name',
+  path: '/$owner/$name',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PekoOwnerPekoNameRoute = PekoOwnerPekoNameRouteImport.update({
   id: '/peko/$owner/$pekoName',
   path: '/peko/$owner/$pekoName',
@@ -156,6 +176,8 @@ export interface FileRoutesByFullPath {
   '/search': typeof SearchRoute
   '/status': typeof StatusRoute
   '/terms': typeof TermsRoute
+  '/$owner/$name': typeof OwnerNameRoute
+  '/@{$owner}/$name': typeof AtChar123ownerChar125NameRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/bundles/$': typeof BundlesSplatRoute
   '/dashboard/runtimes': typeof DashboardRuntimesRoute
@@ -163,6 +185,7 @@ export interface FileRoutesByFullPath {
   '/seeds/$': typeof SeedsSplatRoute
   '/seeds/new': typeof SeedsNewRoute
   '/templates/$': typeof TemplatesSplatRoute
+  '/@{$owner}/': typeof AtChar123ownerChar125IndexRoute
   '/seeds/': typeof SeedsIndexRoute
   '/p/$owner/$principalName': typeof POwnerPrincipalNameRoute
   '/peko/$owner/$pekoName': typeof PekoOwnerPekoNameRoute
@@ -180,6 +203,8 @@ export interface FileRoutesByTo {
   '/search': typeof SearchRoute
   '/status': typeof StatusRoute
   '/terms': typeof TermsRoute
+  '/$owner/$name': typeof OwnerNameRoute
+  '/@{$owner}/$name': typeof AtChar123ownerChar125NameRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/bundles/$': typeof BundlesSplatRoute
   '/dashboard/runtimes': typeof DashboardRuntimesRoute
@@ -187,6 +212,7 @@ export interface FileRoutesByTo {
   '/seeds/$': typeof SeedsSplatRoute
   '/seeds/new': typeof SeedsNewRoute
   '/templates/$': typeof TemplatesSplatRoute
+  '/@{$owner}': typeof AtChar123ownerChar125IndexRoute
   '/seeds': typeof SeedsIndexRoute
   '/p/$owner/$principalName': typeof POwnerPrincipalNameRoute
   '/peko/$owner/$pekoName': typeof PekoOwnerPekoNameRoute
@@ -205,6 +231,8 @@ export interface FileRoutesById {
   '/search': typeof SearchRoute
   '/status': typeof StatusRoute
   '/terms': typeof TermsRoute
+  '/$owner/$name': typeof OwnerNameRoute
+  '/@{$owner}/$name': typeof AtChar123ownerChar125NameRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/bundles_/$': typeof BundlesSplatRoute
   '/dashboard_/runtimes': typeof DashboardRuntimesRoute
@@ -212,6 +240,7 @@ export interface FileRoutesById {
   '/seeds/$': typeof SeedsSplatRoute
   '/seeds/new': typeof SeedsNewRoute
   '/templates_/$': typeof TemplatesSplatRoute
+  '/@{$owner}/': typeof AtChar123ownerChar125IndexRoute
   '/seeds/': typeof SeedsIndexRoute
   '/p/$owner/$principalName': typeof POwnerPrincipalNameRoute
   '/peko/$owner/$pekoName': typeof PekoOwnerPekoNameRoute
@@ -231,6 +260,8 @@ export interface FileRouteTypes {
     | '/search'
     | '/status'
     | '/terms'
+    | '/$owner/$name'
+    | '/@{$owner}/$name'
     | '/auth/callback'
     | '/bundles/$'
     | '/dashboard/runtimes'
@@ -238,6 +269,7 @@ export interface FileRouteTypes {
     | '/seeds/$'
     | '/seeds/new'
     | '/templates/$'
+    | '/@{$owner}/'
     | '/seeds/'
     | '/p/$owner/$principalName'
     | '/peko/$owner/$pekoName'
@@ -255,6 +287,8 @@ export interface FileRouteTypes {
     | '/search'
     | '/status'
     | '/terms'
+    | '/$owner/$name'
+    | '/@{$owner}/$name'
     | '/auth/callback'
     | '/bundles/$'
     | '/dashboard/runtimes'
@@ -262,6 +296,7 @@ export interface FileRouteTypes {
     | '/seeds/$'
     | '/seeds/new'
     | '/templates/$'
+    | '/@{$owner}'
     | '/seeds'
     | '/p/$owner/$principalName'
     | '/peko/$owner/$pekoName'
@@ -279,6 +314,8 @@ export interface FileRouteTypes {
     | '/search'
     | '/status'
     | '/terms'
+    | '/$owner/$name'
+    | '/@{$owner}/$name'
     | '/auth/callback'
     | '/bundles_/$'
     | '/dashboard_/runtimes'
@@ -286,6 +323,7 @@ export interface FileRouteTypes {
     | '/seeds/$'
     | '/seeds/new'
     | '/templates_/$'
+    | '/@{$owner}/'
     | '/seeds/'
     | '/p/$owner/$principalName'
     | '/peko/$owner/$pekoName'
@@ -304,6 +342,8 @@ export interface RootRouteChildren {
   SearchRoute: typeof SearchRoute
   StatusRoute: typeof StatusRoute
   TermsRoute: typeof TermsRoute
+  OwnerNameRoute: typeof OwnerNameRoute
+  AtChar123ownerChar125NameRoute: typeof AtChar123ownerChar125NameRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
   BundlesSplatRoute: typeof BundlesSplatRoute
   DashboardRuntimesRoute: typeof DashboardRuntimesRoute
@@ -311,6 +351,7 @@ export interface RootRouteChildren {
   SeedsSplatRoute: typeof SeedsSplatRoute
   SeedsNewRoute: typeof SeedsNewRoute
   TemplatesSplatRoute: typeof TemplatesSplatRoute
+  AtChar123ownerChar125IndexRoute: typeof AtChar123ownerChar125IndexRoute
   SeedsIndexRoute: typeof SeedsIndexRoute
   POwnerPrincipalNameRoute: typeof POwnerPrincipalNameRoute
   PekoOwnerPekoNameRoute: typeof PekoOwnerPekoNameRoute
@@ -409,6 +450,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SeedsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/@{$owner}/': {
+      id: '/@{$owner}/'
+      path: '/@{$owner}'
+      fullPath: '/@{$owner}/'
+      preLoaderRoute: typeof AtChar123ownerChar125IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/templates_/$': {
       id: '/templates_/$'
       path: '/templates/$'
@@ -458,6 +506,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/@{$owner}/$name': {
+      id: '/@{$owner}/$name'
+      path: '/@{$owner}/$name'
+      fullPath: '/@{$owner}/$name'
+      preLoaderRoute: typeof AtChar123ownerChar125NameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/$owner/$name': {
+      id: '/$owner/$name'
+      path: '/$owner/$name'
+      fullPath: '/$owner/$name'
+      preLoaderRoute: typeof OwnerNameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/peko/$owner/$pekoName': {
       id: '/peko/$owner/$pekoName'
       path: '/peko/$owner/$pekoName'
@@ -488,6 +550,8 @@ const rootRouteChildren: RootRouteChildren = {
   SearchRoute: SearchRoute,
   StatusRoute: StatusRoute,
   TermsRoute: TermsRoute,
+  OwnerNameRoute: OwnerNameRoute,
+  AtChar123ownerChar125NameRoute: AtChar123ownerChar125NameRoute,
   AuthCallbackRoute: AuthCallbackRoute,
   BundlesSplatRoute: BundlesSplatRoute,
   DashboardRuntimesRoute: DashboardRuntimesRoute,
@@ -495,6 +559,7 @@ const rootRouteChildren: RootRouteChildren = {
   SeedsSplatRoute: SeedsSplatRoute,
   SeedsNewRoute: SeedsNewRoute,
   TemplatesSplatRoute: TemplatesSplatRoute,
+  AtChar123ownerChar125IndexRoute: AtChar123ownerChar125IndexRoute,
   SeedsIndexRoute: SeedsIndexRoute,
   POwnerPrincipalNameRoute: POwnerPrincipalNameRoute,
   PekoOwnerPekoNameRoute: PekoOwnerPekoNameRoute,

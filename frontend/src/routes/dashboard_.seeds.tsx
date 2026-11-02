@@ -70,8 +70,8 @@ function MySeedsPage() {
           {items.map((seed) => (
             <li key={seed.name}>
               <Link
-                to="/seeds/$"
-                params={{ _splat: `${seed.owner}/${seed.name}` }}
+                to="/$owner/$name"
+                params={{ owner: seed.owner, name: seed.name }}
                 className="flex items-center gap-4 px-4 py-4 transition-colors hover:bg-white/[0.03]"
               >
                 <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-iris-400/20 bg-iris-400/[0.07]">

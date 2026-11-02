@@ -389,31 +389,32 @@ describe("Instance API", () => {
     });
   });
 
-  describe("GET /v1/instances/public", () => {
-    it("should list public instances without auth", async () => {
+  describe("listing pekos (hub ADR-009 D2)", () => {
+    it("lists, searches and features no pekos: they are found by exact ID only", async () => {
       const app = await buildTestApp({ testDb });
       const user = await createUser(testDb.client, { namespace: "alice" });
-
       await createInstance(testDb.client, {
+        ownerSubject: { kind: "user", id: user.id },
         name: "public-1",
         exposure: "public",
         status: "online",
-      });
-      await createInstance(testDb.client, {
-        name: "private-1",
-        exposure: "private",
-        status: "online",
+        featured: true,
       });
 
-      const response = await app.inject({
-        method: "GET",
-        url: "/v1/instances/public",
-      });
-
-      expect(response.statusCode).toBe(200);
-      const body = JSON.parse(response.payload);
-      expect(body.data).toHaveLength(1);
-      expect(body.data[0].name).toBe("public-1");
+      for (const url of [
+        "/v1/instances/public",
+        "/v1/instances/public/search?q=public",
+        "/v1/discovery/search?q=public",
+        "/v1/discovery/feed/trending",
+        "/v1/discovery/feed/featured",
+      ]) {
+        const response = await app.inject({ method: "GET", url });
+        expect(response.statusCode, url).toBe(410);
+        expect(response.json().code).toBe("pekos_not_listed");
+        expect(response.payload).not.toContain("public-1");
+      }
+      const exact = await app.inject({ method: "GET", url: "/v1/public/pekos/alice/public-1" });
+      expect(exact.statusCode).toBe(200);
     });
   });
 
