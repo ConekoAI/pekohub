@@ -8,14 +8,18 @@ const schema = z.object({
     .enum(["development", "production", "test"])
     .default("development"),
   DATABASE_URL: z.string(),
-  S3_ENDPOINT: z.string().url(),
+  // Blob storage (S3 or R2). Optional: seeds are stored as text in
+  // Postgres, so no route needs it today; `fastify.storage` exists only
+  // when it is configured.
+  S3_ENDPOINT: z.string().url().optional(),
   S3_REGION: z.string().default("us-east-1"),
-  S3_ACCESS_KEY: z.string(),
-  S3_SECRET_KEY: z.string(),
+  S3_ACCESS_KEY: z.string().optional(),
+  S3_SECRET_KEY: z.string().optional(),
   S3_BUCKET: z.string().default("pekohub-blobs"),
   S3_FORCE_PATH_STYLE: z.string().default("true"),
-  MEILISEARCH_URL: z.string().url(),
-  MEILISEARCH_API_KEY: z.string(),
+  // Optional: without it, search reads Postgres directly (services/pg-search.ts).
+  MEILISEARCH_URL: z.string().url().optional(),
+  MEILISEARCH_API_KEY: z.string().optional(),
   JWT_SECRET: z.string().min(32),
   // The Hub's API origin. Must match the origin runtimes derive from
   // their pekohub credential (tunnel URL scheme swapped to https) — it

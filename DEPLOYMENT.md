@@ -80,6 +80,35 @@ Backend environment for these hosts:
 `pekohub.ai` and `api.pekohub.ai` are the same site (`pekohub.ai`), so the website's
 `SameSite=Lax` refresh cookie set by the API is sent on its credentialed requests.
 
+## Staging: Fly.io + Neon (scale to zero)
+
+Staging runs the API alone, sized to cost nothing while idle:
+
+| Piece | Where | Idle cost |
+|-------|-------|-----------|
+| API + tunnel relay | Fly.io `pekohub-staging` (`fly.staging.toml`): one `shared-cpu-1x` / 256 MB machine that stops when nothing is connected and starts on the next request | ~$0 (a stopped machine bills only its image storage) |
+| Postgres | Neon free tier (scales to zero after 5 minutes idle) | $0 |
+| Search | Postgres (`MEILISEARCH_URL` unset) | — |
+| Quotas, rate limits | In memory (`REDIS_URL` unset); fine on one machine | — |
+| Blob storage | None (`S3_*` unset); seeds are text in Postgres | — |
+
+A connected runtime's tunnel keeps the machine running, so it is idle only when no runtime
+is connected. Keep exactly one machine: the relay holds runtime connections in process.
+
+```bash
+fly apps create pekohub-staging
+fly secrets set -c fly.staging.toml \
+  DATABASE_URL='<Neon pooled connection string>' \
+  MIGRATION_DATABASE_URL='<Neon direct connection string>' \
+  JWT_SECRET="$(openssl rand -hex 32)"
+fly deploy -c fly.staging.toml --ha=false   # runs migrations as the release command
+curl https://pekohub-staging.fly.dev/health
+```
+
+Point a runtime at it with `peko runtime register --hub https://pekohub-staging.fly.dev`
+(or the desktop's hub setting). The first request after an idle spell waits a second or two
+for the machine, and Neon's first query after its own idle spell adds about half a second.
+
 ### Blob uploads require auth (breaking change)
 
 `POST /v2/<repo>/blobs/uploads/` and

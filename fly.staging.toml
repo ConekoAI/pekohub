@@ -1,0 +1,52 @@
+# PekoHub API staging on Fly.io — `fly deploy -c fly.staging.toml --ha=false`
+#
+# Built to cost nothing while idle: one small machine that stops when no
+# request or tunnel is open and starts on the next one (a cold start takes
+# a second or two). A connected runtime's tunnel keeps it running.
+#
+# Exactly one machine: the tunnel relay keeps runtime connections in
+# process (services/tunnel-manager.ts), so a second machine would split
+# them. `--ha=false` stops Fly from creating a standby.
+#
+# Postgres is Neon (free tier, scales to zero). No Meilisearch, Redis or
+# blob storage: search reads Postgres, quotas and rate limits stay in
+# memory, and seeds are text in the database.
+#
+# Secrets (`fly secrets set -c fly.staging.toml ...`): DATABASE_URL (Neon's
+# pooled connection string), MIGRATION_DATABASE_URL (its direct one, for
+# the release command), JWT_SECRET (32+ chars).
+
+app = "pekohub-staging"
+primary_region = "iad" # next to Neon's aws-us-east-1
+
+[build]
+  dockerfile = "backend/Dockerfile"
+
+[deploy]
+  # drizzle-kit is a runtime dependency; the journal makes this idempotent.
+  release_command = "npx drizzle-kit migrate --config=drizzle.config.ts"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+  HOST = "0.0.0.0"
+  PUBLIC_ORIGIN = "https://pekohub-staging.fly.dev"
+  REGISTRY_BASE_URL = "https://pekohub-staging.fly.dev"
+  ALLOW_DEV_AUTH_BYPASS = "false"
+  ALLOW_VISITOR_CHAT = "false"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "connections"
+    soft_limit = 200
+    hard_limit = 250
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
