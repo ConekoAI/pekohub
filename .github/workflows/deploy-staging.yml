@@ -57,7 +57,7 @@ jobs:
       - name: Health check
         if: env.FLY_API_TOKEN != ''
         run: |
-          for i in $(seq 1 15); do
+          for _ in $(seq 1 15); do
             curl -sf "$STAGING_API/health" && exit 0
             sleep 4
           done
