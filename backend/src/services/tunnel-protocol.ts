@@ -37,7 +37,7 @@ export interface HttpProxiedRequest {
   requestId: string;
   instanceId: string;
   principalName: string;
-  method: "chat" | "stream";
+  method: "chat" | "stream" | "history";
   body: unknown;
   headers: Record<string, string>;
 }
@@ -412,7 +412,39 @@ export type TunnelMessage =
   // channel invites. Hub is pure relay (same shape as the
   // channel-event path): source allowlist + recipient lookup +
   // forward verbatim. Invites are push-only, so there is no ack.
-  | ({ type: "tunnel_channel_invite" } & TunnelChannelInvitePayload);
+  | ({ type: "tunnel_channel_invite" } & TunnelChannelInvitePayload)
+  // Runtime ADR-091: a person's runtime asks a peko's host for one page of
+  // their DM, and the host answers. Relayed like channel envelopes; the
+  // request only from the runtime registered to the person's account.
+  | ({ type: "tunnel_channel_history_request" } & TunnelChannelHistoryRequestPayload)
+  | ({ type: "tunnel_channel_history" } & TunnelChannelHistoryPayload);
+
+/** Runtime ADR-091 D2: one page of a person's DM, asked of its host. */
+export interface TunnelChannelHistoryRequestPayload {
+  requestId: string;
+  sourceRuntimeId: string;
+  recipientRuntimeId: string;
+  /** The person, `user:hub:<account>`. */
+  sourcePrincipalDid: string;
+  channelId: string;
+  /** `msg_id` cursors; neither asks for the newest page. */
+  before?: string;
+  after?: string;
+  limit: number;
+  /** The source runtime's compact JWS over every other field. */
+  signature: string;
+}
+
+/** Runtime ADR-091 D2: the host's page. The Hub never reads `events`. */
+export interface TunnelChannelHistoryPayload {
+  requestId: string;
+  sourceRuntimeId: string;
+  recipientRuntimeId: string;
+  channelId: string;
+  events: ChannelEvent[];
+  hasMore: boolean;
+  signature: string;
+}
 
 export function encodeTunnelMessage(msg: TunnelMessage): Buffer {
   return Buffer.from(JSON.stringify(msg), "utf-8");

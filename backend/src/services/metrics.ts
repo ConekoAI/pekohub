@@ -64,6 +64,9 @@ export const CounterName = {
     "hub.channel_invite.rejected_source_allowlist",
   HubChannelInviteRecipientOffline: "hub.channel_invite.recipient_offline",
   HubPeerRuntimeOnlineSent: "hub.peer_runtime_online.sent",
+  HubHistoryForwarded: "hub.channel_history.forwarded",
+  HubHistoryRequestRejectedPerson: "hub.channel_history.rejected_person",
+  HubHistoryRequestRateLimited: "hub.channel_history.rate_limited",
   // Runtime ADR-090 D3: an envelope speaking for a person
   // (`user:hub:<account>`) from a runtime registered to another account.
   HubChannelEventRejectedPersonAccount: "hub.channel_event.rejected_person_account",

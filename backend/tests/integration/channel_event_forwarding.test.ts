@@ -538,3 +538,120 @@ describe("Waking a runtime whose recipient comes online", () => {
     expect(wakeups(socketB)).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Runtime ADR-091: a person's history with a remote peko, asked of its host.
+// The request comes only from the runtime registered to the person.
+// ---------------------------------------------------------------------------
+
+describe("Relaying a person's history requests", () => {
+  let testDb: TestDb;
+
+  beforeAll(async () => {
+    testDb = await createTestDb();
+  });
+
+  beforeEach(async () => {
+    await resetTables(testDb.client);
+    metrics.reset();
+  });
+
+  afterAll(async () => {
+    await testDb.client.close();
+  });
+
+  async function setup() {
+    const { tunnelManager } = await buildForwardingTestApp(testDb);
+    const person = await createUser(testDb.client, { namespace: "alice" });
+    const host = await createUser(testDb.client, { namespace: "bob" });
+    const personRuntime = makeRuntimeIdentity();
+    const hostRuntime = makeRuntimeIdentity();
+    await seedRuntime(testDb, personRuntime.did, person.id);
+    await seedRuntime(testDb, hostRuntime.did, host.id);
+    const socketP = new MockWebSocket();
+    tunnelManager.handleSocket(socketP.asWebSocket());
+    await completeHandshake(socketP, personRuntime.did, personRuntime.privateKey);
+    return { tunnelManager, person, host, personRuntime, hostRuntime, socketP };
+  }
+
+  async function connect(tunnelManager: TunnelManager, id: { did: string; privateKey: Uint8Array }) {
+    const socket = new MockWebSocket();
+    tunnelManager.handleSocket(socket.asWebSocket());
+    await completeHandshake(socket, id.did, id.privateKey);
+    return socket;
+  }
+
+  const request = (from: string, to: string, person: string, requestId = "hist-1") => ({
+    type: "tunnel_channel_history_request" as const,
+    requestId,
+    sourceRuntimeId: from,
+    recipientRuntimeId: to,
+    sourcePrincipalDid: person,
+    channelId: "dm_abc",
+    limit: 100,
+    signature: "x",
+  });
+
+  const histories = (socket: MockWebSocket, type: string) => socket.sent.filter((m) => m.type === type);
+
+  it("forwards a person's request from their own runtime, and the page back", async () => {
+    const { tunnelManager, person, personRuntime, hostRuntime, socketP } = await setup();
+    const socketH = await connect(tunnelManager, hostRuntime);
+    socketP.triggerMessage(request(personRuntime.did, hostRuntime.did, `user:hub:${person.id}`));
+    await flush();
+    expect(histories(socketH, "tunnel_channel_history_request")).toHaveLength(1);
+
+    socketH.triggerMessage({
+      type: "tunnel_channel_history",
+      requestId: "hist-1",
+      sourceRuntimeId: hostRuntime.did,
+      recipientRuntimeId: personRuntime.did,
+      channelId: "dm_abc",
+      events: [],
+      hasMore: false,
+      signature: "y",
+    });
+    await flush();
+    expect(histories(socketP, "tunnel_channel_history")).toHaveLength(1);
+    expect(metrics.snapshot()[CounterName.HubHistoryForwarded]).toBe(2);
+  });
+
+  it("drops a request for someone else's account, or from no person at all", async () => {
+    const { tunnelManager, host, personRuntime, hostRuntime, socketP } = await setup();
+    const socketH = await connect(tunnelManager, hostRuntime);
+    socketP.triggerMessage(request(personRuntime.did, hostRuntime.did, `user:hub:${host.id}`, "a"));
+    socketP.triggerMessage(request(personRuntime.did, hostRuntime.did, "did:key:z6MkPrincipal", "b"));
+    await flush();
+    expect(histories(socketH, "tunnel_channel_history_request")).toHaveLength(0);
+    expect(metrics.snapshot()[CounterName.HubHistoryRequestRejectedPerson]).toBe(2);
+    expect(socketP.closed).toBe(false);
+  });
+
+  it("closes a runtime that claims another runtime's id", async () => {
+    const { person, hostRuntime, socketP } = await setup();
+    socketP.triggerMessage(request(hostRuntime.did, hostRuntime.did, `user:hub:${person.id}`));
+    await flush();
+    expect(socketP.closed).toBe(true);
+  });
+
+  it("rate-limits requests per runtime", async () => {
+    const { tunnelManager, person, personRuntime, hostRuntime, socketP } = await setup();
+    const socketH = await connect(tunnelManager, hostRuntime);
+    for (let i = 0; i < 125; i++) {
+      socketP.triggerMessage(request(personRuntime.did, hostRuntime.did, `user:hub:${person.id}`, `r${i}`));
+    }
+    await flush();
+    await flush();
+    expect(histories(socketH, "tunnel_channel_history_request")).toHaveLength(120);
+    expect(metrics.snapshot()[CounterName.HubHistoryRequestRateLimited]).toBe(5);
+  });
+
+  it("wakes the person's runtime when an offline host comes back", async () => {
+    const { tunnelManager, person, personRuntime, hostRuntime, socketP } = await setup();
+    socketP.triggerMessage(request(personRuntime.did, hostRuntime.did, `user:hub:${person.id}`));
+    await flush();
+    expect(tunnelManager.waitingOn(personRuntime.did)).toEqual([hostRuntime.did]);
+    await connect(tunnelManager, hostRuntime);
+    expect(socketP.sent.filter((m) => m.type === "peer_runtime_online")).toHaveLength(1);
+  });
+});

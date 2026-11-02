@@ -2,6 +2,15 @@
 
 ## 0.1.0 — pre-launch
 
+- Your history with a remote peko follows you (peko-runtime ADR-091). The relay carries two
+  new tunnel messages, `tunnel_channel_history_request` and `tunnel_channel_history`: a
+  person's runtime asks a peko's host for a page of their conversation, and the host answers.
+  A request is relayed only from the runtime registered to the person's account (as for every
+  person-authored envelope), at most 120 a minute per runtime; to an offline host it notes
+  the waiter, so the person's runtime catches up when the host is back. The Hub never stores
+  or logs either. New `GET /v1/public/pekos/:owner/:name/history?before=&after=&limit=` for
+  clients without a runtime: signed-in only, the caller's own conversation, read from the
+  host (`503 host_offline` when it isn't connected). Metrics: `hub.channel_history.*`.
 - A message to a runtime that was offline goes out as soon as that runtime reconnects. When
   the relay drops a channel envelope because its recipient is offline, it remembers that the
   sender waits on it (runtime ids only, in memory, up to 30 days; never the envelope). When the

@@ -228,6 +228,35 @@ export class TunnelRouter {
     }
   }
 
+  /**
+   * Runtime ADR-091 D6: one page of the signed-in person's own DM with a
+   * peko, for a client without a runtime. The runtime serves only the
+   * caller's pair DM; the Hub stores nothing.
+   */
+  async proxyHistory(
+    runtimeId: string,
+    instanceId: string,
+    principalName: string,
+    query: { before?: string; after?: string; limit?: number },
+    caller: Subject,
+  ): Promise<{ status: number; body: unknown }> {
+    const request: HttpProxiedRequest = {
+      requestId: crypto.randomUUID(),
+      instanceId,
+      principalName,
+      method: "history",
+      body: { kind: "history", ...query },
+      headers: bridgeHeadersFor(
+        { "content-type": "application/json" },
+        caller,
+        null,
+        runtimeId,
+        this.bridge,
+      ),
+    };
+    return this.tunnelManager.sendProxiedRequest(runtimeId, request, 20_000);
+  }
+
   async proxyStream(
     runtimeId: string,
     instanceId: string,

@@ -215,4 +215,73 @@ describe("ADR-059 public peko rename", () => {
       shareUrl: expect.stringMatching(/\/@alice\/resolver-target$/),
     });
   });
+
+  // Runtime ADR-091 D6: a client without a runtime reads the signed-in
+  // person's own conversation from the peko's host; the Hub stores nothing.
+  describe("history for clients without a runtime", () => {
+    async function setup() {
+      const app = await buildTestApp({ testDb });
+      const owner = await createUser(testDb.client, { namespace: "alice" });
+      const reader = await createUser(testDb.client, { namespace: "bob" });
+      const peko = await createInstance(testDb.client, {
+        ownerSubject: { kind: "user", id: String(owner.id) },
+        name: "greeter",
+        exposure: "public",
+        status: "online",
+      });
+      await createInstance(testDb.client, {
+        ownerSubject: { kind: "user", id: String(owner.id) },
+        name: "hidden",
+        exposure: "private",
+        status: "online",
+      });
+      return { app, reader, peko };
+    }
+
+    it("asks a visitor to sign in", async () => {
+      const { app } = await setup();
+      const res = await app.inject({ method: "GET", url: "/v1/public/pekos/alice/greeter/history" });
+      expect(res.statusCode).toBe(401);
+      expect(res.json().code).toBe("sign_in_required");
+    });
+
+    it("says when the host is offline, and hides private pekos", async () => {
+      const { app, reader } = await setup();
+      const headers = await authHeaders(reader);
+      const offline = await app.inject({ method: "GET", url: "/v1/public/pekos/alice/greeter/history", headers });
+      expect(offline.statusCode).toBe(503);
+      expect(offline.json().code).toBe("host_offline");
+      const hidden = await app.inject({ method: "GET", url: "/v1/public/pekos/alice/hidden/history", headers });
+      expect(hidden.statusCode).toBe(404);
+      const bad = await app.inject({
+        method: "GET",
+        url: "/v1/public/pekos/alice/greeter/history?limit=500",
+        headers,
+      });
+      expect(bad.statusCode).toBe(400);
+    });
+
+    it("relays the page the host serves, as the signed-in person", async () => {
+      const { app, reader, peko } = await setup();
+      const calls: unknown[][] = [];
+      (app.tunnelManager as any).isRuntimeConnected = () => true;
+      (app.tunnelRouter as any).proxyHistory = async (...args: unknown[]) => {
+        calls.push(args);
+        return { status: 200, body: { events: [{ kind: "posted", text: "hi" }], hasMore: false } };
+      };
+      const res = await app.inject({
+        method: "GET",
+        url: "/v1/public/pekos/alice/greeter/history?before=msg-9&limit=20",
+        headers: await authHeaders(reader),
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ events: [{ kind: "posted", text: "hi" }], hasMore: false });
+      expect(calls).toHaveLength(1);
+      const [runtimeId, instanceId, , query, caller] = calls[0];
+      expect(runtimeId).toBe(peko.runtimeId);
+      expect(instanceId).toBe(peko.id);
+      expect(query).toEqual({ before: "msg-9", limit: 20 });
+      expect(caller).toEqual({ kind: "user", id: String(reader.id) });
+    });
+  });
 });
