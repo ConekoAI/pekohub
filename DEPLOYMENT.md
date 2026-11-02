@@ -105,6 +105,23 @@ fly deploy -c fly.staging.toml --ha=false   # runs migrations as the release com
 curl https://pekohub-staging.fly.dev/health
 ```
 
+The staging website is its own Pages project, `pekohub-staging`
+(`https://pekohub-staging.pages.dev`), uploaded directly rather than built from Git.
+Production builds bake in `api.pekohub.ai`, and the API allows one website origin
+(`FRONTEND_URL`), so staging needs a stable address of its own. Its Functions read
+`PEKOHUB_API` (a Pages secret, set to the staging API). To update it from the repo root:
+
+```bash
+pnpm --filter @pekohub/shared build
+(cd frontend && VITE_API_BASE_URL=https://pekohub-staging.fly.dev ./node_modules/.bin/vite build --outDir /tmp/pekohub-staging-dist --emptyOutDir)
+npx wrangler pages deploy /tmp/pekohub-staging-dist --project-name pekohub-staging --branch main
+```
+
+Sign-in needs a GitHub OAuth app for staging (callback
+`https://pekohub-staging.fly.dev/v1/auth/github/callback`), set with
+`fly secrets set -c fly.staging.toml GITHUB_CLIENT_ID=… GITHUB_CLIENT_SECRET=…`; until then
+the sign-in routes don't exist.
+
 Point a runtime at it with `peko runtime register --hub https://pekohub-staging.fly.dev`
 (or the desktop's hub setting). The first request after an idle spell waits a second or two
 for the machine, and Neon's first query after its own idle spell adds about half a second.

@@ -33,6 +33,8 @@ primary_region = "iad" # next to Neon's aws-us-east-1
   HOST = "0.0.0.0"
   PUBLIC_ORIGIN = "https://pekohub-staging.fly.dev"
   REGISTRY_BASE_URL = "https://pekohub-staging.fly.dev"
+  # The staging website: Pages project `pekohub-staging` (DEPLOYMENT.md).
+  FRONTEND_URL = "https://pekohub-staging.pages.dev"
   ALLOW_DEV_AUTH_BYPASS = "false"
   ALLOW_VISITOR_CHAT = "false"
 
