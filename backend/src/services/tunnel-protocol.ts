@@ -422,7 +422,47 @@ export type TunnelMessage =
   // Hub delivers it to each runtime registered to that account), and the
   // person answers from one of them.
   | ({ type: "tunnel_group_invitation" } & TunnelGroupInvitationPayload)
-  | ({ type: "tunnel_group_join" } & TunnelGroupJoinPayload);
+  | ({ type: "tunnel_group_join" } & TunnelGroupJoinPayload)
+  // Runtime ADR-092 D5: a person asks a group's home to let them in, with
+  // an invite link's token (none for a public group).
+  | ({ type: "tunnel_group_join_request" } & TunnelGroupJoinRequestPayload)
+  // Runtime ADR-092 D5/D6: a home registers its group (the Hub assigns the
+  // ID) and reports the accounts in it; a runtime asks for its account's
+  // groups (D4).
+  | {
+      type: "group_register";
+      requestId: string;
+      channelId: string;
+      name: string;
+      ownerAddress: string;
+      visibility: "invite_only" | "public";
+    }
+  | { type: "group_registered"; requestId: string; groupId: string }
+  | { type: "group_register_rejected"; requestId: string; message: string }
+  | { type: "group_roster"; groupId: string; accounts: string[] }
+  | { type: "account_groups_request"; requestId: string }
+  | { type: "account_groups"; requestId: string; groups: AccountGroup[] };
+
+/** Runtime ADR-092 D4: one of an account's registered groups. */
+export interface AccountGroup {
+  groupId: string;
+  name: string;
+  homeRuntime: string;
+  channelId: string;
+}
+
+/** Runtime ADR-092 D5: a person asks a group's home to let them in. */
+export interface TunnelGroupJoinRequestPayload {
+  requestId: string;
+  sourceRuntimeId: string;
+  recipientRuntimeId: string;
+  /** The person, `user:hub:<account>`. */
+  sourcePrincipalDid: string;
+  channelId: string;
+  /** The invite link's token; absent for a public group. */
+  invite?: string;
+  signature: string;
+}
 
 /** Runtime ADR-092 D2: a group's invitation to a person, by account. */
 export interface TunnelGroupInvitationPayload {

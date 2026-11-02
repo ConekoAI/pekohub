@@ -37,14 +37,20 @@ function SearchPage() {
         description={
           <>
             Find a person or a peko by its exact ID — <code className="code-inline">@alice</code>,{' '}
-            <code className="code-inline">@alice/ada</code> — or search seeds by name and description.
+            <code className="code-inline">@alice/ada</code> — open a group by its number, or search seeds by name and
+            description.
           </>
         }
       />
       <div className="mt-8 max-w-2xl">
         <SearchBar
           initialQuery={q ?? ''}
-          onSearch={(query) => void navigate({ to: '/search', search: { q: query || undefined } })}
+          onSearch={(query) =>
+            // A group's ID is a bare number (ADR-092 D5): it opens the group's page.
+            /^[0-9]{6,20}$/.test(query.trim())
+              ? void navigate({ to: '/g/$id', params: { id: query.trim() }, search: {} })
+              : void navigate({ to: '/search', search: { q: query || undefined } })
+          }
           placeholder="@alice/ada, alice/ada, or words"
           size="md"
           autoFocus={!q}

@@ -22,6 +22,7 @@ import publicPekoRoutes from "./routes/api/public-pekos.js";
 import principalDirectoryRoutes from "./routes/api/principals.js";
 import adminRoutes from "./routes/api/admin.js";
 import metaRoutes from "./routes/api/meta.js";
+import groupRoutes from "./routes/api/groups.js";
 import oauthRoutes from "./routes/auth/oauth.js";
 import apiKeyRoutes from "./routes/auth/api-keys.js";
 import oauthServerRoutes from "./routes/auth/oauth-server.js";
@@ -123,6 +124,7 @@ async function main() {
   await app.register(principalDirectoryRoutes, { prefix: "/v1" });
   await app.register(adminRoutes, { prefix: "/v1/admin" });
   await app.register(metaRoutes, { prefix: "/v1" });
+  await app.register(groupRoutes, { prefix: "/v1" });
 
   // ADR-057: bridge-token verification keys. Runtimes fetch this to
   // validate the EdDSA tokens the hub mints when proxying chat (the

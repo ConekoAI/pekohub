@@ -2,6 +2,20 @@
 
 ## 0.1.0 — pre-launch
 
+- Groups get IDs, pages and invite links (peko-runtime ADR-092 D3–D6). A group's home
+  registers it over the tunnel (`group_register` → `group_registered { groupId }`); the Hub
+  assigns a bare-number ID (a snowflake, like a Discord server's), so group names can be
+  anything and needn't be unique. The Hub keeps the name, owner, home and visibility
+  (`invite_only` or `public`) and the accounts in the group as the home reports them
+  (`group_roster`) — never posts or peko members. `/g/<id>` is the group's page: a public
+  group shows to anyone; an invite-only one only with an invite link (`?invite=<token>`, a
+  JWS signed by the home runtime, checked for signature and expiry). Searching a bare number
+  opens that group. `tunnel_group_join_request` relays a person's request to join (with the
+  invite, when there is one) to the home, which decides. A person's devices learn their
+  groups with `account_groups_request` → `account_groups` (and `GET /v1/me/groups`). Group
+  history is read from the home like a peko's (`GET /v1/groups/:id/history`, members only,
+  decided by the home); a peko's runtime may ask a group's home for history signed with the
+  peko's own key. Migration `0008_group_registry`.
 - People can be invited to groups on other computers (peko-runtime ADR-092 D2). The relay
   carries `tunnel_group_invitation`, which a group's home sends to a person's account and
   the Hub delivers to every runtime registered to that account (an offline one wakes the

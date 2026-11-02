@@ -140,6 +140,17 @@ async function fetchNoContent(url: string, method = 'DELETE', body?: unknown): P
   }
 }
 
+/** A group as its page shows it (runtime ADR-092 D5). */
+export interface PublicGroup {
+  id: string;
+  name: string;
+  visibility: 'invite_only' | 'public';
+  owner: { kind: 'peko' | 'person'; name: string | null; handle: string | null };
+  homeRuntime: string;
+  channelId: string;
+  homeOnline: boolean;
+}
+
 export const api = {
   search: (params: SearchQuery) => {
     const searchParams = new URLSearchParams();
@@ -153,6 +164,12 @@ export const api = {
     }
     return fetchJson<SearchResponse>(`/v1/search?${searchParams}`);
   },
+
+  // ── Groups (runtime ADR-092 D5) ──────────────────────────────────────────
+  getGroup: (id: string, invite?: string) =>
+    fetchJson<PublicGroup>(
+      `/v1/groups/${encodeURIComponent(id)}${invite ? `?invite=${encodeURIComponent(invite)}` : ''}`,
+    ),
 
   // ── Seeds (the registry) ────────────────────────────────────────────────
   listSeeds: (opts?: { page?: number; perPage?: number; owner?: string }) => {

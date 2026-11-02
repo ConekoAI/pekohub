@@ -26,6 +26,7 @@ import { Route as AtChar123ownerChar125IndexRouteImport } from './routes/@{$owne
 import { Route as TemplatesSplatRouteImport } from './routes/templates_.$'
 import { Route as SeedsNewRouteImport } from './routes/seeds/new'
 import { Route as SeedsSplatRouteImport } from './routes/seeds/$'
+import { Route as GIdRouteImport } from './routes/g.$id'
 import { Route as DashboardSeedsRouteImport } from './routes/dashboard_.seeds'
 import { Route as DashboardRuntimesRouteImport } from './routes/dashboard_.runtimes'
 import { Route as BundlesSplatRouteImport } from './routes/bundles_.$'
@@ -121,6 +122,11 @@ const SeedsSplatRoute = SeedsSplatRouteImport.update({
   path: '/seeds/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GIdRoute = GIdRouteImport.update({
+  id: '/g/$id',
+  path: '/g/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardSeedsRoute = DashboardSeedsRouteImport.update({
   id: '/dashboard_/seeds',
   path: '/dashboard/seeds',
@@ -182,6 +188,7 @@ export interface FileRoutesByFullPath {
   '/bundles/$': typeof BundlesSplatRoute
   '/dashboard/runtimes': typeof DashboardRuntimesRoute
   '/dashboard/seeds': typeof DashboardSeedsRoute
+  '/g/$id': typeof GIdRoute
   '/seeds/$': typeof SeedsSplatRoute
   '/seeds/new': typeof SeedsNewRoute
   '/templates/$': typeof TemplatesSplatRoute
@@ -209,6 +216,7 @@ export interface FileRoutesByTo {
   '/bundles/$': typeof BundlesSplatRoute
   '/dashboard/runtimes': typeof DashboardRuntimesRoute
   '/dashboard/seeds': typeof DashboardSeedsRoute
+  '/g/$id': typeof GIdRoute
   '/seeds/$': typeof SeedsSplatRoute
   '/seeds/new': typeof SeedsNewRoute
   '/templates/$': typeof TemplatesSplatRoute
@@ -237,6 +245,7 @@ export interface FileRoutesById {
   '/bundles_/$': typeof BundlesSplatRoute
   '/dashboard_/runtimes': typeof DashboardRuntimesRoute
   '/dashboard_/seeds': typeof DashboardSeedsRoute
+  '/g/$id': typeof GIdRoute
   '/seeds/$': typeof SeedsSplatRoute
   '/seeds/new': typeof SeedsNewRoute
   '/templates_/$': typeof TemplatesSplatRoute
@@ -266,6 +275,7 @@ export interface FileRouteTypes {
     | '/bundles/$'
     | '/dashboard/runtimes'
     | '/dashboard/seeds'
+    | '/g/$id'
     | '/seeds/$'
     | '/seeds/new'
     | '/templates/$'
@@ -293,6 +303,7 @@ export interface FileRouteTypes {
     | '/bundles/$'
     | '/dashboard/runtimes'
     | '/dashboard/seeds'
+    | '/g/$id'
     | '/seeds/$'
     | '/seeds/new'
     | '/templates/$'
@@ -320,6 +331,7 @@ export interface FileRouteTypes {
     | '/bundles_/$'
     | '/dashboard_/runtimes'
     | '/dashboard_/seeds'
+    | '/g/$id'
     | '/seeds/$'
     | '/seeds/new'
     | '/templates_/$'
@@ -348,6 +360,7 @@ export interface RootRouteChildren {
   BundlesSplatRoute: typeof BundlesSplatRoute
   DashboardRuntimesRoute: typeof DashboardRuntimesRoute
   DashboardSeedsRoute: typeof DashboardSeedsRoute
+  GIdRoute: typeof GIdRoute
   SeedsSplatRoute: typeof SeedsSplatRoute
   SeedsNewRoute: typeof SeedsNewRoute
   TemplatesSplatRoute: typeof TemplatesSplatRoute
@@ -478,6 +491,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SeedsSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/g/$id': {
+      id: '/g/$id'
+      path: '/g/$id'
+      fullPath: '/g/$id'
+      preLoaderRoute: typeof GIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dashboard_/seeds': {
       id: '/dashboard_/seeds'
       path: '/dashboard/seeds'
@@ -556,6 +576,7 @@ const rootRouteChildren: RootRouteChildren = {
   BundlesSplatRoute: BundlesSplatRoute,
   DashboardRuntimesRoute: DashboardRuntimesRoute,
   DashboardSeedsRoute: DashboardSeedsRoute,
+  GIdRoute: GIdRoute,
   SeedsSplatRoute: SeedsSplatRoute,
   SeedsNewRoute: SeedsNewRoute,
   TemplatesSplatRoute: TemplatesSplatRoute,

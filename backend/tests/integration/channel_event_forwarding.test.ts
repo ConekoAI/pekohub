@@ -616,15 +616,23 @@ describe("Relaying a person's history requests", () => {
     expect(metrics.snapshot()[CounterName.HubHistoryForwarded]).toBe(2);
   });
 
-  it("drops a request for someone else's account, or from no person at all", async () => {
+  it("drops a request for someone else's account, or from neither a person nor a peko", async () => {
     const { tunnelManager, host, personRuntime, hostRuntime, socketP } = await setup();
     const socketH = await connect(tunnelManager, hostRuntime);
     socketP.triggerMessage(request(personRuntime.did, hostRuntime.did, `user:hub:${host.id}`, "a"));
-    socketP.triggerMessage(request(personRuntime.did, hostRuntime.did, "did:key:z6MkPrincipal", "b"));
+    socketP.triggerMessage(request(personRuntime.did, hostRuntime.did, "principal:hub:x", "b"));
     await flush();
     expect(histories(socketH, "tunnel_channel_history_request")).toHaveLength(0);
     expect(metrics.snapshot()[CounterName.HubHistoryRequestRejectedPerson]).toBe(2);
     expect(socketP.closed).toBe(false);
+  });
+
+  it("forwards a peko member's request by its signing DID (runtime ADR-092 D3)", async () => {
+    const { tunnelManager, personRuntime, hostRuntime, socketP } = await setup();
+    const socketH = await connect(tunnelManager, hostRuntime);
+    socketP.triggerMessage(request(personRuntime.did, hostRuntime.did, "did:key:z6MkMember", "peko-1"));
+    await flush();
+    expect(histories(socketH, "tunnel_channel_history_request")).toHaveLength(1);
   });
 
   it("closes a runtime that claims another runtime's id", async () => {
@@ -753,5 +761,135 @@ describe("Relaying group invitations and answers", () => {
     await flush();
     expect(socketLaptop.closed).toBe(true);
     void laptop;
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Runtime ADR-092 D4-D6: a home registers its group and reports its
+// accounts; a runtime asks for its account's groups.
+// ---------------------------------------------------------------------------
+
+describe("Registering groups over the tunnel", () => {
+  let testDb: TestDb;
+
+  beforeAll(async () => {
+    testDb = await createTestDb();
+  });
+
+  beforeEach(async () => {
+    await resetTables(testDb.client);
+    metrics.reset();
+  });
+
+  afterAll(async () => {
+    await testDb.client.close();
+  });
+
+  async function connect(tunnelManager: TunnelManager, id: { did: string; privateKey: Uint8Array }) {
+    const socket = new MockWebSocket();
+    tunnelManager.handleSocket(socket.asWebSocket());
+    await completeHandshake(socket, id.did, id.privateKey);
+    return socket;
+  }
+
+  async function setup() {
+    const { tunnelManager } = await buildForwardingTestApp(testDb);
+    const owner = await createUser(testDb.client, { namespace: "alice" });
+    const member = await createUser(testDb.client, { namespace: "bob" });
+    const home = makeRuntimeIdentity();
+    const other = makeRuntimeIdentity();
+    const bobs = makeRuntimeIdentity();
+    await seedRuntime(testDb, home.did, owner.id);
+    await seedRuntime(testDb, other.did, owner.id);
+    await seedRuntime(testDb, bobs.did, member.id);
+    const peko = await createInstance(testDb.client, {
+      ownerSubject: { kind: "user", id: String(owner.id) },
+      name: "host",
+      exposure: "public",
+      runtimeId: home.did,
+    } as never);
+    const socketHome = await connect(tunnelManager, home);
+    return { tunnelManager, owner, member, home, other, bobs, peko, socketHome };
+  }
+
+  const reply = (socket: MockWebSocket, type: string) => socket.sent.filter((m) => m.type === type);
+
+  it("assigns a snowflake ID to a group whose owner is online on its home, once", async () => {
+    const { tunnelManager, peko, home, other, socketHome } = await setup();
+    const register = {
+      type: "group_register" as const,
+      requestId: "r1",
+      channelId: "chan_book",
+      name: "book club",
+      ownerAddress: `principal:hub:${peko.hubId}`,
+      visibility: "invite_only" as const,
+    };
+    socketHome.triggerMessage(register);
+    await flush();
+    const [first] = reply(socketHome, "group_registered") as Array<{ groupId: string }>;
+    expect(first.groupId).toMatch(/^[0-9]{15,20}$/);
+
+    socketHome.triggerMessage({ ...register, requestId: "r2", name: "Book Club" });
+    await flush();
+    const again = reply(socketHome, "group_registered") as Array<{ groupId: string }>;
+    expect(again[1].groupId).toBe(first.groupId);
+
+    // Another runtime can't register a group for a peko that isn't online there.
+    const socketOther = await connect(tunnelManager, other);
+    socketOther.triggerMessage({ ...register, requestId: "r3", channelId: "chan_x" });
+    await flush();
+    expect(reply(socketOther, "group_register_rejected")).toHaveLength(1);
+    void home;
+  });
+
+  it("keeps the accounts the home reports, and lists them to each account's runtimes", async () => {
+    const { tunnelManager, peko, member, bobs, socketHome } = await setup();
+    socketHome.triggerMessage({
+      type: "group_register",
+      requestId: "r1",
+      channelId: "chan_book",
+      name: "book club",
+      ownerAddress: `principal:hub:${peko.hubId}`,
+      visibility: "invite_only",
+    });
+    await flush();
+    const [{ groupId }] = reply(socketHome, "group_registered") as Array<{ groupId: string }>;
+    socketHome.triggerMessage({ type: "group_roster", groupId, accounts: [member.id, "not-an-account"] });
+    await flush();
+
+    const socketBob = await connect(tunnelManager, bobs);
+    socketBob.triggerMessage({ type: "account_groups_request", requestId: "q1" });
+    await flush();
+    const [answer] = reply(socketBob, "account_groups") as Array<{ groups: unknown[] }>;
+    expect(answer.groups).toEqual([
+      { groupId, name: "book club", homeRuntime: expect.any(String), channelId: "chan_book" },
+    ]);
+
+    // Only the home reports a group's members.
+    socketBob.triggerMessage({ type: "group_roster", groupId, accounts: [] });
+    socketBob.triggerMessage({ type: "account_groups_request", requestId: "q2" });
+    await flush();
+    const later = reply(socketBob, "account_groups") as Array<{ groups: unknown[] }>;
+    expect(later[1].groups).toHaveLength(1);
+  });
+
+  it("relays a person's join request from their own runtime only", async () => {
+    const { tunnelManager, member, owner, home, bobs, socketHome } = await setup();
+    const socketBob = await connect(tunnelManager, bobs);
+    const request = (account: string, requestId: string) => ({
+      type: "tunnel_group_join_request" as const,
+      requestId,
+      sourceRuntimeId: bobs.did,
+      recipientRuntimeId: home.did,
+      sourcePrincipalDid: `user:hub:${account}`,
+      channelId: "chan_book",
+      invite: "token",
+      signature: "x",
+    });
+    socketBob.triggerMessage(request(member.id, "j1"));
+    socketBob.triggerMessage(request(owner.id, "j2"));
+    await flush();
+    const relayed = reply(socketHome, "tunnel_group_join_request") as Array<{ requestId: string }>;
+    expect(relayed.map((m) => m.requestId)).toEqual(["j1"]);
   });
 });
