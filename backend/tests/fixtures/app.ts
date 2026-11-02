@@ -240,6 +240,9 @@ function createMockTunnelRouter(
       }
       throw new Error("Runtime not connected");
     },
+    async proxyHistory(): Promise<{ status: number; body: unknown }> {
+      throw new Error("Runtime not connected");
+    },
     async sendControl() {},
   };
 }

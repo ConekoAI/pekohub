@@ -39,6 +39,8 @@ const WAITING_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 // cannot grow it without limit.
 const MAX_WAITING_RECIPIENTS = 10_000;
 const MAX_WAITERS_PER_RECIPIENT = 1_000;
+// Runtime ADR-091 D7: a catch-up pass is at most 20 pages per DM.
+const HISTORY_REQUESTS_PER_MINUTE = 120;
 const REAPER_INTERVAL_MS = 30_000;
 const CHALLENGE_NONCE_BYTES = 32;
 /** ADR-058 D4: freshness leeways for the announce `principalPop`
@@ -144,6 +146,8 @@ export class TunnelManager {
    * reconnects, and a reconnecting runtime resends everything anyway.
    */
   private waiting = new Map<string, Map<string, number>>();
+  /** Recent history request times per runtime (runtime ADR-091 D7). */
+  private historyRequests = new Map<string, number[]>();
   private static readonly MAX_TRACKED_CHALLENGES = 4_096;
 
   constructor(private fastify: FastifyInstance) {}
@@ -390,6 +394,68 @@ export class TunnelManager {
     return conn;
   }
 
+  /**
+   * Runtime ADR-091: relay a history request or page. The source must be
+   * the authenticated runtime; a request must come from a person
+   * (`user:hub:<id>`) on the runtime registered to their account, at most
+   * `HISTORY_REQUESTS_PER_MINUTE` a minute per runtime. Content is never
+   * logged. A request to an offline host notes the waiter, so the
+   * person's runtime catches up when the host is back.
+   */
+  private async handleHistoryForward(
+    conn: RuntimeConnection,
+    msg: Extract<TunnelMessage, { type: "tunnel_channel_history_request" | "tunnel_channel_history" }>,
+  ): Promise<void> {
+    if (conn.runtimeId !== msg.sourceRuntimeId) {
+      this.fastify.log.warn(
+        { connRuntime: conn.runtimeId, claim: msg.sourceRuntimeId, type: msg.type },
+        "history envelope source allowlist mismatch — closing tunnel (impersonation)",
+      );
+      this.closeConnection(conn, "source allowlist mismatch");
+      this.handleDisconnect(conn);
+      return;
+    }
+    if (msg.type === "tunnel_channel_history_request") {
+      if (
+        !msg.sourcePrincipalDid.startsWith("user:hub:") ||
+        !(await this.speaksForItsOwnPerson(conn, msg.sourcePrincipalDid))
+      ) {
+        metrics.inc(CounterName.HubHistoryRequestRejectedPerson);
+        this.fastify.log.warn(
+          { connRuntime: conn.runtimeId, person: msg.sourcePrincipalDid },
+          "dropping history request for a person from a runtime not registered to their account",
+        );
+        return;
+      }
+      if (!this.allowHistoryRequest(conn.runtimeId)) {
+        metrics.inc(CounterName.HubHistoryRequestRateLimited);
+        return;
+      }
+    }
+    const target = this.getConnection(msg.recipientRuntimeId);
+    if (!target) {
+      if (msg.type === "tunnel_channel_history_request") {
+        this.noteWaiting(msg.recipientRuntimeId, conn.runtimeId);
+      }
+      return;
+    }
+    metrics.inc(CounterName.HubHistoryForwarded);
+    this.sendMessage(target.socket, msg);
+  }
+
+  /** Sliding one-minute window of history requests per runtime. */
+  private allowHistoryRequest(runtimeId: string): boolean {
+    const now = Date.now();
+    const recent = (this.historyRequests.get(runtimeId) ?? []).filter((t) => now - t < 60_000);
+    if (recent.length >= HISTORY_REQUESTS_PER_MINUTE) {
+      this.historyRequests.set(runtimeId, recent);
+      return false;
+    }
+    recent.push(now);
+    this.historyRequests.set(runtimeId, recent);
+    return true;
+  }
+
   /** `sender` tried to reach `recipient` while it was offline. */
   private noteWaiting(recipient: string, sender: string): void {
     if (recipient === sender) return;
@@ -614,6 +680,15 @@ export class TunnelManager {
         // its local mirror via `ChannelStore::join_remote` (no
         // follow-up `peek` round-trip needed).
         await this.handleChannelInviteForward(conn, msg);
+        break;
+      }
+
+      case "tunnel_channel_history_request":
+      case "tunnel_channel_history": {
+        // Runtime ADR-091: a person's history with a remote peko, asked
+        // of its host. Relayed like channel envelopes; never stored or
+        // logged.
+        await this.handleHistoryForward(conn, msg);
         break;
       }
 
@@ -1375,6 +1450,7 @@ export class TunnelManager {
 
     if (this.connections.get(conn.runtimeId) === conn) {
       this.connections.delete(conn.runtimeId);
+      this.historyRequests.delete(conn.runtimeId);
     }
 
     // Mark hosted instances offline and propagate via tunnel if still connected

@@ -16,6 +16,12 @@ import { readOrSetVisitor } from "../../services/visitor-cookie.js";
 // and their user-facing copy say "peko".
 // ─────────────────────────────────────────────────────────────────────────────
 
+const HistoryQuerySchema = z.object({
+  before: z.string().min(1).max(128).optional(),
+  after: z.string().min(1).max(128).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+});
+
 const ChatBodySchema = z.object({
   message: z.string().min(1),
   tos_acknowledged: z.boolean().optional(),
@@ -187,6 +193,54 @@ export default async function publicPekoRoutes(fastify: FastifyInstance) {
         visitorId,
         { daily: instance.dailyQuota, weekly: instance.weeklyQuota },
       );
+    },
+  );
+
+  // ── History for clients without a runtime (runtime ADR-091 D6) ────────────
+  //
+  // The signed-in person's own conversation with a peko, one page at a
+  // time, read from the peko's host. Never a visitor's; the Hub stores
+  // nothing.
+  fastify.get(
+    "/public/pekos/:owner/:pekoName/history",
+    async (request, reply) => {
+      const { owner, pekoName } = request.params as { owner: string; pekoName: string };
+      let user;
+      try {
+        user = await fastify.authenticate(request);
+      } catch {
+        return reply
+          .status(401)
+          .send({ error: "Sign in to read your conversation", code: "sign_in_required" });
+      }
+      const query = HistoryQuerySchema.safeParse(request.query);
+      if (!query.success) {
+        return reply.status(400).send({ error: "Invalid query", details: query.error.format() });
+      }
+      let instance = await instanceService.getByHandle(owner, pekoName);
+      if (instance && instance.exposure !== "public") instance = null;
+      if (!instance) {
+        return reply.status(404).send({ error: "Peko not found" });
+      }
+      if (instance.status === "offline" || !fastify.tunnelManager.isRuntimeConnected(instance.runtimeId)) {
+        return reply
+          .status(503)
+          .send({ error: "The computer hosting this peko is offline", code: "host_offline" });
+      }
+      try {
+        const answer = await fastify.tunnelRouter.proxyHistory(
+          instance.runtimeId,
+          instance.id,
+          instance.name,
+          query.data,
+          { kind: "user", id: String(user.id) },
+        );
+        return reply.status(answer.status).send(answer.body);
+      } catch {
+        return reply
+          .status(503)
+          .send({ error: "The computer hosting this peko did not answer", code: "host_offline" });
+      }
     },
   );
 
