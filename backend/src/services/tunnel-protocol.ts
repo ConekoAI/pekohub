@@ -356,6 +356,9 @@ export type TunnelMessage =
   // ADR-081 D7: the principal's online link moved to another runtime; the
   // receiving runtime's copy is now offline-only.
   | { type: "principal_unlinked"; localId: string; hubId: string }
+  // Hub → runtime: a runtime the receiver sent channel envelopes to while
+  // it was offline has connected; resend what waits for it now.
+  | { type: "peer_runtime_online"; runtimeId: string }
   // ADR-081 D4: the Hub's record is an online principal's owner. A runtime
   // asks to transfer it (allowed when the runtime's account is the owner);
   // the Hub tells the linked runtime the recorded owner after a transfer,

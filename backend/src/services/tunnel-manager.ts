@@ -32,6 +32,13 @@ const HEARTBEAT_INTERVAL_SECS = 30;
 const HEARTBEAT_TIMEOUT_MS = 90_000;
 /** A connection heard from within this window is live and cannot be displaced. */
 const LIVE_CONNECTION_WINDOW_MS = 2 * HEARTBEAT_INTERVAL_SECS * 1000;
+// How long a runtime waits on an offline one: the runtime's outbox keeps
+// an undelivered envelope this long (`channel_outbox.rs` KEEP_FOR_DAYS).
+const WAITING_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+// Bounds on who-waits-on-whom, so a runtime naming made-up recipients
+// cannot grow it without limit.
+const MAX_WAITING_RECIPIENTS = 10_000;
+const MAX_WAITERS_PER_RECIPIENT = 1_000;
 const REAPER_INTERVAL_MS = 30_000;
 const CHALLENGE_NONCE_BYTES = 32;
 /** ADR-058 D4: freshness leeways for the announce `principalPop`
@@ -127,6 +134,16 @@ export class TunnelManager {
    * re-handshake). Bounded by LRU eviction — see `MAX_TRACKED_CHALLENGES`.
    */
   private lastChallengeByRuntime = new Map<string, string>();
+  /**
+   * Who waits on whom: recipient runtime → (sender runtime → expiry ms).
+   * Recorded when an envelope is dropped because its recipient is offline;
+   * when that recipient connects, each waiting sender still connected is
+   * told (`peer_runtime_online`) and resends from its outbox at once.
+   * Only runtime ids are kept, never an envelope: the runtimes' outboxes
+   * hold the messages. In memory: after a Hub restart every sender
+   * reconnects, and a reconnecting runtime resends everything anyway.
+   */
+  private waiting = new Map<string, Map<string, number>>();
   private static readonly MAX_TRACKED_CHALLENGES = 4_096;
 
   constructor(private fastify: FastifyInstance) {}
@@ -369,7 +386,56 @@ export class TunnelManager {
       heartbeatIntervalSecs: HEARTBEAT_INTERVAL_SECS,
     });
     this.fastify.log.info({ runtimeId }, "Runtime tunnel authenticated");
+    this.wakeWaiting(runtimeId);
     return conn;
+  }
+
+  /** `sender` tried to reach `recipient` while it was offline. */
+  private noteWaiting(recipient: string, sender: string): void {
+    if (recipient === sender) return;
+    let senders = this.waiting.get(recipient);
+    if (!senders) {
+      if (this.waiting.size >= MAX_WAITING_RECIPIENTS) {
+        // Forget the recipient waited on longest (insertion order).
+        const oldest = this.waiting.keys().next().value;
+        if (oldest !== undefined) this.waiting.delete(oldest);
+      }
+      senders = new Map();
+      this.waiting.set(recipient, senders);
+    }
+    senders.delete(sender);
+    if (senders.size >= MAX_WAITERS_PER_RECIPIENT) {
+      const oldest = senders.keys().next().value;
+      if (oldest !== undefined) senders.delete(oldest);
+    }
+    senders.set(sender, Date.now() + WAITING_TTL_MS);
+  }
+
+  /**
+   * `recipient` just connected: tell every runtime waiting on it that is
+   * connected now. One that is not resends on its own reconnect, so the
+   * whole entry is done either way.
+   */
+  private wakeWaiting(recipient: string): void {
+    const senders = this.waiting.get(recipient);
+    if (!senders) return;
+    this.waiting.delete(recipient);
+    const now = Date.now();
+    for (const [sender, expiresAt] of senders) {
+      if (expiresAt < now) continue;
+      const senderConn = this.getConnection(sender);
+      if (!senderConn) continue;
+      metrics.inc(CounterName.HubPeerRuntimeOnlineSent);
+      this.sendMessage(senderConn.socket, { type: "peer_runtime_online", runtimeId: recipient });
+    }
+  }
+
+  /** Recipients each runtime waits on (tests). */
+  waitingOn(sender: string): string[] {
+    const now = Date.now();
+    return [...this.waiting]
+      .filter(([, senders]) => (senders.get(sender) ?? 0) >= now)
+      .map(([recipient]) => recipient);
   }
 
   /**
@@ -591,6 +657,7 @@ export class TunnelManager {
 
       case "principal_registration_rejected":
       case "principal_unlinked":
+      case "peer_runtime_online":
       case "principal_transfer_rejected":
       case "principal_owner_changed":
       case "principal_registered": return; // Hub-to-runtime receipts; never accepted from a runtime.
@@ -1180,8 +1247,9 @@ export class TunnelManager {
           channelId: msg.channelId,
           requestId: msg.requestId,
         },
-        "channel event recipient runtime offline — dropping",
+        "channel event recipient runtime offline — dropping; the source is told when it connects",
       );
+      this.noteWaiting(msg.recipientRuntimeId, conn.runtimeId);
       return;
     }
 
@@ -1275,8 +1343,9 @@ export class TunnelManager {
           channelId: msg.channelId,
           requestId: msg.requestId,
         },
-        "channel invite recipient runtime offline — dropping",
+        "channel invite recipient runtime offline — dropping; the source is told when it connects",
       );
+      this.noteWaiting(msg.recipientRuntimeId, conn.runtimeId);
       return;
     }
 

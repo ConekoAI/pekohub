@@ -2,6 +2,13 @@
 
 ## 0.1.0 — pre-launch
 
+- A message to a runtime that was offline goes out as soon as that runtime reconnects. When
+  the relay drops a channel envelope because its recipient is offline, it remembers that the
+  sender waits on it (runtime ids only, in memory, up to 30 days; never the envelope). When the
+  recipient connects, each waiting sender still connected gets `peer_runtime_online
+  { runtimeId }` and resends from its outbox at once, instead of at its next backoff tick (up to
+  an hour). Needs peko-runtime with the matching change (#543). Metric:
+  `hub.peer_runtime_online.sent`.
 - The API runs on nothing but Postgres. Meilisearch, Redis and blob storage are optional:
   without `MEILISEARCH_URL`, search (`/v1/search`, the directory's search and feeds) reads
   Postgres directly (`services/pg-search.ts`); without `REDIS_URL`, quotas and throttles stay

@@ -393,3 +393,148 @@ describe("Cross-runtime channel event forwarding (peko-channel PR-C)", () => {
     ).toBe(3);
   });
 });
+// ---------------------------------------------------------------------------
+// The waiting runtime is woken when its recipient connects
+// (`peer_runtime_online`). The Hub keeps who waits on whom, never the
+// envelope: the sender's outbox resends it.
+// ---------------------------------------------------------------------------
+
+describe("Waking a runtime whose recipient comes online", () => {
+  let testDb: TestDb;
+
+  beforeAll(async () => {
+    testDb = await createTestDb();
+  });
+
+  beforeEach(async () => {
+    await resetTables(testDb.client);
+    metrics.reset();
+  });
+
+  afterAll(async () => {
+    await testDb.client.close();
+  });
+
+  async function runtimes(count: number) {
+    const { tunnelManager } = await buildForwardingTestApp(testDb);
+    const owner = await createUser(testDb.client, { namespace: "alice" });
+    const ids = [];
+    for (let i = 0; i < count; i++) {
+      const id = makeRuntimeIdentity();
+      await seedRuntime(testDb, id.did, owner.id);
+      ids.push(id);
+    }
+    return { tunnelManager, ids };
+  }
+
+  async function connect(
+    tunnelManager: TunnelManager,
+    id: { did: string; privateKey: Uint8Array },
+  ) {
+    const socket = new MockWebSocket();
+    tunnelManager.handleSocket(socket.asWebSocket());
+    await completeHandshake(socket, id.did, id.privateKey);
+    return socket;
+  }
+
+  const post = (from: string, to: string, requestId: string) => ({
+    type: "tunnel_channel_event" as const,
+    requestId,
+    sourceRuntimeId: from,
+    recipientRuntimeId: to,
+    sourcePrincipalDid: "prin_alice",
+    channelId: "chan_abcdefgh",
+    event: {
+      kind: "posted" as const,
+      channel: "chan_abcdefgh",
+      author: "prin_alice",
+      parent: null,
+      text: "anyone home?",
+      at: "2026-11-02T12:00:00Z",
+    },
+    signature: "x",
+  });
+
+  const invite = (from: string, to: string) => ({
+    type: "tunnel_channel_invite" as const,
+    requestId: "inv-1",
+    sourceRuntimeId: from,
+    recipientRuntimeId: to,
+    sourcePrincipalDid: "prin_alice",
+    channelId: "dm_abc",
+    creator: "prin_alice",
+    creatorDid: "prin_alice",
+    name: "dm",
+    kind: "dm",
+    initialMembers: ["prin_alice", "prin_bob"],
+    signature: "x",
+  });
+
+  const wakeups = (socket: MockWebSocket) =>
+    socket.sent.filter((m) => m.type === "peer_runtime_online");
+
+  it("tells the sender once its offline recipient connects, and only once", async () => {
+    const { tunnelManager, ids } = await runtimes(2);
+    const [a, b] = ids;
+    const socketA = await connect(tunnelManager, a);
+
+    socketA.triggerMessage(post(a.did, b.did, "evt-1"));
+    socketA.triggerMessage(post(a.did, b.did, "evt-2"));
+    await flush();
+    expect(tunnelManager.waitingOn(a.did)).toEqual([b.did]);
+    expect(wakeups(socketA)).toHaveLength(0);
+
+    const socketB = await connect(tunnelManager, b);
+    expect(wakeups(socketA)).toEqual([{ type: "peer_runtime_online", runtimeId: b.did }]);
+    expect(wakeups(socketB)).toHaveLength(0);
+    expect(tunnelManager.waitingOn(a.did)).toEqual([]);
+    expect(metrics.snapshot()[CounterName.HubPeerRuntimeOnlineSent]).toBe(1);
+
+    // B reconnecting later with nothing waiting wakes no one.
+    socketB.close();
+    await flush();
+    await connect(tunnelManager, b);
+    expect(wakeups(socketA)).toHaveLength(1);
+  });
+
+  it("remembers an invite to an offline runtime too", async () => {
+    const { tunnelManager, ids } = await runtimes(2);
+    const [a, b] = ids;
+    const socketA = await connect(tunnelManager, a);
+    socketA.triggerMessage(invite(a.did, b.did));
+    await flush();
+    await connect(tunnelManager, b);
+    expect(wakeups(socketA)).toEqual([{ type: "peer_runtime_online", runtimeId: b.did }]);
+  });
+
+  it("wakes every connected waiter, skips one that went offline, and keeps no stale entry", async () => {
+    const { tunnelManager, ids } = await runtimes(3);
+    const [a, c, b] = ids;
+    const socketA = await connect(tunnelManager, a);
+    const socketC = await connect(tunnelManager, c);
+    socketA.triggerMessage(post(a.did, b.did, "evt-a"));
+    socketC.triggerMessage(post(c.did, b.did, "evt-c"));
+    await flush();
+
+    // C goes offline before B arrives; it resends on its own reconnect.
+    socketC.close();
+    await flush();
+    await connect(tunnelManager, b);
+    expect(wakeups(socketA)).toHaveLength(1);
+    expect(wakeups(socketC)).toHaveLength(0);
+    expect(tunnelManager.waitingOn(c.did)).toEqual([]);
+  });
+
+  it("never records a runtime waiting on itself, and a runtime can't send the wake-up", async () => {
+    const { tunnelManager, ids } = await runtimes(2);
+    const [a, b] = ids;
+    const socketA = await connect(tunnelManager, a);
+    socketA.triggerMessage(post(a.did, a.did, "evt-self"));
+    socketA.triggerMessage({ type: "peer_runtime_online", runtimeId: b.did });
+    await flush();
+    expect(tunnelManager.waitingOn(a.did)).toEqual([]);
+    expect(socketA.closed).toBe(false);
+    const socketB = await connect(tunnelManager, b);
+    expect(wakeups(socketB)).toHaveLength(0);
+  });
+});
