@@ -10,6 +10,8 @@ import {
   uniqueIndex,
   index,
   uuid,
+  bigint,
+  primaryKey,
 } from "drizzle-orm/pg-core";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
@@ -458,3 +460,62 @@ export const auditLogs = pgTable("audit_logs", {
     .defaultNow()
     .notNull(),
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Groups (peko-runtime ADR-092 D5/D6)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A group registered by its home runtime. The ID is a snowflake assigned
+ * here (`services/snowflake.ts`), written in decimal; the name is free
+ * text and needn't be unique. The Hub keeps no posts and no peko members.
+ */
+export const hubGroups = pgTable(
+  "hub_groups",
+  {
+    id: bigint("id", { mode: "bigint" }).primaryKey(),
+    name: varchar("name", { length: 256 }).notNull(),
+    /** The home runtime's did:key and its channel id there. */
+    homeRuntime: varchar("home_runtime", { length: 255 }).notNull(),
+    channelId: varchar("channel_id", { length: 255 }).notNull(),
+    /** The account the home runtime is registered to. */
+    ownerId: uuid("owner_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** The owning actor: `principal:hub:<uuid>` or `user:hub:<uuid>`. */
+    ownerAddress: varchar("owner_address", { length: 255 }).notNull(),
+    /** `invite_only` (default) or `public`. */
+    visibility: varchar("visibility", { length: 16 }).notNull().default("invite_only"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    homeChannelUnique: uniqueIndex("hub_groups_home_channel_unique").on(
+      table.homeRuntime,
+      table.channelId,
+    ),
+  }),
+);
+
+/**
+ * The accounts in a registered group, as its home reports them, so a
+ * person's devices can find their groups (ADR-092 D4). Shown to no one
+ * but that person.
+ */
+export const hubGroupMembers = pgTable(
+  "hub_group_members",
+  {
+    groupId: bigint("group_id", { mode: "bigint" })
+      .notNull()
+      .references(() => hubGroups.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    joinedAt: timestamp("joined_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.groupId, table.userId] }),
+    userIdx: index("hub_group_members_user_idx").on(table.userId),
+  }),
+);
+

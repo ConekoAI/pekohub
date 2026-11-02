@@ -149,6 +149,24 @@ const DDL_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS refresh_tokens_user_active_idx ON refresh_tokens(user_id, revoked_at, expires_at);`,
   `CREATE INDEX IF NOT EXISTS refresh_tokens_prefix_idx ON refresh_tokens(token_prefix);`,
 
+  `CREATE TABLE IF NOT EXISTS hub_groups (
+    id BIGINT PRIMARY KEY,
+    name VARCHAR(256) NOT NULL,
+    home_runtime VARCHAR(255) NOT NULL,
+    channel_id VARCHAR(255) NOT NULL,
+    owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    owner_address VARCHAR(255) NOT NULL,
+    visibility VARCHAR(16) NOT NULL DEFAULT 'invite_only',
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    UNIQUE (home_runtime, channel_id)
+  );`,
+  `CREATE TABLE IF NOT EXISTS hub_group_members (
+    group_id BIGINT NOT NULL REFERENCES hub_groups(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    joined_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    PRIMARY KEY (group_id, user_id)
+  );`,
   `CREATE TABLE IF NOT EXISTS hub_principals (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), signing_did VARCHAR(512) UNIQUE NOT NULL, identity_key VARCHAR(512) UNIQUE NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL);`,
   `CREATE TABLE IF NOT EXISTS instances (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -255,6 +273,8 @@ export async function createTestDb(): Promise<TestDb> {
 export async function resetTables(client: PGlite) {
   const tables = [
     "audit_logs",
+    "hub_group_members",
+    "hub_groups",
     "oauth_authorization_codes",
     "oauth_device_codes",
     "refresh_tokens",

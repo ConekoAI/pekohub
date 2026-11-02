@@ -237,7 +237,7 @@ export class TunnelRouter {
     runtimeId: string,
     instanceId: string,
     principalName: string,
-    query: { before?: string; after?: string; limit?: number },
+    query: { before?: string; after?: string; limit?: number; group?: string },
     caller: Subject,
   ): Promise<{ status: number; body: unknown }> {
     const request: HttpProxiedRequest = {

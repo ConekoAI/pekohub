@@ -20,6 +20,14 @@ import {
 } from "./tunnel-protocol.js";
 import { verifyDidKeySignature, verifyDidKeyJws, TunnelAuthError } from "./tunnel-crypto.js";
 import { instanceService, type InstanceStatus } from "./instances.js";
+import {
+  GroupRegistrationError,
+  groupsOfAccount,
+  publicGroup,
+  registerGroup,
+  setGroupRoster,
+} from "./groups.js";
+import { groupUrl } from "./origins.js";
 import { auditService } from "./audit.js";
 import { metrics, CounterName } from "./metrics.js";
 import { db } from "../db/index.js";
@@ -420,9 +428,17 @@ export class TunnelManager {
       return;
     }
     if (msg.type === "tunnel_channel_history_request") {
+      // A peko member of a group asks by its signing DID (runtime ADR-092
+      // D3), only from the runtime its online link points at.
+      const principal = msg.sourcePrincipalDid.startsWith("did:key:");
+      const linked = principal
+        ? await instanceService.linkedRuntimeForSigningDid(msg.sourcePrincipalDid)
+        : undefined;
       if (
-        !msg.sourcePrincipalDid.startsWith("user:hub:") ||
-        !(await this.speaksForItsOwnPerson(conn, msg.sourcePrincipalDid))
+        principal
+          ? linked !== undefined && linked !== conn.runtimeId
+          : !msg.sourcePrincipalDid.startsWith("user:hub:") ||
+            !(await this.speaksForItsOwnPerson(conn, msg.sourcePrincipalDid))
       ) {
         metrics.inc(CounterName.HubHistoryRequestRejectedPerson);
         this.fastify.log.warn(
@@ -492,7 +508,7 @@ export class TunnelManager {
    */
   private async handleGroupJoin(
     conn: RuntimeConnection,
-    msg: Extract<TunnelMessage, { type: "tunnel_group_join" }>,
+    msg: Extract<TunnelMessage, { type: "tunnel_group_join" | "tunnel_group_join_request" }>,
   ): Promise<void> {
     if (conn.runtimeId !== msg.sourceRuntimeId) {
       this.fastify.log.warn(
@@ -787,9 +803,78 @@ export class TunnelManager {
         break;
       }
 
-      case "tunnel_group_join": {
-        // Runtime ADR-092 D2: a person's answer, from their own runtime.
+      case "tunnel_group_join":
+      case "tunnel_group_join_request": {
+        // Runtime ADR-092 D2/D5: a person's answer, or their request to
+        // join with a link, from their own runtime to the group's home.
         await this.handleGroupJoin(conn, msg);
+        break;
+      }
+
+      case "group_register": {
+        // Runtime ADR-092 D5: the home registers its group.
+        try {
+          const groupId = await registerGroup({
+            homeRuntime: conn.runtimeId,
+            channelId: msg.channelId,
+            name: msg.name,
+            ownerAddress: msg.ownerAddress,
+            visibility: msg.visibility,
+          });
+          this.sendMessage(conn.socket, {
+            type: "group_registered",
+            requestId: msg.requestId,
+            groupId,
+            pageUrl: groupUrl(this.fastify.config, groupId),
+          });
+        } catch (err) {
+          const message = err instanceof GroupRegistrationError ? err.message : "registration failed";
+          if (!(err instanceof GroupRegistrationError)) {
+            this.fastify.log.error({ err, runtimeId: conn.runtimeId }, "group registration failed");
+          }
+          this.sendMessage(conn.socket, { type: "group_register_rejected", requestId: msg.requestId, message });
+        }
+        break;
+      }
+
+      case "group_roster": {
+        // Runtime ADR-092 D6: the home reports the accounts in its group.
+        try {
+          await setGroupRoster(conn.runtimeId, msg.groupId, msg.accounts);
+        } catch (err) {
+          this.fastify.log.warn({ err, runtimeId: conn.runtimeId, groupId: msg.groupId }, "group roster refused");
+        }
+        break;
+      }
+
+      case "account_groups_request": {
+        // Runtime ADR-092 D4: the groups of the account this runtime is
+        // registered to.
+        const owner = await this.resolveRuntimeOwner(conn.runtimeId);
+        const groups = owner ? await groupsOfAccount(owner) : [];
+        this.sendMessage(conn.socket, { type: "account_groups", requestId: msg.requestId, groups });
+        break;
+      }
+
+      case "group_lookup_request": {
+        // Runtime ADR-092 D5: what the group's page would show this
+        // runtime's person; nothing for an invite-only group without a
+        // valid invite.
+        const group = await publicGroup(msg.groupId, msg.invite);
+        this.sendMessage(conn.socket, {
+          type: "group_lookup",
+          requestId: msg.requestId,
+          ...(group
+            ? {
+                group: {
+                  groupId: group.id,
+                  name: group.name,
+                  homeRuntime: group.homeRuntime,
+                  channelId: group.channelId,
+                },
+              }
+            : {}),
+        });
         break;
       }
 
@@ -843,6 +928,10 @@ export class TunnelManager {
       case "principal_registration_rejected":
       case "principal_unlinked":
       case "peer_runtime_online":
+      case "group_registered":
+      case "group_register_rejected":
+      case "account_groups":
+      case "group_lookup":
       case "principal_transfer_rejected":
       case "principal_owner_changed":
       case "principal_registered": return; // Hub-to-runtime receipts; never accepted from a runtime.

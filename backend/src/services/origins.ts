@@ -35,6 +35,11 @@ export function pekoUrl(config: Config, owner: string, name: string): string {
   return `${webOrigin(config)}/@${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
 }
 
+/** A group's page (runtime ADR-092 D5): its ID is a bare number. */
+export function groupUrl(config: Config, id: string): string {
+  return `${webOrigin(config)}/g/${encodeURIComponent(id)}`;
+}
+
 export function seedUrl(config: Config, owner: string, name: string): string {
   return `${webOrigin(config)}/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
 }
