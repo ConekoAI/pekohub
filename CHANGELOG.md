@@ -7,7 +7,7 @@
   sender waits on it (runtime ids only, in memory, up to 30 days; never the envelope). When the
   recipient connects, each waiting sender still connected gets `peer_runtime_online
   { runtimeId }` and resends from its outbox at once, instead of at its next backoff tick (up to
-  an hour). Needs peko-runtime with the matching change (#543). Metric:
+  an hour). Needs peko-runtime with the matching change (peko-runtime#543). Metric:
   `hub.peer_runtime_online.sent`.
 - The API runs on nothing but Postgres. Meilisearch, Redis and blob storage are optional:
   without `MEILISEARCH_URL`, search (`/v1/search`, the directory's search and feeds) reads
