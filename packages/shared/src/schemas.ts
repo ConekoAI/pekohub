@@ -90,12 +90,58 @@ export const SearchResultItem = z.object({
 });
 export type SearchResultItem = z.infer<typeof SearchResultItem>;
 
+// One search space (hub ADR-009). A query that is a person's or peko's
+// exact ID (`@alice`, `@alice/ada`) finds that one, if it exists and is
+// public, and nothing else. Anything else searches seeds; when it is also
+// a seed ID (`alice/ada`), that seed — and a public peko with the same
+// owner and name — come first as exact matches.
+export const ExactHit = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('person'),
+    /** `@alice` */
+    id: z.string(),
+    handle: z.string(),
+    displayName: z.string(),
+    avatarUrl: z.string().nullable(),
+    url: z.string(),
+  }),
+  z.object({
+    kind: z.literal('peko'),
+    /** `@alice/ada` */
+    id: z.string(),
+    owner: z.string(),
+    name: z.string(),
+    displayName: z.string(),
+    description: z.string().nullable(),
+    avatar: z.string().nullable(),
+    status: z.string(),
+    url: z.string(),
+  }),
+  z.object({
+    kind: z.literal('seed'),
+    /** `alice/ada` */
+    id: z.string(),
+    owner: z.string(),
+    name: z.string(),
+    displayName: z.string().nullable(),
+    description: z.string().nullable(),
+    version: z.string(),
+    url: z.string(),
+  }),
+]);
+export type ExactHit = z.infer<typeof ExactHit>;
+
 export const SearchResponse = z.object({
+  /** Seeds matching the text. */
   items: z.array(SearchResultItem),
   total: z.number().int().nonnegative(),
   page: z.number().int().positive(),
   perPage: z.number().int().positive(),
   totalPages: z.number().int().nonnegative(),
+  /** What the query was read as: an ID's kind, or `text`. */
+  queryKind: z.enum(['person', 'peko', 'seed', 'text']).default('text'),
+  /** Exact-ID matches, first page only. */
+  exact: z.array(ExactHit).default([]),
 });
 export type SearchResponse = z.infer<typeof SearchResponse>;
 

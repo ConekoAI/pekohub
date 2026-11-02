@@ -20,9 +20,11 @@ const addDocuments = vi.fn().mockResolvedValue({ taskUid: 1 });
 const updateSettings = vi.fn().mockResolvedValue({ taskUid: 1 });
 const deleteDocument = vi.fn().mockResolvedValue({ taskUid: 1 });
 const search = vi.fn().mockResolvedValue({ hits: [], totalHits: 0, page: 0 });
+const deleteIndex = vi.fn().mockResolvedValue({ taskUid: 1 });
 
 vi.mock("meilisearch", () => ({
   MeiliSearch: class {
+    deleteIndex = deleteIndex;
     index() {
       return { addDocuments, updateSettings, deleteDocument, search };
     }
@@ -115,20 +117,7 @@ describe("search plugin: indexed document shape", () => {
     }
   });
 
-  it("indexes a peko under its `id`, which the engine can't infer next to `ownerId`", async () => {
-    await app.search.indexInstance({
-      objectID: "044fe21d-b43c-5934-b5fc-c806d12fac3f",
-      id: "044fe21d-b43c-5934-b5fc-c806d12fac3f",
-      name: "remy",
-      type: "principal",
-      status: "online",
-      capabilities: [],
-      ownerId: "11111111-1111-4111-8111-111111111111",
-      createdAt: new Date().toISOString(),
-    });
-    expect(addDocuments).toHaveBeenCalledTimes(1);
-    const [documents, options] = addDocuments.mock.calls[0];
-    expect(documents[0]).toMatchObject({ id: "044fe21d-b43c-5934-b5fc-c806d12fac3f", exposure: "public" });
-    expect(options).toEqual({ primaryKey: "id" });
+  it("drops the index pekos used to be searched in (hub ADR-009 D2)", () => {
+    expect(deleteIndex).toHaveBeenCalledWith("instances");
   });
 });

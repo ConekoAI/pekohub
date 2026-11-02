@@ -44,8 +44,8 @@ function NotFound() {
           The link may be stale, or the peko may have been made private or unregistered since it was shared.
         </p>
         <div className="mt-7 flex flex-wrap items-center justify-center gap-2">
-          <Link to="/pekos" className="btn-primary">
-            Browse pekos
+          <Link to="/search" search={{ q: undefined }} className="btn-primary">
+            Search
           </Link>
           <Link to="/" className="btn-secondary">
             Go home

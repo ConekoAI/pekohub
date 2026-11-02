@@ -45,15 +45,30 @@ describe("actor addressing contract", () => {
     await app.close();
   });
 
-  it("rejects ambiguous handles instead of choosing an arbitrary principal", async () => {
+  it("a handle shared by two public pekos means the one made public last (hub ADR-009 D3)", async () => {
     const app = await buildTestApp({ testDb });
     const user = await createUser(testDb.client, { namespace: "alice" });
-    for (const did of ["did:key:zOne", "did:key:zTwo"]) {
-      await createInstance(testDb.client, { ownerSubject: { kind: "user", id: user.id }, principalDid: did, name: "helper", exposure: "public" });
-    }
-    for (const url of ["/v1/principals/by-handle/alice/helper", "/v1/public/pekos/alice/helper"]) {
-      expect((await app.inject({ method: "GET", url })).statusCode).toBe(409);
-    }
+    const ownerSubject = { kind: "user", id: user.id };
+    const older = await createInstance(testDb.client, { ownerSubject, principalDid: "did:key:zOne", name: "helper", exposure: "public", publishedAt: new Date("2026-10-01T00:00:00Z") });
+    const newer = await createInstance(testDb.client, { ownerSubject, principalDid: "did:key:zTwo", name: "helper", exposure: "public", publishedAt: new Date("2026-10-02T00:00:00Z") });
+    const resolve = async () => {
+      const directory = await app.inject({ method: "GET", url: "/v1/principals/by-handle/alice/helper" });
+      const profile = await app.inject({ method: "GET", url: "/v1/public/pekos/alice/helper" });
+      expect(directory.statusCode).toBe(200);
+      expect(profile.json().liveInstance.id).toBe(directory.json().instanceId);
+      return directory.json().instanceId;
+    };
+    expect(await resolve()).toBe(newer.id);
+
+    // Made private, the newer one gives the handle back; made public
+    // again, it takes it back.
+    const headers = await authHeaders(user);
+    const exposure = (id: string, to: string) =>
+      app.inject({ method: "PATCH", url: `/v1/instances/${id}/exposure`, headers, payload: { exposure: to } });
+    expect((await exposure(newer.id, "private")).statusCode).toBe(200);
+    expect(await resolve()).toBe(older.id);
+    expect((await exposure(newer.id, "public")).statusCode).toBe(200);
+    expect(await resolve()).toBe(newer.id);
     await app.close();
   });
 

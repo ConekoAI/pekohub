@@ -155,10 +155,11 @@ export const api = {
   },
 
   // ── Seeds (the registry) ────────────────────────────────────────────────
-  listSeeds: (opts?: { page?: number; perPage?: number }) => {
+  listSeeds: (opts?: { page?: number; perPage?: number; owner?: string }) => {
     const params = new URLSearchParams();
     if (opts?.page) params.set('page', String(opts.page));
     if (opts?.perPage) params.set('perPage', String(opts.perPage));
+    if (opts?.owner) params.set('owner', opts.owner);
     return fetchJson<SeedList>(`/v1/seeds?${params}`);
   },
 
@@ -260,12 +261,12 @@ export const api = {
   // ─────────────────────────────────────────────────────────────────────────
 
   /**
-   * Fetch the public profile for a peko. Used by `/peko/$owner/$pekoName`,
-   * the share-link landing page. The website offers no chat; a visitor
+   * Fetch the public profile for a peko by its ID, `@owner/name`. Used by
+   * `/@owner/name`, the share-link landing page. The website offers no chat; a visitor
    * opens the peko in Peko desktop and messages it over their own runtime.
    */
   publicProfile: (owner: string, pekoName: string) =>
-    fetchJson<PublicProfile>(`/v1/public/pekos/${owner}/${pekoName}`),
+    fetchJson<PublicProfile>(`/v1/public/pekos/${encodeURIComponent(owner)}/${encodeURIComponent(pekoName)}`),
 
   // ─────────────────────────────────────────────────────────────────────────
   // Owner dashboard (PR #7) — instances scoped to the signed-in user.
@@ -388,85 +389,23 @@ export const api = {
     }),
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Discovery (PR #8) — public peko browse + curated feeds.
-  // Anonymous endpoints (no JWT). Results are a flattened
-  // `DiscoveryHit` shape — no runtime metadata, no ownerSubject,
-  // just the public profile the /peko/$owner/$pekoName landing page
-  // shows. The `ownerName` field is the human-readable namespace the
-  // share-link path uses; we surface it directly so the card can
-  // build the share URL without a second round-trip.
+  // People — found by exact handle (hub ADR-009). A person's page shows
+  // their profile and published seeds, never their pekos.
   // ─────────────────────────────────────────────────────────────────────────
 
-  /**
-   * Public search. `q` is a free-text query against public_name +
-   * description + tags; `category` filters by the public category
-   * enum; `sort` is one of `trending` (createdAt desc), `new`
-   * (publishedAt desc), `featured` (featured + createdAt desc),
-   * or default (createdAt desc).
-   */
-  discoverySearch: (opts?: { q?: string; category?: string; sort?: string; page?: number; perPage?: number }) => {
-    const params = new URLSearchParams();
-    if (opts?.q) params.set('q', opts.q);
-    if (opts?.category) params.set('category', opts.category);
-    if (opts?.sort) params.set('sort', opts.sort);
-    params.set('page', String(opts?.page ?? 1));
-    params.set('per_page', String(opts?.perPage ?? 24));
-    return fetchJson<{
-      hits: DiscoveryHit[];
-      total: number;
-      page: number;
-    }>(`/v1/discovery/search?${params}`);
-  },
-
-  /**
-   * Curated feed. `name` is one of `trending` / `new` / `featured`.
-   * Returns the same hit shape as `discoverySearch`, with `feed`
-   * echoed back so the SPA can label the section header.
-   */
-  discoveryFeed: (name: 'trending' | 'new' | 'featured', opts?: { page?: number; perPage?: number }) => {
-    const params = new URLSearchParams();
-    params.set('page', String(opts?.page ?? 1));
-    params.set('per_page', String(opts?.perPage ?? 24));
-    return fetchJson<{
-      hits: DiscoveryHit[];
-      total: number;
-      page: number;
-      feed: string;
-    }>(`/v1/discovery/feed/${name}?${params}`);
-  },
+  person: (handle: string) => fetchJson<PersonProfile>(`/v1/people/${encodeURIComponent(handle)}`),
 };
 
-/**
- * Shape returned by `GET /v1/discovery/search` and
- * `GET /v1/discovery/feed/:feed`. Mirrors the backend response in
- * `backend/src/routes/api/instances.ts:898-911`. No `runtimeId` /
- * `ownerSubject` is leaked — discovery is strictly public.
- */
-export interface DiscoveryHit {
+/** `GET /v1/people/:handle`: a person's page. */
+export interface PersonProfile {
+  kind: 'person';
+  /** `@alice` */
   id: string;
-  publicName: string;
-  description: string | null;
-  /** Human-readable label (`users.displayName`). Not addressable. */
-  ownerName: string;
-  /**
-   * Addressable owner handle (`users.namespace`). `/peko/:owner` resolves
-   * against this, so share links must use it — `ownerName` is only a
-   * label and can differ from the namespace.
-   */
-  ownerNamespace: string | null;
-  ownerAvatarUrl: string | null;
-  /** The peko's own avatar: an emoji or short monogram, if it has one. */
-  avatar?: string | null;
-  category: string | null;
-  tags: string[];
-  status: 'online' | 'offline' | 'busy' | 'error';
-  publishedAt: string | null;
-  featured: boolean;
-}
-
-/** The handle a share link must be built from. */
-export function ownerHandle(hit: DiscoveryHit): string {
-  return hit.ownerNamespace ?? hit.ownerName;
+  handle: string;
+  displayName: string;
+  avatarUrl: string | null;
+  url: string;
+  joinedAt: string;
 }
 
 /** An app asking to sign in, as the consent page shows it. */
@@ -480,15 +419,6 @@ export interface OAuthDeviceRequest {
   client: { id: string; name: string };
   scope: string | null;
   userCode: string;
-}
-
-/**
- * Build the canonical share URL for a discovery hit
- * (`/peko/:owner/:pekoName`, ADR-005 §1).
- */
-export function shareUrlFor(hit: DiscoveryHit, origin?: string): string {
-  const base = origin ?? (typeof window !== 'undefined' ? window.location.origin : '');
-  return `${base}/peko/${encodeURIComponent(ownerHandle(hit))}/${encodeURIComponent(hit.publicName)}`;
 }
 
 /**

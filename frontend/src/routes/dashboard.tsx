@@ -203,9 +203,8 @@ function InstanceCard({
 }) {
   const meta = EXPOSURE_META[instance.exposure];
   const ExposureIcon = meta.icon;
-  const shareUrl = ownerHandle
-    ? `${window.location.origin}/peko/${ownerHandle}/${instance.name}`
-    : null;
+  // The peko's ID is its page (hub ADR-009); only a public one has one.
+  const shareUrl = ownerHandle ? `${window.location.origin}/@${ownerHandle}/${instance.name}` : null;
   const live = instance.exposure === 'public';
 
   return (
@@ -215,7 +214,9 @@ function InstanceCard({
           <h3 className="truncate text-[15px] font-semibold tracking-tight text-slate-100">
             {instance.publicName ?? instance.name}
           </h3>
-          <p className="mt-1 truncate font-mono text-2xs text-slate-500">@{instance.name}</p>
+          <p className="mt-1 truncate font-mono text-2xs text-slate-500">
+            {ownerHandle ? `@${ownerHandle}/${instance.name}` : instance.name}
+          </p>
         </div>
         <Badge tone={meta.tone}>
           <ExposureIcon className="h-2.5 w-2.5" />
@@ -260,8 +261,8 @@ function InstanceCard({
             <>
               <CopyButton value={shareUrl} label="Link" className="btn-ghost btn-sm" />
               <Link
-                to="/peko/$owner/$pekoName"
-                params={{ owner: ownerHandle ?? '', pekoName: instance.name }}
+                to="/@{$owner}/$name"
+                params={{ owner: ownerHandle ?? '', name: instance.name }}
                 className="btn-ghost btn-sm"
               >
                 Open

@@ -6,7 +6,8 @@ import { db } from "../db/index.js";
 import { createPostgresSearch } from "../services/pg-search.js";
 
 const BUNDLES_INDEX = "bundles";
-const INSTANCES_INDEX = "instances";
+/** Pekos were indexed here until hub ADR-009; removed on startup. */
+const RETIRED_INSTANCES_INDEX = "instances";
 
 /**
  * Sanitize a document ID for Meilisearch.
@@ -49,40 +50,6 @@ export interface SearchService {
    * and left deleted seeds searchable forever.
    */
   deleteBundleDocuments(objectIDs: string[]): Promise<void>;
-  indexInstance(doc: {
-    objectID: string;
-    id: string;
-    name: string;
-    type: string;
-    bundleRef?: string;
-    status: string;
-    capabilities: string[];
-    // Post-H1 the legacy `instances.owner_id` column is gone and
-    // post-H3 the user-id is a UUID string. The search document
-    // keeps an `ownerId` field for filterability; `null` means "no
-    // known user owner" (i.e. the row is principal-owned or
-    // ownerless) and the document just stores `ownerId: null`
-    // rather than fabricating a 0 sentinel.
-    ownerId: string | null;
-    runtimeDisplayName?: string;
-    createdAt: string;
-    publicName?: string;
-    description?: string;
-    tags?: string[];
-    category?: string;
-    featured?: boolean;
-    publishedAt?: string;
-  }): Promise<void>;
-  searchInstances(
-    query: string,
-    options?: SearchParams,
-  ): Promise<{
-    hits: Array<Record<string, unknown>>;
-    total: number;
-    page: number;
-    perPage: number;
-  }>;
-  deleteInstance(objectID: string): Promise<void>;
 }
 
 /**
@@ -104,7 +71,6 @@ async function searchPlugin(fastify: FastifyInstance) {
   });
 
   const bundlesIndex = client.index(BUNDLES_INDEX);
-  const instancesIndex = client.index(INSTANCES_INDEX);
 
   // Ensure bundles index settings on startup
   try {
@@ -135,38 +101,12 @@ async function searchPlugin(fastify: FastifyInstance) {
     fastify.log.warn({ err }, "Failed to update Meilisearch bundle settings");
   }
 
-  // Ensure instances index settings on startup
+  // Pekos are never searched (hub ADR-009 D2): drop what earlier
+  // versions indexed of them.
   try {
-    await instancesIndex.updateSettings({
-      searchableAttributes: [
-        "name",
-        "publicName",
-        "description",
-        "tags",
-        "bundleRef",
-        "capabilities",
-        "runtimeDisplayName",
-      ],
-      filterableAttributes: [
-        "type",
-        "status",
-        "capabilities",
-        "category",
-        "featured",
-        "exposure",
-      ],
-      sortableAttributes: ["createdAt", "publishedAt"],
-      rankingRules: [
-        "words",
-        "typo",
-        "proximity",
-        "attribute",
-        "sort",
-        "exactness",
-      ],
-    });
+    await client.deleteIndex(RETIRED_INSTANCES_INDEX);
   } catch (err) {
-    fastify.log.warn({ err }, "Failed to update Meilisearch instance settings");
+    fastify.log.warn({ err }, "Failed to delete the retired Meilisearch instances index");
   }
 
   const search: SearchService = {
@@ -215,56 +155,6 @@ async function searchPlugin(fastify: FastifyInstance) {
       await bundlesIndex.deleteDocuments(objectIDs.map(sanitizeObjectID));
     },
 
-    async indexInstance(doc) {
-      await instancesIndex.addDocuments([
-        {
-          id: doc.objectID,
-          name: doc.name,
-          type: doc.type,
-          bundleRef: doc.bundleRef,
-          status: doc.status,
-          capabilities: doc.capabilities,
-          ownerId: doc.ownerId,
-          runtimeDisplayName: doc.runtimeDisplayName,
-          createdAt: doc.createdAt,
-          publicName: doc.publicName,
-          description: doc.description,
-          tags: doc.tags,
-          category: doc.category,
-          featured: doc.featured,
-          publishedAt: doc.publishedAt,
-          exposure: "public",
-        },
-        // Name it: the engine can't infer one from `id` and `ownerId`,
-        // and fails the whole addition — no peko ever reached the index.
-      ], { primaryKey: "id" });
-    },
-
-    async searchInstances(query, options = {}) {
-      const page = options.page ?? 0;
-      const perPage = options.hitsPerPage ?? 20;
-
-      const result = await instancesIndex.search<Record<string, unknown>>(
-        query,
-        {
-          filter: options.filter,
-          sort: options.sort,
-          offset: page * perPage,
-          limit: perPage,
-        },
-      );
-
-      return {
-        hits: result.hits,
-        total: result.estimatedTotalHits ?? 0,
-        page: page + 1,
-        perPage,
-      };
-    },
-
-    async deleteInstance(objectID) {
-      await instancesIndex.deleteDocument(objectID);
-    },
   };
 
   fastify.decorate("search", search);

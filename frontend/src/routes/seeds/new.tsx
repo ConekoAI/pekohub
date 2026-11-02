@@ -101,7 +101,7 @@ function PublishForm({ handle }: { handle: string }) {
         version,
         ...(readme.trim() ? { readme } : {}),
       });
-      void navigate({ to: '/seeds/$', params: { _splat: `${published.owner}/${published.name}` } });
+      void navigate({ to: '/$owner/$name', params: { owner: published.owner, name: published.name } });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Publishing failed');
     } finally {

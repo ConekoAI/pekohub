@@ -1,0 +1,5 @@
+# Share links already out (hub ADR-009): a page's path is now its ID.
+# 301, so link previews follow to the page's own title and description.
+/peko/:owner/:name /@:owner/:name 301
+/p/:owner/:name /@:owner/:name 301
+/seeds/:owner/:name /:owner/:name 301

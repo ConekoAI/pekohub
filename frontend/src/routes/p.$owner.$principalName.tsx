@@ -1,10 +1,10 @@
 /**
  * Legacy share-link redirect.
  *
- * The public peko page used to live at `/p/$owner/$principalName`;
- * the user-facing concept was renamed to "peko" and the canonical
- * URL is now `/peko/$owner/$pekoName`. Old `/p/...` links keep
- * working via this redirect (replace, so the back button skips it).
+ * The public peko page lived at `/p/$owner/$principalName`, then at
+ * `/peko/$owner/$pekoName`; it is now the peko's ID, `/@alice/ada`
+ * (hub ADR-009). Old links keep working in one hop (replace, so the
+ * back button skips it).
  */
 
 import { createFileRoute, redirect } from "@tanstack/react-router";
@@ -12,8 +12,8 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 export const Route = createFileRoute("/p/$owner/$principalName")({
   beforeLoad: ({ params }) => {
     throw redirect({
-      to: "/peko/$owner/$pekoName",
-      params: { owner: params.owner, pekoName: params.principalName },
+      to: "/@{$owner}/$name",
+      params: { owner: params.owner, name: params.principalName },
       replace: true,
     });
   },

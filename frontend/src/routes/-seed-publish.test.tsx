@@ -30,7 +30,7 @@ describe('/seeds/new', () => {
     await user.paste('name = "ada"\n');
     await user.click(screen.getByRole('button', { name: 'Publish' }));
     await screen.findByRole('heading', { name: 'Ada' });
-    expect(router.state.location.pathname).toBe('/seeds/testuser/ada');
+    expect(router.state.location.pathname).toBe('/testuser/ada');
   });
 
   it("shows the Hub's reason when a seed is refused", async () => {

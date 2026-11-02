@@ -5,7 +5,7 @@ import { db } from "../../db/index.js";
 import { bundles, bundleVersions, pullStats, users } from "../../db/schema.js";
 import { auditService } from "../../services/audit.js";
 import { shouldRecordPullStats } from "../../services/throttle.js";
-import { apiOrigin, webOrigin } from "../../services/origins.js";
+import { apiOrigin, seedUrl } from "../../services/origins.js";
 import {
   MAX_README_BYTES,
   isValidSeedVersion,
@@ -72,7 +72,7 @@ function seedPaths(fastify: FastifyInstance, owner: string, name: string, versio
   const base = `/v1/seeds/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
   return {
     downloadUrl: `${apiOrigin(fastify.config)}${base}/versions/${encodeURIComponent(version)}/seed.toml`,
-    webUrl: `${webOrigin(fastify.config)}/seeds/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`,
+    webUrl: seedUrl(fastify.config, owner, name),
   };
 }
 

@@ -27,7 +27,7 @@ interface Check {
 
 const CHECKS: Check[] = [
   { id: 'api', label: 'API and relay', detail: 'Sign-in, runtime registration, the tunnel relay', path: '/health' },
-  { id: 'directory', label: 'Directory', detail: 'Public pekos, search and feeds', path: '/v1/discovery/feed/new?perPage=1' },
+  { id: 'search', label: 'Search', detail: 'Finding people, pekos and seeds', path: '/v1/search?q=peko&perPage=1' },
   { id: 'seeds', label: 'Seed registry', detail: 'Seed pages, publishing and downloads', path: '/v1/seeds?perPage=1' },
 ];
 

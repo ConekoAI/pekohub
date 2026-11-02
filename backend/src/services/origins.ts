@@ -21,11 +21,29 @@ export function tunnelUrl(config: Config): string {
   return `${apiOrigin(config).replace(/^http/, "ws")}/v1/tunnel`;
 }
 
+/**
+ * Page links on the website (hub ADR-009 D1): a page's path is its ID —
+ * `/@alice` for a person, `/@alice/ada` for a peko, `/alice/ada` for a
+ * seed. Handles and names are URL-safe by their own rules; encoding keeps
+ * an odd legacy row from breaking the link.
+ */
+export function personUrl(config: Config, handle: string): string {
+  return `${webOrigin(config)}/@${encodeURIComponent(handle)}`;
+}
+
+export function pekoUrl(config: Config, owner: string, name: string): string {
+  return `${webOrigin(config)}/@${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
+}
+
+export function seedUrl(config: Config, owner: string, name: string): string {
+  return `${webOrigin(config)}/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
+}
+
 /** A public peko's share link on the website; null when it has none. */
 export function pekoShareUrl(
   config: Config,
   peko: { name: string; ownerHandle: string | null; exposure: string },
 ): string | null {
   if (peko.exposure !== "public" || !peko.ownerHandle) return null;
-  return `${webOrigin(config)}/peko/${encodeURIComponent(peko.ownerHandle)}/${encodeURIComponent(peko.name)}`;
+  return pekoUrl(config, peko.ownerHandle, peko.name);
 }

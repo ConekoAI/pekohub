@@ -5,6 +5,7 @@ import cookie from "@fastify/cookie";
 import configPlugin from "../../src/plugins/config.js";
 import authPlugin from "../../src/plugins/auth.js";
 import { setDb } from "../../src/db/index.js";
+import { createPostgresSearch } from "../../src/services/pg-search.js";
 
 import searchApiRoutes from "../../src/routes/api/search.js";
 import seedRoutes from "../../src/routes/api/seeds.js";
@@ -26,6 +27,8 @@ export interface TestAppOptions {
   enableOAuth?: boolean;
   /** Anonymous visitor chat (`ALLOW_VISITOR_CHAT`); on unless set false. */
   allowVisitorChat?: boolean;
+  /** Search the test database (the no-Meilisearch path) instead of the in-memory mock. */
+  postgresSearch?: boolean;
 }
 
 /**
@@ -91,7 +94,10 @@ export async function buildTestApp(options: TestAppOptions) {
   app.decorate("storage", createMockStorage());
 
   // Mock search plugin
-  app.decorate("search", createMockSearch());
+  app.decorate(
+    "search",
+    options.postgresSearch ? createPostgresSearch(options.testDb.db as never) : createMockSearch(),
+  );
 
   // Mock tunnel plugin (skip real WebSocket server in tests)
   app.decorate("tunnelManager", createMockTunnelManager());

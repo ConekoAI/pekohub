@@ -9,10 +9,10 @@ import { createTestQueryClient } from '~/test/utils';
  * Route-level smoke tests.
  *
  * These pin the post-pivot information architecture:
- *  - the public directory is `/pekos` (the API noun, ADR-059);
- *  - the registry surface is `/seeds` (runtime ADR-060), and the
- *    pre-pivot `/search` + `/discover` + `/bundles/*` + `/templates/*`
- *    URLs all still resolve;
+ *  - pages are IDs (hub ADR-009): `/@alice` a person, `/@alice/ada` a
+ *    peko, `/alice/ada` a seed; the old `/peko/*`, `/p/*`, `/seeds/*`,
+ *    `/bundles/*`, `/templates/*` links still resolve;
+ *  - there is no peko directory: `/pekos` and `/discover` go to search;
  *  - every page mounts without throwing.
  *
  * A page that renders here but throws in the browser is caught by the
@@ -47,25 +47,25 @@ function renderAt(path: string) {
 }
 
 describe('legacy URL redirects', () => {
-  it('/discover → /pekos', async () => {
+  it('/discover → /search', async () => {
     const router = await loadRouter('/discover');
-    expect(router.state.location.pathname).toBe('/pekos');
+    expect(router.state.location.pathname).toBe('/search');
   });
 
-  it('/search → /pekos, preserving the query', async () => {
-    const router = await loadRouter('/search?q=ada');
-    expect(router.state.location.pathname).toBe('/pekos');
+  it('/pekos → /search, preserving the query (there is no peko directory)', async () => {
+    const router = await loadRouter('/pekos?q=ada');
+    expect(router.state.location.pathname).toBe('/search');
     expect(router.state.location.search).toMatchObject({ q: 'ada' });
   });
 
-  it('/bundles/<repo> → /seeds/<repo>', async () => {
-    const router = await loadRouter('/bundles/peko/principals/my-peko');
-    expect(router.state.location.pathname).toBe('/seeds/peko/principals/my-peko');
+  it('/seeds/<owner>/<name> → /<owner>/<name>, the seed ID', async () => {
+    const router = await loadRouter('/seeds/alice/ada');
+    expect(router.state.location.pathname).toBe('/alice/ada');
   });
 
-  it('/templates/<repo> → /seeds/<repo> (ADR-060)', async () => {
-    const router = await loadRouter('/templates/peko/principals/my-peko');
-    expect(router.state.location.pathname).toBe('/seeds/peko/principals/my-peko');
+  it('/bundles/<owner>/<name> and /templates/<owner>/<name> → /<owner>/<name>', async () => {
+    expect((await loadRouter('/bundles/alice/ada')).state.location.pathname).toBe('/alice/ada');
+    expect((await loadRouter('/templates/alice/ada')).state.location.pathname).toBe('/alice/ada');
   });
 
   it('bare /templates → /seeds (ADR-060)', async () => {
@@ -73,20 +73,20 @@ describe('legacy URL redirects', () => {
     expect(router.state.location.pathname).toBe('/seeds');
   });
 
-  it('/p/<owner>/<name> → /peko/<owner>/<name>', async () => {
-    const router = await loadRouter('/p/alice/foo');
-    expect(router.state.location.pathname).toBe('/peko/alice/foo');
+  it('/p/<owner>/<name> and /peko/<owner>/<name> → /@<owner>/<name>', async () => {
+    expect((await loadRouter('/p/alice/foo')).state.location.pathname).toBe('/@alice/foo');
+    expect((await loadRouter('/peko/alice/foo')).state.location.pathname).toBe('/@alice/foo');
   });
 });
 
 describe('page smoke tests', () => {
-  it('home leads to the desktop download and the directory', async () => {
+  it('home leads to the desktop download and the seeds', async () => {
     renderAt('/');
     expect(await screen.findByRole('heading', { name: /an ai of your own/i })).toBeInTheDocument();
     const downloads = screen.getAllByRole('link', { name: /download peko/i });
     expect(downloads.length).toBeGreaterThan(0);
     for (const link of downloads) expect(link).toHaveAttribute('href', '/download');
-    expect(screen.getByRole('link', { name: /explore pekos/i })).toHaveAttribute('href', '/pekos');
+    for (const link of screen.getAllByRole('link', { name: /browse seeds/i })) expect(link).toHaveAttribute('href', '/seeds');
     // The website offers no chat, and says nothing that suggests it.
     expect(screen.queryByText(/in the browser/i)).not.toBeInTheDocument();
   });
@@ -110,17 +110,51 @@ describe('page smoke tests', () => {
     expect(await screen.findByRole('heading', { name: 'Privacy' })).toBeInTheDocument();
   });
 
-  it('home lists public pekos from the trendings feed', async () => {
+  it('home shows seeds and no pekos (hub ADR-009)', async () => {
     renderAt('/');
-    // The peko appears in both the trending and the fresh feed.
-    expect((await screen.findAllByText('Ada')).length).toBeGreaterThan(0);
-    expect((await screen.findAllByText('@testuser')).length).toBeGreaterThan(0);
+    expect(await screen.findByText('testuser/ada')).toBeInTheDocument();
+    expect(screen.queryByText(/made public/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /^pekos$/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /know someone's id/i })).toBeInTheDocument();
   });
 
-  it('/pekos renders the directory and its results', async () => {
-    renderAt('/pekos');
-    expect(await screen.findByRole('heading', { name: 'Pekos' })).toBeInTheDocument();
-    expect(await screen.findByText('Ada')).toBeInTheDocument();
+  it('/search finds a person by exact handle, labelled as a person', async () => {
+    renderAt('/search?q=%40testuser');
+    const card = await screen.findByRole('link', { name: /Test User/ });
+    expect(card).toHaveAttribute('href', '/@testuser');
+    expect(within(card).getByText('person')).toBeInTheDocument();
+  });
+
+  it('/search finds a public peko by exact ID, labelled as a peko', async () => {
+    renderAt('/search?q=%40testuser%2Fada');
+    const card = await screen.findByRole('link', { name: /Ada/ });
+    expect(card).toHaveAttribute('href', '/@testuser/ada');
+    expect(within(card).getByText('peko')).toBeInTheDocument();
+  });
+
+  it('/search says when no one public has an ID', async () => {
+    renderAt('/search?q=%40nobody%2Fx');
+    expect(await screen.findByText('No one public is @nobody/x')).toBeInTheDocument();
+  });
+
+  it('/search searches seeds by text, labelled as seeds', async () => {
+    renderAt('/search?q=notes');
+    const card = await screen.findByRole('link', { name: /my-peko/ });
+    expect(card).toHaveAttribute('href', '/testuser/my-peko');
+    expect(within(card).getByText('seed')).toBeInTheDocument();
+  });
+
+  it('/@<handle> shows the person and their seeds, not their pekos', async () => {
+    renderAt('/@testuser');
+    expect(await screen.findByRole('heading', { name: 'Test User' })).toBeInTheDocument();
+    expect(screen.getByText(/^@testuser · /)).toBeInTheDocument();
+    expect(await screen.findByText('testuser/ada')).toBeInTheDocument();
+    expect(screen.queryByText(/Open in Peko/)).not.toBeInTheDocument();
+  });
+
+  it('/@<unknown handle> is not found', async () => {
+    renderAt('/@nobody');
+    expect(await screen.findByText('Nothing lives at this address')).toBeInTheDocument();
   });
 
   it('/seeds lists seeds newest first', async () => {
@@ -131,8 +165,8 @@ describe('page smoke tests', () => {
     expect(screen.getByRole('link', { name: /Publish a seed/ })).toBeInTheDocument();
   });
 
-  it('/seeds/<owner>/<name> shows the download and the create command', async () => {
-    renderAt('/seeds/testuser/ada');
+  it('/<owner>/<name> shows the seed: the download and the create command', async () => {
+    renderAt('/testuser/ada');
     expect(await screen.findByRole('heading', { name: 'Ada' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Download v1\.1\.0/ })).toHaveAttribute(
       'href',
@@ -141,6 +175,14 @@ describe('page smoke tests', () => {
     expect(screen.getByText('peko create my-ada -s ada.seed.toml')).toBeInTheDocument();
     // The signed-in publisher gets version actions.
     expect(screen.getByRole('button', { name: 'Undeprecate' })).toBeInTheDocument();
+  });
+
+  it('/<owner>/<name>@<version> offers that version', async () => {
+    renderAt('/testuser/ada@1.0.0');
+    expect(await screen.findByRole('link', { name: /Download v1\.0\.0/ })).toHaveAttribute(
+      'href',
+      'http://api.test/v1/seeds/testuser/ada/versions/1.0.0/seed.toml',
+    );
   });
 
   it('/seeds/<legacy multi-segment path> is not found', async () => {
@@ -179,13 +221,14 @@ describe('page smoke tests', () => {
     expect(screen.getByRole('link', { name: /Publish a seed/ })).toHaveAttribute('href', '/seeds/new');
   });
 
-  it('/peko/<owner>/<name> renders the profile and opens it in Peko', async () => {
-    renderAt('/peko/testuser/ada');
+  it('/@<owner>/<name> renders the peko and opens it in Peko', async () => {
+    renderAt('/@testuser/ada');
     expect(
       await screen.findByRole('heading', { name: 'ada' }),
     ).toBeInTheDocument();
     const open = await screen.findByRole('link', { name: /Open in Peko/ });
-    expect(open.getAttribute('href')).toMatch(/^peko:\/\/add-peko\?url=.*%2Fpeko%2Ftestuser%2Fada$/);
+    expect(open.getAttribute('href')).toMatch(/^peko:\/\/add-peko\?url=.*%2F%40testuser%2Fada$/);
+    expect(screen.getByText('@testuser/ada')).toBeInTheDocument();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
   });
 

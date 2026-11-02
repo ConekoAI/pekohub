@@ -9,20 +9,6 @@ import { http, HttpResponse } from 'msw';
  * and `backend/src/routes/api/instances.ts`.
  */
 
-const DISCOVERY_HIT = {
-  id: 'inst-1',
-  publicName: 'Ada',
-  description: 'A research peko that reads papers and keeps notes.',
-  ownerName: 'Test User',
-  ownerNamespace: 'testuser',
-  ownerAvatarUrl: null,
-  category: 'research',
-  tags: ['papers', 'notes'],
-  status: 'online',
-  publishedAt: new Date().toISOString(),
-  featured: false,
-};
-
 const SEED_TOML = 'name = "ada"\npreferred_model_id = "claude-opus-5-5"\n\n[identity]\ndisplay_name = "Ada"\n';
 
 function seedDetail(owner: string, name: string) {
@@ -45,7 +31,7 @@ function seedDetail(owner: string, name: string) {
     updatedAt: new Date('2026-10-02').toISOString(),
     createCommand: `peko create my-${name} -s ${name}.seed.toml`,
     downloadUrl: `http://api.test/v1/seeds/${owner}/${name}/versions/1.1.0/seed.toml`,
-    webUrl: `http://web.test/seeds/${owner}/${name}`,
+    webUrl: `http://web.test/${owner}/${name}`,
   };
 }
 
@@ -88,10 +74,28 @@ export const handlers = [
     return HttpResponse.json({ status: body.approve ? 'approved' : 'denied' });
   }),
 
-  // ── Search (seed directory with a query) ────────────────────────────
+  // ── Search: exact IDs, then seeds (hub ADR-009) ─────────────────────
   http.get('/v1/search', ({ request }) => {
     const url = new URL(request.url);
+    const q = url.searchParams.get('q') ?? '';
+    if (q === '@testuser') {
+      return HttpResponse.json({
+        items: [], total: 0, page: 1, perPage: 24, totalPages: 0, queryKind: 'person',
+        exact: [{ kind: 'person', id: '@testuser', handle: 'testuser', displayName: 'Test User', avatarUrl: null, url: 'http://web.test/@testuser' }],
+      });
+    }
+    if (q === '@testuser/ada') {
+      return HttpResponse.json({
+        items: [], total: 0, page: 1, perPage: 24, totalPages: 0, queryKind: 'peko',
+        exact: [{ kind: 'peko', id: '@testuser/ada', owner: 'testuser', name: 'ada', displayName: 'Ada', description: 'A research peko.', avatar: null, status: 'online', url: 'http://web.test/@testuser/ada' }],
+      });
+    }
+    if (q.startsWith('@')) {
+      return HttpResponse.json({ items: [], total: 0, page: 1, perPage: 24, totalPages: 0, queryKind: 'peko', exact: [] });
+    }
     return HttpResponse.json({
+      queryKind: 'text',
+      exact: [],
       items: [
         {
           namespace: 'testuser',
@@ -148,20 +152,6 @@ export const handlers = [
     );
   }),
 
-  // ── Discovery ───────────────────────────────────────────────────────────
-  http.get('/v1/discovery/search', () =>
-    HttpResponse.json({ hits: [DISCOVERY_HIT], total: 1, page: 1 }),
-  ),
-
-  http.get('/v1/discovery/feed/:feed', ({ params }) =>
-    HttpResponse.json({
-      hits: [DISCOVERY_HIT],
-      total: 1,
-      page: 1,
-      feed: String(params.feed),
-    }),
-  ),
-
   // ── Owner dashboard ─────────────────────────────────────────────────────
   http.get('/v1/instances', () =>
     HttpResponse.json({
@@ -205,6 +195,21 @@ export const handlers = [
   ),
 
   http.get('/v1/me/accessible-pekos', () => HttpResponse.json({ pekos: [] })),
+
+  // ── People, by exact handle ─────────────────────────────────────────
+  http.get('/v1/people/:handle', ({ params }) =>
+    params.handle === 'testuser'
+      ? HttpResponse.json({
+          kind: 'person',
+          id: '@testuser',
+          handle: 'testuser',
+          displayName: 'Test User',
+          avatarUrl: null,
+          url: 'http://web.test/@testuser',
+          joinedAt: new Date('2026-01-01').toISOString(),
+        })
+      : HttpResponse.json({ error: 'No one has that handle' }, { status: 404 }),
+  ),
 
   http.get('/v1/public/pekos/:owner/:pekoName', ({ params }) =>
     HttpResponse.json({
