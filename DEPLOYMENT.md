@@ -105,6 +105,11 @@ fly deploy -c fly.staging.toml --ha=false   # runs migrations as the release com
 curl https://pekohub-staging.fly.dev/health
 ```
 
+`.github/workflows/deploy-staging.yml` redeploys both after CI passes on `master` (or on
+`gh workflow run deploy-staging.yml --ref master`), using the repo secrets `FLY_API_TOKEN`,
+`CLOUDFLARE_API_TOKEN` (Cloudflare Pages: Edit) and `CLOUDFLARE_ACCOUNT_ID`; a job whose
+secret is missing is skipped. The commands below are the same steps by hand.
+
 The staging website is its own Pages project, `pekohub-staging`
 (`https://pekohub-staging.pages.dev`), uploaded directly rather than built from Git.
 Production builds bake in `api.pekohub.ai`, and the API allows one website origin
