@@ -80,6 +80,57 @@ Backend environment for these hosts:
 `pekohub.ai` and `api.pekohub.ai` are the same site (`pekohub.ai`), so the website's
 `SameSite=Lax` refresh cookie set by the API is sent on its credentialed requests.
 
+## Staging: Fly.io + Neon (scale to zero)
+
+Staging runs the API alone, sized to cost nothing while idle:
+
+| Piece | Where | Idle cost |
+|-------|-------|-----------|
+| API + tunnel relay | Fly.io `pekohub-staging` (`fly.staging.toml`): one `shared-cpu-1x` / 256 MB machine that stops when nothing is connected and starts on the next request | ~$0 (a stopped machine bills only its image storage) |
+| Postgres | Neon free tier (scales to zero after 5 minutes idle) | $0 |
+| Search | Postgres (`MEILISEARCH_URL` unset) | — |
+| Quotas, rate limits | In memory (`REDIS_URL` unset); fine on one machine | — |
+| Blob storage | None (`S3_*` unset); seeds are text in Postgres | — |
+
+A connected runtime's tunnel keeps the machine running, so it is idle only when no runtime
+is connected. Keep exactly one machine: the relay holds runtime connections in process.
+
+```bash
+fly apps create pekohub-staging
+fly secrets set -c fly.staging.toml \
+  DATABASE_URL='<Neon pooled connection string>' \
+  MIGRATION_DATABASE_URL='<Neon direct connection string>' \
+  JWT_SECRET="$(openssl rand -hex 32)"
+fly deploy -c fly.staging.toml --ha=false   # runs migrations as the release command
+curl https://pekohub-staging.fly.dev/health
+```
+
+`.github/workflows/deploy-staging.yml` redeploys both after CI passes on `master` (or on
+`gh workflow run deploy-staging.yml --ref master`), using the repo secrets `FLY_API_TOKEN`,
+`CLOUDFLARE_API_TOKEN` (Cloudflare Pages: Edit) and `CLOUDFLARE_ACCOUNT_ID`; a job whose
+secret is missing is skipped. The commands below are the same steps by hand.
+
+The staging website is its own Pages project, `pekohub-staging`
+(`https://pekohub-staging.pages.dev`), uploaded directly rather than built from Git.
+Production builds bake in `api.pekohub.ai`, and the API allows one website origin
+(`FRONTEND_URL`), so staging needs a stable address of its own. Its Functions read
+`PEKOHUB_API` (a Pages secret, set to the staging API). To update it from the repo root:
+
+```bash
+pnpm --filter @pekohub/shared build
+(cd frontend && VITE_API_BASE_URL=https://pekohub-staging.fly.dev ./node_modules/.bin/vite build --outDir /tmp/pekohub-staging-dist --emptyOutDir)
+npx wrangler pages deploy /tmp/pekohub-staging-dist --project-name pekohub-staging --branch main
+```
+
+Sign-in needs a GitHub OAuth app for staging (callback
+`https://pekohub-staging.fly.dev/v1/auth/github/callback`), set with
+`fly secrets set -c fly.staging.toml GITHUB_CLIENT_ID=… GITHUB_CLIENT_SECRET=…`; until then
+the sign-in routes don't exist.
+
+Point a runtime at it with `peko runtime register --hub https://pekohub-staging.fly.dev`
+(or the desktop's hub setting). The first request after an idle spell waits a second or two
+for the machine, and Neon's first query after its own idle spell adds about half a second.
+
 ### Blob uploads require auth (breaking change)
 
 `POST /v2/<repo>/blobs/uploads/` and

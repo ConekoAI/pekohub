@@ -20,14 +20,17 @@ export interface StorageService {
 
 async function storagePlugin(fastify: FastifyInstance) {
   const config = fastify.config;
+  const { S3_ENDPOINT: endpoint, S3_ACCESS_KEY: accessKeyId, S3_SECRET_KEY: secretAccessKey } = config;
+  // Unconfigured is fine: seeds live in Postgres and no route stores blobs.
+  if (!endpoint || !accessKeyId || !secretAccessKey) {
+    fastify.log.info("Storage: not configured (S3_ENDPOINT unset)");
+    return;
+  }
 
   const client = new S3Client({
-    endpoint: config.S3_ENDPOINT,
+    endpoint,
     region: config.S3_REGION,
-    credentials: {
-      accessKeyId: config.S3_ACCESS_KEY,
-      secretAccessKey: config.S3_SECRET_KEY,
-    },
+    credentials: { accessKeyId, secretAccessKey },
     forcePathStyle: config.S3_FORCE_PATH_STYLE === "true",
   });
 
@@ -97,6 +100,6 @@ export default fp(storagePlugin);
 
 declare module "fastify" {
   interface FastifyInstance {
-    storage: StorageService;
+    storage?: StorageService;
   }
 }

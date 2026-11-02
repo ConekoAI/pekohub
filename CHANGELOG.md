@@ -2,6 +2,12 @@
 
 ## 0.1.0 — pre-launch
 
+- The API runs on nothing but Postgres. Meilisearch, Redis and blob storage are optional:
+  without `MEILISEARCH_URL`, search (`/v1/search`, the directory's search and feeds) reads
+  Postgres directly (`services/pg-search.ts`); without `REDIS_URL`, quotas and throttles stay
+  in memory; without `S3_*`, there is no blob store (seeds are text, nothing stores blobs).
+  `MIGRATION_DATABASE_URL` gives drizzle-kit a direct connection where the app uses a pooler.
+  Staging deploys to Fly.io with Neon (`fly.staging.toml`, DEPLOYMENT.md), stopping when idle.
 - An owner console. The signed-in area has four tabs — **Pekos**, **Seeds**, **Runtimes**,
   **Account** — instead of mixing in public pages. New: `/dashboard/runtimes` (each
   computer: connected now or last seen, pekos it has online, unregister),

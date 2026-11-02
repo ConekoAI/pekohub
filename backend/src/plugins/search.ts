@@ -2,6 +2,8 @@ import fp from "fastify-plugin";
 import { MeiliSearch, type SearchParams } from "meilisearch";
 import type { FastifyInstance } from "fastify";
 import type { SearchResultItem } from "@pekohub/shared";
+import { db } from "../db/index.js";
+import { createPostgresSearch } from "../services/pg-search.js";
 
 const BUNDLES_INDEX = "bundles";
 const INSTANCES_INDEX = "instances";
@@ -83,9 +85,21 @@ export interface SearchService {
   deleteInstance(objectID: string): Promise<void>;
 }
 
+/**
+ * Meilisearch when `MEILISEARCH_URL` is set; otherwise search reads
+ * Postgres directly, which needs no extra service (small deployments,
+ * staging).
+ */
 async function searchPlugin(fastify: FastifyInstance) {
+  const host = fastify.config.MEILISEARCH_URL;
+  if (!host) {
+    fastify.log.info("Search: Postgres (MEILISEARCH_URL unset)");
+    fastify.decorate("search", createPostgresSearch(db));
+    return;
+  }
+  fastify.log.info("Search: Meilisearch");
   const client = new MeiliSearch({
-    host: fastify.config.MEILISEARCH_URL,
+    host,
     apiKey: fastify.config.MEILISEARCH_API_KEY,
   });
 

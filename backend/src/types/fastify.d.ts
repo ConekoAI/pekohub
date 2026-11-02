@@ -8,7 +8,7 @@ import type { TunnelRouter } from "../services/tunnel-router.js";
 declare module "fastify" {
   interface FastifyInstance {
     config: Config;
-    storage: StorageService;
+    storage?: StorageService;
     search: SearchService;
     authenticate: (request: FastifyRequest) => Promise<AuthenticatedUser>;
     tunnelManager: TunnelManager;
