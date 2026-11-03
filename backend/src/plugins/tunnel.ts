@@ -13,6 +13,14 @@ declare module "fastify" {
   }
 }
 
+/**
+ * Largest tunnel message accepted, in bytes. The biggest a runtime sends is
+ * a history page (at most 100 events) or a proxied reply; `ws` would
+ * otherwise buffer up to 100 MiB per message, before the handshake too.
+ * A bigger message closes the socket with 1009.
+ */
+export const TUNNEL_MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
+
 /** Per-IP cap on unauthenticated tunnel upgrades (issue #1). */
 const TUNNEL_UPGRADE_RATE_MAX = 10;
 const TUNNEL_UPGRADE_RATE_WINDOW = "1 minute";
@@ -40,7 +48,9 @@ export default fp(
     fastify.decorate("tunnelManager", tunnelManager);
     fastify.decorate("tunnelRouter", tunnelRouter);
 
-    await fastify.register(fastifyWebsocket);
+    await fastify.register(fastifyWebsocket, {
+      options: { maxPayload: TUNNEL_MAX_MESSAGE_BYTES },
+    });
 
     fastify.get(
       "/v1/tunnel",

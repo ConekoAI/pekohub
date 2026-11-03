@@ -22,7 +22,12 @@ function AuthCallbackPage() {
     if (started.current) return;
     started.current = true;
     const params = search as Record<string, unknown>;
-    const token = params.token;
+    // The API puts the token in the fragment (`#token=…`), which is never
+    // sent to a server; take it out of the address bar and history at once.
+    const token = new URLSearchParams(window.location.hash.slice(1)).get('token');
+    if (window.location.hash) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
     const errorMsg = params.error;
 
     if (typeof errorMsg === 'string' && errorMsg) {
@@ -30,7 +35,7 @@ function AuthCallbackPage() {
       return;
     }
 
-    if (typeof token === 'string' && token) {
+    if (token) {
       setAuthToken(token);
       const returnTo = takeSignInReturnTo();
       // Load the user before leaving, so the next page opens signed in

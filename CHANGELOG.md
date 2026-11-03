@@ -2,6 +2,25 @@
 
 ## 0.1.0 — pre-launch
 
+- First sign-in no longer fails when the name is taken. A new account's handle comes from
+  the GitHub login or the Google address before the `@`, made valid (lowercase letters,
+  digits, `-`, `_`, at most 39 characters — what `@handle` IDs accept) and numbered when
+  someone holds it (`john-2`). Before, a second "john" across providers got a 500 on every
+  sign-in, and a GitHub login kept its capitals, so `@Alice` was never found.
+- `POST /v1/instances` is gone. A peko's row is made only by its runtime's announce: a row
+  made over HTTP could take a peko's ID (runtimes derive it from their DID and the peko's
+  name) and block its registration for good.
+- Refresh tokens forgive a race. A token rotated in the last 30 seconds still refreshes
+  while the token that replaced it is live, so two tabs, two desktop calls or a retry after
+  a lost response no longer read as theft and sign the account out of every app. A copy
+  presented after its successor was spent still revokes every session.
+- The tunnel takes messages of at most 16 MiB (`ws` allowed 100 MiB, before the handshake
+  too); a bigger one closes the socket with 1009.
+- Sign-in hands the website its token in the URL fragment (`/auth/callback#token=…`), which
+  never reaches a server or a Referer, and the page drops it from the address bar. Every
+  website page carries a Content-Security-Policy (scripts from the site only, API origin
+  from `PEKOHUB_API`, no framing), HSTS, `nosniff` and `X-Frame-Options: DENY`, added by
+  `functions/_middleware.ts`.
 - The website shows "Sign in" at once. Without a saved token it no longer asks the API who
   is signed in (it could only answer 401) and waited on that round trip — a CORS preflight
   and a request to a cold or stopped API — with a spinner. GET requests drop their
