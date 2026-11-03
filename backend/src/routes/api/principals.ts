@@ -157,8 +157,8 @@ export default async function principalDirectoryRoutes(
 
   // ── POST /v1/principals/by-hub-id/:hubId/transfer ─────────────────────────
   // ADR-081 D4: the Hub's record is an online principal's owner. Only the
-  // recorded owner may transfer it, to another PekoHub user; the linked
-  // runtime is told and updates its copy.
+  // recorded owner may transfer it, to another PekoHub user — as an offer
+  // that account accepts (`…/transfer/accept`); nothing changes before.
   fastify.post(
     `/principals/by-hub-id/:hubId(${HUB_ID_PARAM})/transfer`,
     async (request, reply) => {
@@ -174,8 +174,9 @@ export default async function principalDirectoryRoutes(
       if ("ownerId" in body.data) {
         ownerId = body.data.ownerId;
       } else {
-        const target = await db.query.users.findFirst({ where: eq(users.namespace, body.data.ownerHandle) });
-        if (!target) return reply.status(422).send({ error: `No PekoHub user is called @${body.data.ownerHandle}` });
+        const handle = body.data.ownerHandle.replace(/^@/, "").toLowerCase();
+        const target = await db.query.users.findFirst({ where: eq(users.namespace, handle) });
+        if (!target) return reply.status(422).send({ error: `No PekoHub user is called @${handle}` });
         ownerId = target.id;
       }
       let user;
@@ -184,32 +185,91 @@ export default async function principalDirectoryRoutes(
       } catch {
         return reply.status(401).send({ error: "Authentication required" });
       }
-      const result = await instanceService.transferOwner(hubId, ownerId, String(user.id));
+      const result = await instanceService.offerTransfer(hubId, ownerId, String(user.id));
       switch (result.status) {
-        case "transferred":
+        case "offered": {
           await auditService.logPrincipalOwnerTransfer(hubId, String(user.id), {
-            from: result.previous,
-            to: ownerId,
+            offeredTo: ownerId,
             via: "api",
           });
-          if (result.localId) {
-            fastify.tunnelManager?.notifyOwnerChanged(
-              result.runtimeId,
-              result.localId,
-              hubId,
-              ownerId,
-            );
-          }
-          return reply.status(204).send();
+          return reply.status(202).send({ status: "offered", ownerId });
+        }
         case "miss":
           return reply.status(404).send({ error: "Principal not found" });
         case "denied":
           return reply.status(403).send({ error: "Only the principal's owner can transfer it" });
+        case "same_owner":
+          return reply.status(422).send({ error: "You already own it" });
         case "unknown_user":
           return reply.status(422).send({ error: "The new owner is not a PekoHub user" });
       }
     },
   );
+
+  // ── POST /v1/principals/by-hub-id/:hubId/transfer/accept ─────────────────
+  // The account a principal was offered to takes it; its runtime is told.
+  fastify.post(
+    `/principals/by-hub-id/:hubId(${HUB_ID_PARAM})/transfer/accept`,
+    async (request, reply) => {
+      const { hubId } = request.params as { hubId: string };
+      if (!z.string().uuid().safeParse(hubId).success) {
+        return reply.status(400).send({ error: "Expected a Hub actor UUID" });
+      }
+      let user;
+      try {
+        user = await fastify.authenticate(request);
+      } catch {
+        return reply.status(401).send({ error: "Authentication required" });
+      }
+      const result = await instanceService.acceptTransfer(hubId, String(user.id));
+      if (result.status !== "transferred") {
+        return reply.status(404).send({ error: "No open transfer of this peko to you" });
+      }
+      await auditService.logPrincipalOwnerTransfer(hubId, String(user.id), {
+        from: result.previous,
+        to: String(user.id),
+        via: "api",
+      });
+      if (result.localId) {
+        fastify.tunnelManager?.notifyOwnerChanged(result.runtimeId, result.localId, hubId, String(user.id));
+      }
+      return reply.status(204).send();
+    },
+  );
+
+  // ── DELETE /v1/principals/by-hub-id/:hubId/transfer ──────────────────────
+  // The recipient declines, or the owner withdraws, an open offer.
+  fastify.delete(
+    `/principals/by-hub-id/:hubId(${HUB_ID_PARAM})/transfer`,
+    async (request, reply) => {
+      const { hubId } = request.params as { hubId: string };
+      if (!z.string().uuid().safeParse(hubId).success) {
+        return reply.status(400).send({ error: "Expected a Hub actor UUID" });
+      }
+      let user;
+      try {
+        user = await fastify.authenticate(request);
+      } catch {
+        return reply.status(401).send({ error: "Authentication required" });
+      }
+      if (!(await instanceService.withdrawTransfer(hubId, String(user.id)))) {
+        return reply.status(404).send({ error: "No open transfer of this peko" });
+      }
+      return reply.status(204).send();
+    },
+  );
+
+  // ── GET /v1/me/transfers ───────────────────────────────────────────────────
+  // Open offers to and from the signed-in account.
+  fastify.get("/me/transfers", async (request, reply) => {
+    let user;
+    try {
+      user = await fastify.authenticate(request);
+    } catch {
+      return reply.status(401).send({ error: "Authentication required" });
+    }
+    return { transfers: await instanceService.transferOffersOf(String(user.id)) };
+  });
 
   // ── GET /v1/principals/by-handle/:owner/:principal_name ──────────────────────────
   fastify.get(

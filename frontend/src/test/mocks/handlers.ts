@@ -265,8 +265,11 @@ export const handlers = [
     const body = (await request.json()) as { ownerHandle: string };
     return body.ownerHandle === 'nobody'
       ? HttpResponse.json({ error: 'No PekoHub user is called @nobody' }, { status: 422 })
-      : new HttpResponse(null, { status: 204 });
+      : HttpResponse.json({ status: 'offered' }, { status: 202 });
   }),
+  http.get('/v1/me/transfers', () => HttpResponse.json({ transfers: [] })),
+  http.post('/v1/principals/by-hub-id/:hubId/transfer/accept', () => new HttpResponse(null, { status: 204 })),
+  http.delete('/v1/principals/by-hub-id/:hubId/transfer', () => new HttpResponse(null, { status: 204 })),
 
   // ── API keys ────────────────────────────────────────────────────────────
   http.get('/v1/auth/api-keys', () =>

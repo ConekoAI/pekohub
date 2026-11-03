@@ -220,6 +220,14 @@ const DDL_STATEMENTS = [
     approved_by UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     expires_at TIMESTAMPTZ NOT NULL
   );`,
+  `CREATE TABLE IF NOT EXISTS principal_transfer_offers (
+    hub_id UUID PRIMARY KEY REFERENCES hub_principals(id) ON DELETE CASCADE,
+    from_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    to_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL
+  );`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS api_keys_prefix_unique ON api_keys(prefix);`,
   `CREATE INDEX IF NOT EXISTS idx_instances_exposure_status ON instances(exposure, status);`,
   `CREATE INDEX IF NOT EXISTS idx_instances_last_seen_at ON instances(last_seen_at);`,
   `CREATE INDEX IF NOT EXISTS idx_instances_published_at ON instances(published_at);`,
@@ -284,6 +292,7 @@ export async function resetTables(client: PGlite) {
     "bundles",
     "instances",
     "principal_move_approvals",
+    "principal_transfer_offers",
     "hub_principals",
     "runtimes",
     "api_keys",

@@ -284,11 +284,23 @@ export const api = {
   /** Sign an app (Peko desktop, the CLI) out everywhere. */
   signOutApp: (clientId: string) => fetchNoContent(`/v1/auth/apps/${encodeURIComponent(clientId)}`),
 
-  /** Hand a peko to another PekoHub account; its runtime is told (ADR-081 D4). */
+  /** Offer a peko to another PekoHub account; it moves when they accept (ADR-081 D4). */
   transferPeko: (hubId: string, ownerHandle: string) =>
-    fetchNoContent(`/v1/principals/by-hub-id/${encodeURIComponent(hubId)}/transfer`, 'POST', {
-      ownerHandle,
+    fetchJson<{ status: 'offered' }>(`/v1/principals/by-hub-id/${encodeURIComponent(hubId)}/transfer`, {
+      method: 'POST',
+      body: JSON.stringify({ ownerHandle }),
     }),
+
+  /** Open transfer offers to and from the signed-in account. */
+  listTransfers: () => fetchJson<{ transfers: PekoTransfer[] }>('/v1/me/transfers'),
+
+  /** Take a peko offered to you; its runtime is told. */
+  acceptTransfer: (hubId: string) =>
+    fetchNoContent(`/v1/principals/by-hub-id/${encodeURIComponent(hubId)}/transfer/accept`, 'POST', {}),
+
+  /** Decline an offer to you, or withdraw one you made. */
+  withdrawTransfer: (hubId: string) =>
+    fetchNoContent(`/v1/principals/by-hub-id/${encodeURIComponent(hubId)}/transfer`),
 
   logout: () =>
     fetchJson<void>('/v1/auth/logout', { method: 'POST' }).finally(() => {
@@ -488,6 +500,18 @@ export interface RuntimeRecord {
 }
 
 /** An app signed in to the account (`GET /v1/auth/apps`). */
+/** An open offer to hand a peko from one account to another. */
+export interface PekoTransfer {
+  hubId: string;
+  direction: 'incoming' | 'outgoing';
+  pekoName: string;
+  pekoAvatar: string | null;
+  /** The account on the other side: who offers it, or who it is offered to. */
+  otherHandle: string | null;
+  createdAt: string;
+  expiresAt: string;
+}
+
 export interface SignedInApp {
   clientId: string;
   name: string;

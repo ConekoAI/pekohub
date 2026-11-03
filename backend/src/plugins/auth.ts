@@ -3,7 +3,8 @@ import fastifyJwt from "@fastify/jwt";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { db } from "../db/index.js";
 import { users, apiKeys, refreshTokens } from "../db/schema.js";
-import { eq, and, isNull, gt, isNotNull, sql } from "drizzle-orm";
+import { eq, and, isNull, gt, isNotNull, inArray, sql } from "drizzle-orm";
+import { createHash, timingSafeEqual } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { auditService } from "../services/audit.js";
 
@@ -45,6 +46,24 @@ declare module "fastify" {
       clientId?: string | null,
     ) => Promise<string>;
   }
+}
+
+/** How an API key is stored: SHA-256 hex. Keys are random, so no slow hash. */
+export function apiKeyHash(key: string): string {
+  return createHash("sha256").update(key).digest("hex");
+}
+
+/** Whether `key` is the one `hash` was made from (bcrypt on older keys). */
+async function apiKeyMatches(key: string, hash: string): Promise<boolean> {
+  if (hash.startsWith("$2")) return bcrypt.compare(key, hash);
+  const expected = Buffer.from(hash, "hex");
+  const actual = Buffer.from(apiKeyHash(key), "hex");
+  return expected.length === actual.length && timingSafeEqual(expected, actual);
+}
+
+/** A request that isn't signed in, or whose credentials don't hold: 401. */
+export class AuthError extends Error {
+  readonly statusCode = 401;
 }
 
 const REFRESH_TOKEN_BYTES = 64;
@@ -92,28 +111,29 @@ async function authPlugin(fastify: FastifyInstance) {
 
       // Check if it's an API key (starts with a known prefix pattern)
       if (token.startsWith("pkr_")) {
-        // The full prefix is `pkr_` (4 chars) + 6 hex chars = 10 chars.
-        // Match the api_keys.prefix column exactly so the by-prefix lookup
-        // hits a single row.
-        const prefix = token.slice(0, 10);
-        const keyRecord = await db.query.apiKeys.findFirst({
-          where: eq(apiKeys.prefix, prefix),
+        // Keys carry a 16-character prefix (`pkr_` + 12 hex); keys made
+        // before it, a 10-character one.
+        const keyRecords = await db.query.apiKeys.findMany({
+          where: inArray(apiKeys.prefix, [token.slice(0, 16), token.slice(0, 10)]),
         });
-
+        let keyRecord: (typeof keyRecords)[number] | undefined;
+        for (const candidate of keyRecords) {
+          if (await apiKeyMatches(token, candidate.hash)) {
+            keyRecord = candidate;
+            break;
+          }
+        }
         if (!keyRecord) {
-          throw new Error("Invalid API key");
+          throw new AuthError("Invalid API key");
         }
 
-        // Verify hash
-        const valid = await bcrypt.compare(token, keyRecord.hash);
-        if (!valid) {
-          throw new Error("Invalid API key");
-        }
-
-        // Update last used timestamp
+        // Record the use; a key made before SHA-256 is rehashed once.
         await db
           .update(apiKeys)
-          .set({ lastUsedAt: new Date() })
+          .set({
+            lastUsedAt: new Date(),
+            ...(keyRecord.hash.startsWith("$2") ? { hash: apiKeyHash(token) } : {}),
+          })
           .where(eq(apiKeys.id, keyRecord.id));
 
         const user = await db.query.users.findFirst({
@@ -121,7 +141,7 @@ async function authPlugin(fastify: FastifyInstance) {
         });
 
         if (!user) {
-          throw new Error("User not found");
+          throw new AuthError("User not found");
         }
 
         return {
@@ -144,14 +164,14 @@ async function authPlugin(fastify: FastifyInstance) {
       // Other signed tokens (an OAuth authorize request) share the
       // secret; only access tokens carry no `typ`.
       if (decoded.typ !== undefined || typeof decoded.sub !== "string") {
-        throw new Error("Not an access token");
+        throw new AuthError("Not an access token");
       }
       const user = await db.query.users.findFirst({
         where: eq(users.id, decoded.sub),
       });
 
       if (!user) {
-        throw new Error("User not found");
+        throw new AuthError("User not found");
       }
 
       return {
@@ -163,7 +183,7 @@ async function authPlugin(fastify: FastifyInstance) {
       };
     }
 
-    throw new Error("Missing or invalid authorization");
+    throw new AuthError("Missing or invalid authorization");
   });
 
   // ── Refresh token helpers ───────────────────────────────────────────────────

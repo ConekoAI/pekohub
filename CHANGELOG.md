@@ -2,6 +2,29 @@
 
 ## 0.1.0 — pre-launch
 
+- A peko changes owner only when the new owner accepts (ADR-081 D4, amended). Transferring
+  makes an offer (`POST …/transfer` answers 202; one open offer per peko, for 7 days);
+  the recipient accepts with `POST …/transfer/accept` or declines with `DELETE …/transfer`,
+  which also withdraws it, and `GET /v1/me/transfers` lists both directions. The owner
+  console shows incoming offers with Accept / Decline. A transfer started on the runtime
+  (`principal_transfer`) is answered "Offered to @…" and the runtime learns the new owner
+  when it is accepted. Migration `0009_transfer_offers_api_key_prefix`.
+- API keys: a new key's lookup prefix is `pkr_` + 12 hex characters, unique (a 6-character
+  one collided at a few thousand keys and locked the second key out), and keys are stored
+  as SHA-256 instead of bcrypt, which cost every key-authenticated request about 0.3 s of
+  CPU. Older keys keep working and are rehashed on first use.
+- A request that isn't signed in answers 401 everywhere (some routes answered 500), and a
+  server error answers "Internal Server Error" without its message; the detail goes to the
+  log. The test app uses the same error handler as the server.
+- The relay takes at most 600 channel events and 120 channel invites a minute from a runtime;
+  more are dropped (the sender's outbox resends them). Metrics
+  `hub.channel_event.rate_limited`, `hub.channel_invite.rate_limited`.
+- A removed seed version is never published again: removing a version (or the seed) clears
+  its text but keeps its number, so `alice/ada@1.0.0` always means one seed. The publisher
+  can publish new versions under the name.
+- The per-IP limits on sign-in, OAuth and the chat proxy forget idle IPs and track at most
+  50,000. `/v1/auth/me` and `/v1/auth/refresh`, which every website load calls, are under
+  the global limit only; the rest of `/v1/auth/*` allows 20 a minute (was 10).
 - First sign-in no longer fails when the name is taken. A new account's handle comes from
   the GitHub login or the Google address before the `@`, made valid (lowercase letters,
   digits, `-`, `_`, at most 39 characters — what `@handle` IDs accept) and numbered when
