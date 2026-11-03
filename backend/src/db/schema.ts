@@ -40,6 +40,14 @@ export const users = pgTable("users", {
   displayName: varchar("display_name", { length: 256 }),
   email: varchar("email", { length: 256 }),
   avatarUrl: text("avatar_url"),
+  /** Moderators act on reports; admins also grant roles (`USER_ROLES`). */
+  role: varchar("role", { length: 16 })
+    .notNull()
+    .default("user")
+    .$type<UserRole>(),
+  /** A suspended account signs in to nothing, and its runtimes stay off the tunnel. */
+  suspendedAt: timestamp("suspended_at", { withTimezone: true }),
+  suspendedReason: text("suspended_reason"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -47,6 +55,10 @@ export const users = pgTable("users", {
     .defaultNow()
     .notNull(),
 });
+
+/** Ordered: each role can do what the ones before it can. */
+export const USER_ROLES = ["user", "moderator", "admin"] as const;
+export type UserRole = (typeof USER_ROLES)[number];
 
 export const apiKeys = pgTable(
   "api_keys",
@@ -200,6 +212,10 @@ export const bundles = pgTable(
     repository: text("repository"),
     readme: text("readme"),
     pullCount: integer("pull_count").default(0).notNull(),
+    // Taken down by a moderator: no page, no download, not listed or
+    // searched, and no new versions. The rows stay for review.
+    hiddenAt: timestamp("hidden_at", { withTimezone: true }),
+    hiddenReason: text("hidden_reason"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -242,6 +258,10 @@ export const bundleVersions = pgTable(
     size: integer("size").notNull(),
     deprecated: boolean("deprecated").default(false),
     deprecatedMessage: text("deprecated_message"),
+    // Yanked by a moderator: the version is no longer offered or served.
+    // Unlike `deprecated`, which is the publisher's own word.
+    yankedAt: timestamp("yanked_at", { withTimezone: true }),
+    yankedReason: text("yanked_reason"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -309,6 +329,11 @@ export const hubPrincipals = pgTable("hub_principals", {
   id: uuid("id").primaryKey().defaultRandom(),
   signingDid: varchar("signing_did", { length: 512 }).notNull().unique(),
   identityKey: varchar("identity_key", { length: 512 }).notNull().unique(),
+  // Forced off the Hub by a moderator. Kept on the identity, not the
+  // instance row, so a re-announce or a move to another runtime can't
+  // bring the peko back online.
+  takenDownAt: timestamp("taken_down_at", { withTimezone: true }),
+  takenDownReason: text("taken_down_reason"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
@@ -546,3 +571,58 @@ export const hubGroupMembers = pgTable(
   }),
 );
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reports (trust & safety)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const REPORT_TARGET_KINDS = ["seed", "peko", "person", "group"] as const;
+export type ReportTargetKind = (typeof REPORT_TARGET_KINDS)[number];
+export const REPORT_REASONS = [
+  "spam",
+  "harassment",
+  "illegal",
+  "impersonation",
+  "malicious",
+  "other",
+] as const;
+export type ReportReason = (typeof REPORT_REASONS)[number];
+export const REPORT_STATUSES = ["open", "actioned", "dismissed"] as const;
+export type ReportStatus = (typeof REPORT_STATUSES)[number];
+
+/**
+ * A signed-in person's report about a seed, a public peko, a person, or a
+ * group. `target` is the thing's ID as the website writes it
+ * (`alice/ada@1.0.0`, `@alice/ada`, `@alice`, or a group's decimal ID).
+ */
+export const reports = pgTable(
+  "reports",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    reporterId: uuid("reporter_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    targetKind: varchar("target_kind", { length: 16 }).notNull().$type<ReportTargetKind>(),
+    target: varchar("target", { length: 512 }).notNull(),
+    /**
+     * What `target` named when it was reported, so a later rename can't
+     * point the report elsewhere: a peko's Hub ID, a person's or a
+     * group's ID; null for a seed (its `owner/name` is its ID).
+     */
+    targetId: varchar("target_id", { length: 255 }),
+    /** The account answerable for the target (its publisher, owner, or the person). */
+    accountId: uuid("account_id").references(() => users.id, { onDelete: "set null" }),
+    reason: varchar("reason", { length: 32 }).notNull().$type<ReportReason>(),
+    note: text("note"),
+    status: varchar("status", { length: 16 }).notNull().default("open").$type<ReportStatus>(),
+    resolvedBy: uuid("resolved_by").references(() => users.id, { onDelete: "set null" }),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    resolution: text("resolution"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    statusCreatedIdx: index("reports_status_created_idx").on(table.status, table.createdAt),
+    reporterCreatedIdx: index("reports_reporter_created_idx").on(table.reporterId, table.createdAt),
+    targetIdx: index("reports_target_idx").on(table.targetKind, table.target),
+  }),
+);

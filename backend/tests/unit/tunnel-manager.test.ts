@@ -106,6 +106,7 @@ function allowRuntime(manager: TunnelManager, did: string) {
   vi.spyOn(manager as any, "recordRuntimeConnected").mockResolvedValue(
     undefined,
   );
+  vi.spyOn(manager as any, "isPekoTakenDown").mockResolvedValue(false);
 }
 
 async function buildFastify() {
@@ -201,6 +202,30 @@ describe("TunnelManager", () => {
     expect(socket.closed).toBe(true);
     expect(socket.closeCode).toBe(1008);
     expect(socket.sent.some((m) => m.type === "disconnect")).toBe(true);
+  });
+
+  it("refuses a runtime whose account is suspended at the handshake", async () => {
+    const manager = new TunnelManager(app);
+    const socket = new MockWebSocket();
+    const { did, privateKey } = makeRuntimeIdentity();
+    vi.spyOn(manager as any, "isRuntimeAllowed").mockResolvedValue("suspended");
+
+    manager.handleSocket(socket as any);
+    socket.triggerMessage({
+      type: "runtime_hello",
+      runtimeId: did,
+      nonce: "nonce-suspended",
+      signature: signHello(privateKey, "nonce-suspended"),
+    });
+    const deadline = Date.now() + 1_000;
+    while (!socket.closed && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+
+    expect(socket.closed).toBe(true);
+    expect(socket.closeCode).toBe(1008);
+    expect(socket.closeReason).toMatch(/account suspended/);
+    expect(socket.sent.some((m) => m.type === "tunnel_challenge")).toBe(false);
   });
 
   it("closes socket with 1008 for unknown runtime DID (issue #1 allowlist)", async () => {
@@ -845,6 +870,29 @@ describe("TunnelManager instance_announce principalPop (ADR-058 D4)", () => {
     upsertSpy.mockRestore();
   });
 
+  it("rejects the announce of a peko a moderator took off the Hub", async () => {
+    const runtime = makeRuntimeIdentity();
+    const principal = makeRuntimeIdentity();
+    const { manager, socket, upsertSpy } = await setup(runtime);
+    vi.spyOn(manager as any, "isPekoTakenDown").mockResolvedValue(true);
+
+    const principalPop = await signPrincipalPop(
+      principal,
+      principal.did,
+      canonicalPrincipalPopPayload(runtime.did, principal.did),
+    );
+    socket.triggerMessage({
+      type: "instance_announce",
+      payload: makeAnnounce({ principalDid: principal.did, principalPop, registrationId: "reg-taken-down" }),
+    });
+    await settle();
+
+    expect(upsertSpy).not.toHaveBeenCalled();
+    const rejected = socket.sent.find((m) => m.type === "principal_registration_rejected");
+    expect(rejected?.message).toMatch(/moderator took this peko off the Hub/);
+    upsertSpy.mockRestore();
+  });
+
   it("rejects an announce whose principalPop is signed with the wrong key", async () => {
     const runtime = makeRuntimeIdentity();
     const principal = makeRuntimeIdentity();
@@ -955,6 +1003,7 @@ describe("TunnelManager single online copy (ADR-081 D7)", () => {
     const principal = makeRuntimeIdentity();
     vi.spyOn(manager as any, "isRuntimeAllowed").mockResolvedValue(true);
     vi.spyOn(manager as any, "recordRuntimeConnected").mockResolvedValue(undefined);
+    vi.spyOn(manager as any, "isPekoTakenDown").mockResolvedValue(false);
     vi.spyOn(manager as any, "resolveRuntimeOwner").mockResolvedValue(runtimeOwner);
     vi.spyOn(instanceService, "registerIdentity").mockResolvedValue(HUB_ID);
     vi.spyOn(instanceService, "findLinkedElsewhere").mockResolvedValue({

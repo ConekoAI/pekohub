@@ -7,6 +7,7 @@ import {
   LogOut,
   Menu,
   Search,
+  ShieldCheck,
   User as UserIcon,
   X,
 } from 'lucide-react';
@@ -85,6 +86,7 @@ export function Layout({ children }: LayoutProps) {
                   name={user.displayName}
                   avatarUrl={user.avatarUrl}
                   namespace={user.namespace}
+                  staff={user.role === 'moderator' || user.role === 'admin'}
                   onSignOut={() => void logout()}
                 />
               ) : (
@@ -222,11 +224,14 @@ function AccountMenu({
   name,
   avatarUrl,
   namespace,
+  staff = false,
   onSignOut,
 }: {
   name: string;
   avatarUrl?: string | null;
   namespace: string;
+  /** A moderator or admin: the menu offers the moderation page. */
+  staff?: boolean;
   onSignOut: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -295,6 +300,16 @@ function AccountMenu({
                 void navigate({ to: '/profile' });
               }}
             />
+            {staff && (
+              <MenuItem
+                icon={<ShieldCheck className="h-4 w-4" />}
+                label="Moderation"
+                onClick={() => {
+                  setOpen(false);
+                  void navigate({ to: '/admin' });
+                }}
+              />
+            )}
           </div>
           <div className="border-t border-ink-700 p-1.5">
             <MenuItem

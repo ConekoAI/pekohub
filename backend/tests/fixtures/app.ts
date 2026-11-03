@@ -15,6 +15,7 @@ import publicPekoRoutes from "../../src/routes/api/public-pekos.js";
 import runtimeRoutes from "../../src/routes/api/runtimes.js";
 import principalDirectoryRoutes from "../../src/routes/api/principals.js";
 import adminRoutes from "../../src/routes/api/admin.js";
+import reportRoutes from "../../src/routes/api/reports.js";
 import metaRoutes from "../../src/routes/api/meta.js";
 import groupRoutes from "../../src/routes/api/groups.js";
 import oauthRoutes from "../../src/routes/auth/oauth.js";
@@ -117,6 +118,7 @@ export async function buildTestApp(options: TestAppOptions) {
   // Issue #14: agent directory (by-hub-id / by-handle) for tests.
   await app.register(principalDirectoryRoutes, { prefix: "/v1" });
   await app.register(adminRoutes, { prefix: "/v1/admin" });
+  await app.register(reportRoutes, { prefix: "/v1" });
   await app.register(metaRoutes, { prefix: "/v1" });
   await app.register(groupRoutes, { prefix: "/v1" });
   await app.register(oauthRoutes, { prefix: "/v1/auth" });

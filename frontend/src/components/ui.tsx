@@ -89,8 +89,15 @@ export function SectionTitle({ title, action }: { title: string; action?: ReactN
 
 export type BadgeTone = 'accent' | 'neutral' | 'danger';
 
+/** Spelled out: Tailwind keeps only the class names it finds whole in the source. */
+const BADGE: Record<BadgeTone, string> = {
+  accent: 'badge-accent',
+  neutral: 'badge-neutral',
+  danger: 'badge-danger',
+};
+
 export function Badge({ tone = 'neutral', children }: { tone?: BadgeTone; children: ReactNode }) {
-  return <span className={`badge-${tone}`}>{children}</span>;
+  return <span className={BADGE[tone]}>{children}</span>;
 }
 
 const DOT: Record<string, string> = {

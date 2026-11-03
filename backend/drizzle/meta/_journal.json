@@ -71,6 +71,13 @@
       "when": 1793709449239,
       "tag": "0009_transfer_offers_api_key_prefix",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793711416931,
+      "tag": "0010_moderation",
+      "breakpoints": true
     }
   ]
 }

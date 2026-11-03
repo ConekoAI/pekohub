@@ -5,6 +5,7 @@ import { users, refreshTokens } from "../../db/schema.js";
 import { eq, and, isNull, gt } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { findOrCreateUser, type ProviderProfile } from "../../services/accounts.js";
+import { AccountSuspendedError } from "../../plugins/auth.js";
 
 /**
  * OAuth 2.0 login flow + refresh-token endpoints
@@ -138,6 +139,11 @@ export default async function oauthRoutes(fastify: FastifyInstance) {
 
     // First sign-in makes the account, with a free, valid handle.
     const user = await findOrCreateUser(profile);
+    if (user.suspendedAt) {
+      return reply.redirect(
+        `${fastify.config.FRONTEND_URL ?? fastify.config.REGISTRY_BASE_URL}/auth/callback?error=${encodeURIComponent("This account is suspended")}`,
+      );
+    }
 
     // Issue short-lived access JWT (15 minutes)
     const accessToken = await reply.jwtSign(
@@ -208,6 +214,10 @@ export default async function oauthRoutes(fastify: FastifyInstance) {
     if (!user) {
       return reply.status(401).send({ error: "User not found" });
     }
+    if (user.suspendedAt) {
+      await fastify.revokeAllUserRefreshTokens(user.id);
+      return reply.status(403).send({ error: "This account is suspended" });
+    }
 
     const accessToken = await reply.jwtSign(
       { sub: String(user.id), namespace: user.namespace },
@@ -227,8 +237,12 @@ export default async function oauthRoutes(fastify: FastifyInstance) {
         displayName: user.displayName,
         email: user.email,
         avatarUrl: user.avatarUrl,
+        role: user.role,
       };
-    } catch {
+    } catch (err) {
+      if (err instanceof AccountSuspendedError) {
+        return reply.status(403).send({ error: err.message });
+      }
       return reply.status(401).send({ error: "Unauthorized" });
     }
   });

@@ -10,6 +10,7 @@ export interface TestUser {
   displayName: string;
   email: string;
   avatarUrl: string;
+  role?: "user" | "moderator" | "admin";
 }
 
 export interface TestBundle {
@@ -123,8 +124,11 @@ export async function createUser(
      RETURNING id, external_id, provider, namespace, display_name, email, avatar_url`,
     params,
   );
+  if (overrides.role) {
+    await client.query("UPDATE users SET role = $1 WHERE id = $2", [overrides.role, result.rows[0].id]);
+  }
 
-  return result.rows[0] as TestUser;
+  return { ...result.rows[0], role: overrides.role ?? "user" } as TestUser;
 }
 
 /**
@@ -337,13 +341,12 @@ export async function createRuntime(
 ): Promise<TestRuntime> {
   const result = await client.query(
     `INSERT INTO runtimes (runtime_did, owner_id, display_name, last_seen_at)
-     VALUES ($1, $2, $3, $4, $5)
+     VALUES ($1, $2, $3, $4)
      RETURNING id, runtime_did, owner_id, display_name, last_seen_at, created_at`,
     [
       overrides.runtimeDid,
       overrides.ownerId,
       overrides.displayName ?? null,
-      overrides.directEndpoint ?? null,
       overrides.lastSeenAt ?? new Date(),
     ],
   );

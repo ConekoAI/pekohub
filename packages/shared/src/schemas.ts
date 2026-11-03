@@ -188,6 +188,8 @@ export const UserProfile = z.object({
   displayName: z.string(),
   email: z.string().email().optional(),
   avatarUrl: z.string().url().optional(),
+  /** `moderator` and `admin` see the moderation page (gap map B3). */
+  role: z.enum(['user', 'moderator', 'admin']).optional(),
   createdAt: z.string().datetime(),
 });
 export type UserProfile = z.infer<typeof UserProfile>;

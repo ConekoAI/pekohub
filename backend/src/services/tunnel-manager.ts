@@ -29,6 +29,7 @@ import {
 } from "./groups.js";
 import { groupUrl } from "./origins.js";
 import { auditService } from "./audit.js";
+import { isTakenDown } from "./moderation.js";
 import { metrics, CounterName } from "./metrics.js";
 import { reportError } from "./error-reporting.js";
 import { db } from "../db/index.js";
@@ -331,7 +332,12 @@ export class TunnelManager {
     // 2. Allowlist check: the DID must already be registered in the
     // `runtimes` table. Closing here with 1008 is the P0 fix from
     // pekohub issue #1 — an unregistered DID must not stay connected.
-    if (!(await this.isRuntimeAllowed(runtimeId))) {
+    // A runtime of a suspended account is refused the same way.
+    const allowed = await this.isRuntimeAllowed(runtimeId);
+    if (allowed === "suspended") {
+      throw new TunnelAuthError("account suspended");
+    }
+    if (!allowed) {
       throw new TunnelAuthError("unknown runtime");
     }
 
@@ -664,13 +670,26 @@ export class TunnelManager {
   /**
    * Allowlist check, separated from `beginHandshake` so unit tests
    * that don't wire up a real DB can stub it. Returns `true` iff a
-   * row exists in `runtimes` for the given DID.
+   * row exists in `runtimes` for the given DID, and `"suspended"` when
+   * the account it is registered to is suspended.
    */
-  protected async isRuntimeAllowed(runtimeId: string): Promise<boolean> {
-    const row = await db.query.runtimes.findFirst({
-      where: eq(runtimes.runtimeDid, runtimeId),
-    });
-    return row !== undefined;
+  protected async isRuntimeAllowed(runtimeId: string): Promise<boolean | "suspended"> {
+    const [row] = await db
+      .select({ suspendedAt: users.suspendedAt })
+      .from(runtimes)
+      .innerJoin(users, eq(users.id, runtimes.ownerId))
+      .where(eq(runtimes.runtimeDid, runtimeId))
+      .limit(1);
+    if (!row) return false;
+    return row.suspendedAt ? "suspended" : true;
+  }
+
+  /**
+   * Whether a moderator forced this peko off the Hub; a taken-down peko
+   * can't re-announce. Separated so unit tests without a DB can stub it.
+   */
+  protected async isPekoTakenDown(hubId: string): Promise<boolean> {
+    return isTakenDown(hubId);
   }
 
   /**
@@ -1187,6 +1206,11 @@ export class TunnelManager {
     } catch (err) {
       reject("Signing identity and immutable actor key belong to different principals");
       this.fastify.log.warn({ err, runtimeId }, "Principal identity registration rejected");
+      return;
+    }
+    if (await this.isPekoTakenDown(hubId)) {
+      reject("A PekoHub moderator took this peko off the Hub");
+      this.fastify.log.warn({ runtimeId, hubId }, "Announce rejected: the peko was taken down");
       return;
     }
     const principalDidVerified = true;
