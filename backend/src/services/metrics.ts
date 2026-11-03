@@ -63,6 +63,8 @@ export const CounterName = {
   HubChannelInviteRejectedSourceAllowlist:
     "hub.channel_invite.rejected_source_allowlist",
   HubChannelInviteRecipientOffline: "hub.channel_invite.recipient_offline",
+  HubChannelEventRateLimited: "hub.channel_event.rate_limited",
+  HubChannelInviteRateLimited: "hub.channel_invite.rate_limited",
   HubPeerRuntimeOnlineSent: "hub.peer_runtime_online.sent",
   HubHistoryForwarded: "hub.channel_history.forwarded",
   HubHistoryRequestRejectedPerson: "hub.channel_history.rejected_person",

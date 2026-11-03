@@ -32,7 +32,7 @@ import { auditService } from "./audit.js";
 import { metrics, CounterName } from "./metrics.js";
 import { reportError } from "./error-reporting.js";
 import { db } from "../db/index.js";
-import { runtimes, instances, hubPrincipals } from "../db/schema.js";
+import { runtimes, instances, hubPrincipals, users } from "../db/schema.js";
 import { eq, inArray, and } from "drizzle-orm";
 
 const HELLO_TIMEOUT_MS = 10_000;
@@ -52,6 +52,11 @@ const MAX_WAITERS_PER_RECIPIENT = 1_000;
 const HISTORY_REQUESTS_PER_MINUTE = 120;
 // Runtime ADR-092 D2: invitations a group home may send a minute.
 const INVITATIONS_PER_MINUTE = 60;
+// Channel envelopes a runtime may relay a minute: posts and receipts, one
+// per recipient runtime, and an outbox catching up after a reconnect. One
+// over the cap is dropped; the sender's outbox keeps it and resends.
+const CHANNEL_EVENTS_PER_MINUTE = 600;
+const CHANNEL_INVITES_PER_MINUTE = 120;
 const REAPER_INTERVAL_MS = 30_000;
 const CHALLENGE_NONCE_BYTES = 32;
 /** ADR-058 D4: freshness leeways for the announce `principalPop`
@@ -161,6 +166,9 @@ export class TunnelManager {
   private historyRequests = new Map<string, number[]>();
   /** Recent group invitation times per runtime (runtime ADR-092 D2). */
   private invitationsSent = new Map<string, number[]>();
+  /** Recent relayed channel events and invites per runtime. */
+  private channelEventsSent = new Map<string, number[]>();
+  private channelInvitesSent = new Map<string, number[]>();
   private static readonly MAX_TRACKED_CHALLENGES = 4_096;
 
   constructor(private fastify: FastifyInstance) {}
@@ -549,30 +557,22 @@ export class TunnelManager {
     return rows.map((r) => r.runtimeDid);
   }
 
-  /** Sliding one-minute window of group invitations per runtime. */
-  private allowInvitation(runtimeId: string): boolean {
+  /** A sliding one-minute window per runtime: false once `max` are in it. */
+  private allowInWindow(window: Map<string, number[]>, runtimeId: string, max: number): boolean {
     const now = Date.now();
-    const recent = (this.invitationsSent.get(runtimeId) ?? []).filter((t) => now - t < 60_000);
-    if (recent.length >= INVITATIONS_PER_MINUTE) {
-      this.invitationsSent.set(runtimeId, recent);
-      return false;
-    }
-    recent.push(now);
-    this.invitationsSent.set(runtimeId, recent);
-    return true;
+    const recent = (window.get(runtimeId) ?? []).filter((t) => now - t < 60_000);
+    const allowed = recent.length < max;
+    if (allowed) recent.push(now);
+    window.set(runtimeId, recent);
+    return allowed;
   }
 
-  /** Sliding one-minute window of history requests per runtime. */
+  private allowInvitation(runtimeId: string): boolean {
+    return this.allowInWindow(this.invitationsSent, runtimeId, INVITATIONS_PER_MINUTE);
+  }
+
   private allowHistoryRequest(runtimeId: string): boolean {
-    const now = Date.now();
-    const recent = (this.historyRequests.get(runtimeId) ?? []).filter((t) => now - t < 60_000);
-    if (recent.length >= HISTORY_REQUESTS_PER_MINUTE) {
-      this.historyRequests.set(runtimeId, recent);
-      return false;
-    }
-    recent.push(now);
-    this.historyRequests.set(runtimeId, recent);
-    return true;
+    return this.allowInWindow(this.historyRequests, runtimeId, HISTORY_REQUESTS_PER_MINUTE);
   }
 
   /** `sender` tried to reach `recipient` while it was offline. */
@@ -1483,6 +1483,13 @@ export class TunnelManager {
       return;
     }
 
+    // 1a. Per-runtime cap (CHANNEL_EVENTS_PER_MINUTE), checked before any lookup.
+    if (!this.allowInWindow(this.channelEventsSent, conn.runtimeId, CHANNEL_EVENTS_PER_MINUTE)) {
+      metrics.inc(CounterName.HubChannelEventRateLimited);
+      this.fastify.log.debug({ runtimeId: conn.runtimeId }, "channel event rate-limited; dropped");
+      return;
+    }
+
     // 1b. ADR-081 D7: a registered principal speaks only from the runtime
     //     its online link points at. An offline copy elsewhere holds the
     //     same key, so the signature alone cannot tell them apart. An
@@ -1581,6 +1588,13 @@ export class TunnelManager {
       return;
     }
 
+    // 1a. Per-runtime cap (CHANNEL_INVITES_PER_MINUTE), checked before any lookup.
+    if (!this.allowInWindow(this.channelInvitesSent, conn.runtimeId, CHANNEL_INVITES_PER_MINUTE)) {
+      metrics.inc(CounterName.HubChannelInviteRateLimited);
+      this.fastify.log.debug({ runtimeId: conn.runtimeId }, "channel invite rate-limited; dropped");
+      return;
+    }
+
     // 1b. ADR-081 D7: a registered principal speaks only from the runtime
     //     its online link points at. An offline copy elsewhere holds the
     //     same key, so the signature alone cannot tell them apart. An
@@ -1658,6 +1672,8 @@ export class TunnelManager {
       this.connections.delete(conn.runtimeId);
       this.historyRequests.delete(conn.runtimeId);
       this.invitationsSent.delete(conn.runtimeId);
+      this.channelEventsSent.delete(conn.runtimeId);
+      this.channelInvitesSent.delete(conn.runtimeId);
     }
 
     // Mark hosted instances offline and propagate via tunnel if still connected
@@ -1726,18 +1742,27 @@ export class TunnelManager {
       refuse("Runtime owner is unavailable");
       return;
     }
-    const result = await instanceService.transferOwner(msg.hubId, msg.ownerId, String(account));
+    // An offer: the new owner accepts on PekoHub, and then this runtime is
+    // told the owner (`principal_owner_changed`) and re-announces.
+    const result = await instanceService.offerTransfer(msg.hubId, msg.ownerId, String(account));
     switch (result.status) {
-      case "transferred":
+      case "offered": {
         await auditService.logPrincipalOwnerTransfer(msg.hubId, String(account), {
-          from: result.previous,
-          to: msg.ownerId,
+          offeredTo: msg.ownerId,
           via: "tunnel",
         });
-        this.notifyOwnerChanged(runtimeId, msg.localId, msg.hubId, msg.ownerId, msg.requestId);
+        const recipient = await db.query.users.findFirst({ where: eq(users.id, msg.ownerId) });
+        refuse(
+          `Offered to @${recipient?.namespace ?? msg.ownerId}. It moves when they accept on PekoHub ` +
+            "(signed in, under Pekos); until then you still own it.",
+        );
         return;
+      }
       case "denied":
         refuse("Only the principal's owner on PekoHub can transfer it");
+        return;
+      case "same_owner":
+        refuse("That account already owns it");
         return;
       case "unknown_user":
         refuse("The new owner is not a PekoHub user");

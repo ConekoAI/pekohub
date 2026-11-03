@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import { apiErrorHandler } from "../../src/plugins/errors.js";
 import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
 
@@ -124,11 +125,7 @@ export async function buildTestApp(options: TestAppOptions) {
   await app.register(opsRoutes, options.ops ?? {});
 
   // Error handler
-  app.setErrorHandler((error, _request, reply) => {
-    reply.status(error.statusCode ?? 500).send({
-      error: error.message,
-    });
-  });
+  app.setErrorHandler(apiErrorHandler);
 
   // Cleanup: restore env
   process.env = originalEnv;

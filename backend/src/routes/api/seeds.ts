@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../../db/index.js";
 import { bundles, bundleVersions, pullStats, users } from "../../db/schema.js";
@@ -97,6 +97,20 @@ async function indexSeed(
   } catch (err) {
     fastify.log.warn({ err }, "seed indexing failed; the seed is published but not searchable yet");
   }
+}
+
+/**
+ * Remove versions' content but keep their numbers: a removed version is
+ * never published again with other text, so `owner/name@1.0.0` always
+ * means one seed. A seed with no content left is gone from every listing;
+ * its publisher may publish new versions under the name.
+ */
+async function removeVersions(ids: number[]) {
+  if (ids.length === 0) return;
+  await db
+    .update(bundleVersions)
+    .set({ content: null, manifestJson: null })
+    .where(inArray(bundleVersions.id, ids));
 }
 
 export default async function seedRoutes(fastify: FastifyInstance) {
@@ -276,9 +290,12 @@ export default async function seedRoutes(fastify: FastifyInstance) {
         where: and(eq(bundleVersions.bundleId, bundle.id), eq(bundleVersions.version, version)),
       });
       if (existing) {
-        return reply
-          .status(409)
-          .send({ error: `Version ${version} is already published. Versions can't change — publish a new one.` });
+        return reply.status(409).send({
+          error:
+            existing.content === null
+              ? `Version ${version} was published before and removed. A version is never reused — publish a new one.`
+              : `Version ${version} is already published. Versions can't change — publish a new one.`,
+        });
       }
       [bundle] = await db
         .update(bundles)
@@ -367,7 +384,7 @@ export default async function seedRoutes(fastify: FastifyInstance) {
       if (owned.versions.length === 1) {
         return reply.status(409).send({ error: "This is the only version — delete the seed instead" });
       }
-      await db.delete(bundleVersions).where(eq(bundleVersions.id, row.id));
+      await removeVersions([row.id]);
       await auditService.logDelete(
         owned.bundle.namespace,
         owned.user.id,
@@ -380,7 +397,11 @@ export default async function seedRoutes(fastify: FastifyInstance) {
   fastify.delete(`/seeds/:owner(${OWNER})/:name(${NAME})`, async (request, reply) => {
     const owned = await ownSeed(request, reply);
     if (!owned) return reply;
-    await db.delete(bundles).where(eq(bundles.id, owned.bundle.id));
+    await removeVersions(owned.versions.map((v) => v.id));
+    await db
+      .update(bundles)
+      .set({ description: null, readme: null, displayName: null, updatedAt: new Date() })
+      .where(eq(bundles.id, owned.bundle.id));
     await auditService.logDelete(
       owned.bundle.namespace,
       owned.user.id,

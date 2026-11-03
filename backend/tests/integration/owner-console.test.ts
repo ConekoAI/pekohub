@@ -96,9 +96,9 @@ describe("Owner console API", () => {
     expect((await app.inject({ method: "DELETE", url: "/v1/auth/apps/evil", headers })).statusCode).toBe(404);
   });
 
-  it("transfers a peko to another account by handle", async () => {
+  it("offers a peko to another account by handle; it moves when they accept", async () => {
     const alice = await createUser(testDb.client, { namespace: "alice" });
-    await createUser(testDb.client, { namespace: "bob" });
+    const bob = await createUser(testDb.client, { namespace: "bob" });
     const instance = await createInstance(testDb.client, {
       ownerSubject: { kind: "user", id: String(alice.id) },
       name: "ada",
@@ -117,8 +117,68 @@ describe("Owner console API", () => {
       method: "POST",
       url: `/v1/principals/by-hub-id/${instance.hubId}/transfer`,
       headers: await authHeaders(alice),
-      payload: { ownerHandle: "bob" },
+      payload: { ownerHandle: "@Bob" },
     });
-    expect(res.statusCode, res.body).toBe(204);
+    expect(res.statusCode, res.body).toBe(202);
+    const owner = async () =>
+      (await testDb.client.query(`SELECT owner_subject->>'id' AS id FROM instances WHERE id = $1`, [instance.id]))
+        .rows[0].id;
+    expect(await owner()).toBe(String(alice.id));
+
+    const offers = await app.inject({ method: "GET", url: "/v1/me/transfers", headers: await authHeaders(bob) });
+    expect(offers.json().transfers).toEqual([
+      expect.objectContaining({ hubId: instance.hubId, direction: "incoming", pekoName: "ada", otherHandle: "alice" }),
+    ]);
+    const outgoing = await app.inject({ method: "GET", url: "/v1/me/transfers", headers: await authHeaders(alice) });
+    expect(outgoing.json().transfers).toEqual([expect.objectContaining({ direction: "outgoing", otherHandle: "bob" })]);
+
+    // Only the account it was offered to can take it.
+    expect((await app.inject({
+      method: "POST",
+      url: `/v1/principals/by-hub-id/${instance.hubId}/transfer/accept`,
+      headers: await authHeaders(alice),
+    })).statusCode).toBe(404);
+    const accepted = await app.inject({
+      method: "POST",
+      url: `/v1/principals/by-hub-id/${instance.hubId}/transfer/accept`,
+      headers: await authHeaders(bob),
+    });
+    expect(accepted.statusCode, accepted.body).toBe(204);
+    expect(await owner()).toBe(String(bob.id));
+  });
+
+  it("an offer can be declined or withdrawn, and lapses if the owner changes", async () => {
+    const alice = await createUser(testDb.client, { namespace: "alice" });
+    const bob = await createUser(testDb.client, { namespace: "bob" });
+    const carol = await createUser(testDb.client, { namespace: "carol" });
+    const instance = await createInstance(testDb.client, {
+      ownerSubject: { kind: "user", id: String(alice.id) },
+      name: "ada",
+      exposure: "public",
+    });
+    const url = `/v1/principals/by-hub-id/${instance.hubId}/transfer`;
+    const offer = async (from: typeof alice, to: string) =>
+      app.inject({ method: "POST", url, headers: await authHeaders(from), payload: { ownerHandle: to } });
+    const accept = async (user: typeof alice) =>
+      app.inject({ method: "POST", url: `${url}/accept`, headers: await authHeaders(user) });
+
+    expect((await offer(alice, "alice")).statusCode).toBe(422);
+
+    await offer(alice, "bob");
+    expect((await app.inject({ method: "DELETE", url, headers: await authHeaders(bob) })).statusCode).toBe(204);
+    expect((await accept(bob)).statusCode).toBe(404);
+
+    await offer(alice, "bob");
+    expect((await app.inject({ method: "DELETE", url, headers: await authHeaders(alice) })).statusCode).toBe(204);
+    expect((await accept(bob)).statusCode).toBe(404);
+
+    // A newer offer replaces the open one.
+    await offer(alice, "bob");
+    await offer(alice, "carol");
+    expect((await accept(bob)).statusCode).toBe(404);
+    expect((await accept(carol)).statusCode).toBe(204);
+
+    // Carol owns it; an offer Alice made before is gone with the transfer.
+    expect((await offer(alice, "bob")).statusCode).toBe(403);
   });
 });
