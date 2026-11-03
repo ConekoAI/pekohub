@@ -4,7 +4,7 @@
 
 /* ───────────────────────────────────────────────────────────────────────────
    PekoHub design system
-   Quiet navy surfaces, one muted blue accent, hairline borders. Pages
+   Navy surfaces, one brand-blue accent, hairline borders. Pages
    compose these classes instead of inventing their own colour math; the
    only other hue is a soft red for destructive actions and errors.
    ─────────────────────────────────────────────────────────────────────────── */
@@ -22,7 +22,7 @@
     @apply bg-ink-950 text-slate-300;
     background-image: radial-gradient(
       1100px 480px at 50% -12%,
-      rgba(106, 130, 171, 0.12),
+      rgba(79, 121, 217, 0.16),
       transparent 70%
     );
     background-repeat: no-repeat;
@@ -36,7 +36,7 @@
   }
 
   ::selection {
-    background: rgba(134, 156, 192, 0.35);
+    background: rgba(108, 146, 230, 0.35);
     color: #f3f6fa;
   }
 
@@ -49,11 +49,11 @@
     height: 10px;
   }
   ::-webkit-scrollbar-track {
-    background: #0c1018;
+    background: #0a0f1e;
   }
   ::-webkit-scrollbar-thumb {
-    background: #252e3f;
-    border: 2px solid #0c1018;
+    background: #232f4d;
+    border: 2px solid #0a0f1e;
     border-radius: 9999px;
   }
 

@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { api } from '~/lib/api';
 import { PageHeader, PageShell } from '~/components/PageShell';
 import { SearchBar } from '~/components/SearchBar';
-import { SeedCard } from '~/components/SeedCard';
+import { SeedCard, type SeedCardItem } from '~/components/SeedCard';
 import { EmptyState, Loading, Unavailable } from '~/components/ui';
 import { useSeedList } from '~/hooks/useSeed';
 
@@ -16,7 +16,10 @@ import { useSeedList } from '~/hooks/useSeed';
  * A seed is the DNA a peko grows from (runtime ADR-060): a stripped
  * `principal.toml`, published here as text and named `<owner>/<name>`.
  * The default listing is newest first (`GET /v1/seeds`); a typed query
- * goes to full-text search (`GET /v1/search`).
+ * goes to full-text search (`GET /v1/search`). This is the website's only
+ * search: it finds seeds, never people or pekos — looking those up by ID
+ * is the desktop's job. A leading `@` is dropped, so `@alice` finds
+ * alice's seeds, and an exact seed ID (`alice/ada`) comes first.
  */
 
 const searchSchema = z.object({ q: z.string().optional() });
@@ -61,15 +64,24 @@ function SeedGrid({ children }: { children: ReactNode }) {
 }
 
 function SearchResults({ q }: { q: string }) {
+  const text = q.replace(/^@+/, '');
   const query = useQuery({
-    queryKey: ['seed-search', q],
-    queryFn: () => api.search({ q, page: 1, perPage: 24, filters: { bundleType: 'principal' } }),
+    queryKey: ['seed-search', text],
+    queryFn: () => api.search({ q: text, page: 1, perPage: 24, filters: { bundleType: 'principal' } }),
     placeholderData: (prev) => prev,
   });
 
   if (query.isLoading) return <Loading />;
   if (query.isError) return <Unavailable />;
-  const items = query.data?.items ?? [];
+  const exact: SeedCardItem[] = (query.data?.exact ?? []).flatMap((hit) =>
+    hit.kind === 'seed'
+      ? [{ owner: hit.owner, name: hit.name, displayName: hit.displayName, description: hit.description }]
+      : [],
+  );
+  const items: SeedCardItem[] = [
+    ...exact,
+    ...(query.data?.items ?? []).map((item) => ({ ...item, owner: item.namespace })),
+  ];
 
   if (items.length === 0) {
     return <EmptyState icon={<Boxes className="h-5 w-5" />} title={`No seeds match “${q}”`} />;
@@ -77,7 +89,7 @@ function SearchResults({ q }: { q: string }) {
   return (
     <SeedGrid>
       {items.map((item) => (
-        <SeedCard key={`${item.namespace}/${item.name}`} item={{ ...item, owner: item.namespace }} />
+        <SeedCard key={`${item.owner}/${item.name}`} item={item} />
       ))}
     </SeedGrid>
   );

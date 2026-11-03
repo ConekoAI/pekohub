@@ -19,8 +19,7 @@ const REPO_URL = RUNTIME_REPO_URL;
 
 /**
  * Primary destinations: the seed registry and the app. Pekos and people
- * have no directory — they are found by their exact ID, through search
- * (hub ADR-009).
+ * have no directory (hub ADR-009); finding them by ID is the desktop's job.
  */
 const NAV = [
   { to: '/seeds', label: 'Seeds' },
@@ -335,10 +334,7 @@ function MenuItem({
   );
 }
 
-/**
- * The one search box (hub ADR-009): an exact `@person` or `@person/peko`
- * ID, or words to search seeds by. Results on `/search`.
- */
+/** The nav's search box: searches seeds, with results on `/seeds`. */
 function NavSearch({ className = '', onSearched }: { className?: string; onSearched?: () => void }) {
   const navigate = useNavigate();
   const [value, setValue] = useState('');
@@ -352,7 +348,7 @@ function NavSearch({ className = '', onSearched }: { className?: string; onSearc
         if (!q) return;
         setValue('');
         onSearched?.();
-        void navigate({ to: '/search', search: { q } });
+        void navigate({ to: '/seeds', search: { q } });
       }}
     >
       <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" aria-hidden />
@@ -360,8 +356,8 @@ function NavSearch({ className = '', onSearched }: { className?: string; onSearc
         type="search"
         value={value}
         onChange={(event) => setValue(event.target.value)}
-        placeholder="Search"
-        aria-label="Search PekoHub"
+        placeholder="Search seeds"
+        aria-label="Search seeds"
         className="input h-8 border-ink-700 bg-ink-900/70 py-1 pl-8 text-[13px]"
       />
     </form>

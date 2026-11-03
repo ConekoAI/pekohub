@@ -9,8 +9,8 @@ import { useSeedList } from '~/hooks/useSeed';
 /**
  * The front door. Most visitors arrive from a share link or a search and
  * have never heard of Peko: say what a peko is, get them to the desktop
- * download, and show the seeds people have published. Pekos are never
- * shown here: they are found only by their exact ID (hub ADR-009).
+ * download, and show the seeds people have published. Pekos and people
+ * are never shown or searched here (hub ADR-009); the desktop finds them.
  */
 export const Route = createFileRoute('/')({
   component: HomePage,
@@ -75,31 +75,29 @@ function HomePage() {
         ))}
       </section>
 
-      {seedItems.length > 0 && (
-        <section className="mt-20">
-          <SectionTitle
-            title="Seeds"
-            action={
-              <Link to="/seeds" className="link inline-flex items-center gap-1 text-sm">
-                All seeds
-                <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
-            }
+      <section className="mt-20">
+        <SectionTitle
+          title="Start from a seed"
+          action={
+            <Link to="/seeds" className="link inline-flex items-center gap-1 text-sm">
+              All seeds
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          }
+        />
+        <div className="max-w-xl">
+          <SearchBar
+            onSearch={(query) => void navigate({ to: '/seeds', search: query ? { q: query } : {} })}
+            placeholder="Search seeds"
           />
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        </div>
+        {seedItems.length > 0 && (
+          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {seedItems.map((item) => (
               <SeedCard key={`${item.owner}/${item.name}`} item={item} />
             ))}
           </div>
-        </section>
-      )}
-
-      <section className="mt-20 grid gap-6 lg:grid-cols-[1fr_1.4fr] lg:items-center">
-        <h2 className="text-xl font-semibold tracking-tight text-slate-100">Know someone&apos;s ID?</h2>
-        <SearchBar
-          onSearch={(query) => void navigate({ to: '/search', search: { q: query || undefined } })}
-          placeholder="@alice/ada"
-        />
+        )}
       </section>
 
       <section className="mt-20 border-t border-ink-700 pt-12">

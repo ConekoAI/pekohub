@@ -12,7 +12,9 @@ import { createTestQueryClient } from '~/test/utils';
  *  - pages are IDs (hub ADR-009): `/@alice` a person, `/@alice/ada` a
  *    peko, `/alice/ada` a seed; the old `/peko/*`, `/p/*`, `/seeds/*`,
  *    `/bundles/*`, `/templates/*` links still resolve;
- *  - there is no peko directory: `/pekos` and `/discover` go to search;
+ *  - there is no peko directory, and the website searches seeds only:
+ *    `/pekos`, `/discover` and `/search` go to `/seeds` (finding people
+ *    and pekos by ID is the desktop's job);
  *  - every page mounts without throwing.
  *
  * A page that renders here but throws in the browser is caught by the
@@ -47,15 +49,17 @@ function renderAt(path: string) {
 }
 
 describe('legacy URL redirects', () => {
-  it('/discover → /search', async () => {
+  it('/discover → /seeds', async () => {
     const router = await loadRouter('/discover');
-    expect(router.state.location.pathname).toBe('/search');
+    expect(router.state.location.pathname).toBe('/seeds');
   });
 
-  it('/pekos → /search, preserving the query (there is no peko directory)', async () => {
-    const router = await loadRouter('/pekos?q=ada');
-    expect(router.state.location.pathname).toBe('/search');
-    expect(router.state.location.search).toMatchObject({ q: 'ada' });
+  it('/pekos and /search → /seeds, preserving the query', async () => {
+    for (const from of ['/pekos?q=ada', '/search?q=ada']) {
+      const router = await loadRouter(from);
+      expect(router.state.location.pathname).toBe('/seeds');
+      expect(router.state.location.search).toMatchObject({ q: 'ada' });
+    }
   });
 
   it('/seeds/<owner>/<name> → /<owner>/<name>, the seed ID', async () => {
@@ -115,33 +119,22 @@ describe('page smoke tests', () => {
     expect(await screen.findByText('testuser/ada')).toBeInTheDocument();
     expect(screen.queryByText(/made public/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /^pekos$/i })).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /know someone's id/i })).toBeInTheDocument();
+    // The one search box on the page searches seeds; no one is looked up by ID.
+    expect(screen.getByRole('textbox', { name: 'Search' })).toHaveAttribute('placeholder', 'Search seeds');
+    expect(screen.queryByText(/someone's id/i)).not.toBeInTheDocument();
   });
 
-  it('/search finds a person by exact handle, labelled as a person', async () => {
-    renderAt('/search?q=%40testuser');
-    const card = await screen.findByRole('link', { name: /Test User/ });
-    expect(card).toHaveAttribute('href', '/@testuser');
-    expect(within(card).getByText('person')).toBeInTheDocument();
-  });
-
-  it('/search finds a public peko by exact ID, labelled as a peko', async () => {
-    renderAt('/search?q=%40testuser%2Fada');
-    const card = await screen.findByRole('link', { name: /Ada/ });
-    expect(card).toHaveAttribute('href', '/@testuser/ada');
-    expect(within(card).getByText('peko')).toBeInTheDocument();
-  });
-
-  it('/search says when no one public has an ID', async () => {
-    renderAt('/search?q=%40nobody%2Fx');
-    expect(await screen.findByText('No one public is @nobody/x')).toBeInTheDocument();
-  });
-
-  it('/search searches seeds by text, labelled as seeds', async () => {
-    renderAt('/search?q=notes');
+  it('/seeds?q= searches seeds by text', async () => {
+    renderAt('/seeds?q=notes');
     const card = await screen.findByRole('link', { name: /my-peko/ });
     expect(card).toHaveAttribute('href', '/testuser/my-peko');
-    expect(within(card).getByText('seed')).toBeInTheDocument();
+  });
+
+  it('/seeds?q=@handle finds that person\'s seeds, never the person', async () => {
+    renderAt('/seeds?q=%40testuser');
+    expect(await screen.findByRole('link', { name: /my-peko/ })).toBeInTheDocument();
+    expect(screen.queryByText('person')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Test User/ })).not.toBeInTheDocument();
   });
 
   it('/@<handle> shows the person and their seeds, not their pekos', async () => {

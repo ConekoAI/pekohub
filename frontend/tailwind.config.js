@@ -4,32 +4,32 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Navy-slate surface ramp. `ink-950` is the page, `ink-900` a
+        // Navy surface ramp. `ink-950` is the page, `ink-900` a
         // resting card, `ink-700` a hairline.
         ink: {
-          950: '#0c1018',
-          900: '#111620',
-          850: '#141a26',
-          800: '#181f2c',
-          750: '#1d2534',
-          700: '#252e3f',
-          600: '#313b4f',
-          500: '#414c62',
+          950: '#0a0f1e',
+          900: '#0e1527',
+          850: '#121a2f',
+          800: '#161f37',
+          750: '#1b2641',
+          700: '#232f4d',
+          600: '#2e3b5d',
+          500: '#3e4c71',
         },
-        // The one accent: a muted steel blue. Primary actions, links,
+        // The one accent: the brand blue. Primary actions, links,
         // the active state, "online".
         peko: {
-          50: '#f3f6fa',
-          100: '#e3e9f2',
-          200: '#c8d3e4',
-          300: '#a7b8d2',
-          400: '#869cc0',
-          500: '#6a82ab',
-          600: '#566c93',
-          700: '#475978',
-          800: '#3a4860',
-          900: '#2f3a4e',
-          950: '#1e2533',
+          50: '#eef3fd',
+          100: '#dce6fb',
+          200: '#bacdf6',
+          300: '#92b0ef',
+          400: '#6c92e6',
+          500: '#4f79d9',
+          600: '#3e64c2',
+          700: '#33519d',
+          800: '#2d4580',
+          900: '#283b67',
+          950: '#1a2443',
         },
       },
       fontFamily: {

@@ -94,7 +94,7 @@ export function Badge({ tone = 'neutral', children }: { tone?: BadgeTone; childr
 }
 
 const DOT: Record<string, string> = {
-  online: 'bg-peko-400 shadow-[0_0_0_3px_rgba(134,156,192,0.18)]',
+  online: 'bg-peko-400 shadow-[0_0_0_3px_rgba(108,146,230,0.2)]',
   busy: 'bg-slate-400',
   error: 'bg-rose-400',
   offline: 'bg-slate-600',

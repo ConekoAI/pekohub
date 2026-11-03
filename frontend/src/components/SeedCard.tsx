@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { Download } from 'lucide-react';
 import { compactNumber, relativeTime } from '~/lib/format';
-import { Badge, Tile } from '~/components/ui';
+import { Tile } from '~/components/ui';
 
 /**
  * A seed in the registry: the stripped `principal.toml` a peko grows from
@@ -18,12 +18,12 @@ export interface SeedCardItem {
   description?: string | null;
   avatar?: string | null;
   model?: string | null;
-  pullCount: number;
-  updatedAt: string;
+  /** Absent on an exact-ID match, which carries no counts. */
+  pullCount?: number;
+  updatedAt?: string;
 }
 
-/** `showKind`: label it a seed, where results mix kinds (search). */
-export function SeedCard({ item, showKind = false }: { item: SeedCardItem; showKind?: boolean }) {
+export function SeedCard({ item }: { item: SeedCardItem }) {
   return (
     <Link
       to="/$owner/$name"
@@ -33,12 +33,9 @@ export function SeedCard({ item, showKind = false }: { item: SeedCardItem; showK
       <header className="flex items-center gap-3">
         <Tile avatar={item.avatar} name={item.name} />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <h3 className="truncate text-[15px] font-medium text-slate-100">
-              {item.displayName ?? item.name}
-            </h3>
-            {showKind && <Badge>seed</Badge>}
-          </div>
+          <h3 className="truncate text-[15px] font-medium text-slate-100">
+            {item.displayName ?? item.name}
+          </h3>
           <p className="truncate text-xs text-slate-500">
             {item.owner}/{item.name}
           </p>
@@ -50,12 +47,14 @@ export function SeedCard({ item, showKind = false }: { item: SeedCardItem; showK
       )}
 
       <div className="mt-auto flex items-center gap-4 pt-4 text-xs text-slate-500">
-        <span className="flex items-center gap-1.5" title="Downloads">
-          <Download className="h-3 w-3" />
-          {compactNumber(item.pullCount)}
-        </span>
+        {item.pullCount !== undefined && (
+          <span className="flex items-center gap-1.5" title="Downloads">
+            <Download className="h-3 w-3" />
+            {compactNumber(item.pullCount)}
+          </span>
+        )}
         {item.model && <span className="truncate">{item.model}</span>}
-        <span className="ml-auto flex-shrink-0">{relativeTime(item.updatedAt)}</span>
+        {item.updatedAt && <span className="ml-auto flex-shrink-0">{relativeTime(item.updatedAt)}</span>}
       </div>
     </Link>
   );

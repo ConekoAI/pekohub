@@ -1,9 +1,8 @@
 /**
  * Legacy `/pekos` redirect.
  *
- * There is no peko directory: a public peko is found only by its exact
- * ID, `@alice/ada` (hub ADR-009). Old links, and their query, go to the
- * one search.
+ * There is no peko directory (hub ADR-009). Old links, and their query,
+ * go to the seeds.
  */
 
 import { createFileRoute, redirect } from '@tanstack/react-router';
@@ -13,6 +12,6 @@ export const Route = createFileRoute('/pekos')({
     q: typeof search.q === 'string' ? search.q : undefined,
   }),
   beforeLoad: ({ search }) => {
-    throw redirect({ to: '/search', search: { q: search.q }, replace: true });
+    throw redirect({ to: '/seeds', search: search.q ? { q: search.q } : {}, replace: true });
   },
 });
