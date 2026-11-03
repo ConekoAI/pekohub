@@ -268,6 +268,8 @@ export const handlers = [
       : HttpResponse.json({ status: 'offered' }, { status: 202 });
   }),
   http.get('/v1/me/transfers', () => HttpResponse.json({ transfers: [] })),
+  http.get('/v1/me/notifications', () => HttpResponse.json({ unread: 0, notifications: [] })),
+  http.post('/v1/me/notifications/read', () => HttpResponse.json({ marked: 0 })),
   http.post('/v1/principals/by-hub-id/:hubId/transfer/accept', () => new HttpResponse(null, { status: 204 })),
   http.delete('/v1/principals/by-hub-id/:hubId/transfer', () => new HttpResponse(null, { status: 204 })),
 

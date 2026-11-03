@@ -626,3 +626,33 @@ export const reports = pgTable(
     targetIdx: index("reports_target_idx").on(table.targetKind, table.target),
   }),
 );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Notifications
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Something an account should hear about — an offer to take a peko, a new
+ * sign-in, a moderator's action — kept until read and for 90 days. The Hub
+ * sends no email: the website's bell and Peko desktop read these.
+ */
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** What happened, e.g. `transfer.offered`, `security.sign_in`. */
+    kind: varchar("kind", { length: 48 }).notNull(),
+    /** One plain sentence, ready to show. */
+    text: text("text").notNull(),
+    /** The website page that acts on it (`/dashboard`), if any. */
+    path: varchar("path", { length: 512 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    readAt: timestamp("read_at", { withTimezone: true }),
+  },
+  (table) => ({
+    userCreatedIdx: index("notifications_user_created_idx").on(table.userId, table.createdAt),
+  }),
+);

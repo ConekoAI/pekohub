@@ -25,6 +25,7 @@ import adminRoutes from "./routes/api/admin.js";
 import reportRoutes from "./routes/api/reports.js";
 import metaRoutes from "./routes/api/meta.js";
 import groupRoutes from "./routes/api/groups.js";
+import notificationRoutes from "./routes/api/notifications.js";
 import oauthRoutes from "./routes/auth/oauth.js";
 import apiKeyRoutes from "./routes/auth/api-keys.js";
 import oauthServerRoutes from "./routes/auth/oauth-server.js";
@@ -32,6 +33,7 @@ import opsRoutes from "./routes/ops.js";
 
 import { Scheduler } from "./services/scheduler.js";
 import { instanceService } from "./services/instances.js";
+import { pruneNotifications } from "./services/notifications.js";
 import {
   initErrorReporting,
   reportError,
@@ -140,6 +142,7 @@ async function main() {
   await app.register(reportRoutes, { prefix: "/v1" });
   await app.register(metaRoutes, { prefix: "/v1" });
   await app.register(groupRoutes, { prefix: "/v1" });
+  await app.register(notificationRoutes, { prefix: "/v1" });
 
   // ADR-057: bridge-token verification keys. Runtimes fetch this to
   // validate the EdDSA tokens the hub mints when proxying chat (the
@@ -219,6 +222,12 @@ async function main() {
       }
     },
   );
+
+  // Notifications are kept 90 days.
+  scheduler.addJob("prune-notifications", 6 * 60 * 60_000, async () => {
+    const n = await pruneNotifications();
+    if (n > 0) app.log.info(`Pruned ${n} notification(s) older than 90 days`);
+  });
 
   scheduler.start();
   app.log.info("Scheduler started (mark-offline-if-stale every 60s)");

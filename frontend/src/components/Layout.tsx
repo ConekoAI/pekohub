@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '~/hooks/useAuth';
 import { SignInModal } from '~/components/SignInModal';
+import { NotificationBell } from '~/components/NotificationBell';
 import { Avatar, Spinner } from '~/components/ui';
 import { DOCS_URL, GETTING_STARTED_URL, RUNTIME_REPO_URL } from '~/lib/links';
 
@@ -77,6 +78,8 @@ export function Layout({ children }: LayoutProps) {
             >
               <Github className="h-4 w-4" />
             </a>
+
+            {isAuthenticated && user && <NotificationBell />}
 
             <div className="hidden md:block">
               {isLoading ? (

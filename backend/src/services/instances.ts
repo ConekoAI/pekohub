@@ -1,5 +1,6 @@
 import { db } from "../db/index.js";
 import { instances, runtimes, users, hubPrincipals, principalMoveApprovals, principalTransferOffers } from "../db/schema.js";
+import { notify, PAGES } from "./notifications.js";
 import { eq, and, or, sql, desc, count, gt, gte, lt, ne, inArray, isNull } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import {
@@ -705,6 +706,12 @@ export class InstanceService {
         target: principalTransferOffers.hubId,
         set: { fromUserId: approver, toUserId: newOwner, createdAt: new Date(), expiresAt },
       });
+    await notify(
+      newOwner,
+      "transfer.offered",
+      `@${await this.handleOf(approver)} offers you ${current.name}. Accept it to become its owner; it keeps running on their computer.`,
+      PAGES.pekos,
+    );
     return { status: "offered" };
   }
 
@@ -721,7 +728,17 @@ export class InstanceService {
       )
       .returning();
     if (!offer) return { status: "miss" };
-    return this.transferOwner(hubId, userId, offer.fromUserId);
+    const result = await this.transferOwner(hubId, userId, offer.fromUserId);
+    if (result.status === "transferred") {
+      const peko = await this.getByHubId(hubId);
+      await notify(
+        offer.fromUserId,
+        "transfer.accepted",
+        `@${await this.handleOf(userId)} accepted ${peko?.name ?? "your peko"}; they own it now.`,
+        PAGES.pekos,
+      );
+    }
+    return result;
   }
 
   /** The recipient declines, or the owner withdraws, an open offer. */
@@ -737,8 +754,23 @@ export class InstanceService {
           ),
         ),
       )
-      .returning({ hubId: principalTransferOffers.hubId });
-    return removed.length > 0;
+      .returning();
+    const [offer] = removed;
+    if (!offer) return false;
+    // Tell the other side: the recipient declined, or the owner withdrew it.
+    const peko = (await this.getByHubId(hubId))?.name ?? "a peko";
+    if (offer.toUserId === userId) {
+      await notify(offer.fromUserId, "transfer.declined", `@${await this.handleOf(userId)} declined ${peko}; you still own it.`, PAGES.pekos);
+    } else {
+      await notify(offer.toUserId, "transfer.withdrawn", `@${await this.handleOf(userId)} withdrew the offer of ${peko}.`, PAGES.pekos);
+    }
+    return true;
+  }
+
+  /** An account's handle, for notification text. */
+  private async handleOf(userId: string): Promise<string> {
+    const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
+    return user?.namespace ?? "someone";
   }
 
   /** Open offers to and from `userId`, for the owner console. */

@@ -116,6 +116,12 @@ describe("OAuth authorization server", () => {
     expect(me.statusCode).toBe(200);
     expect(me.json().namespace).toBe("alice");
 
+    // The account is told an app signed in.
+    const notices = await testDb.client.query("SELECT kind, text FROM notifications WHERE user_id = $1", [user.id]);
+    expect(notices.rows).toEqual([
+      { kind: "security.sign_in", text: expect.stringContaining("Peko desktop signed in") },
+    ]);
+
     // A code works once.
     const replay = await app.inject({
       method: "POST",
