@@ -1,3 +1,5 @@
+import { reportError } from "./error-reporting.js";
+
 export interface Logger {
   info: (msg: string, ...args: unknown[]) => void;
   error: (msg: string, ...args: unknown[]) => void;
@@ -90,6 +92,7 @@ export class Scheduler {
         `Scheduled job failed: ${job.name}`,
         err instanceof Error ? err.message : String(err),
       );
+      reportError(err, { job: job.name });
     }
   }
 }

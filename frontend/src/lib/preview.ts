@@ -20,6 +20,8 @@ export interface Preview {
 export interface Env {
   /** The API origin; defaults to the official one. */
   PEKOHUB_API?: string;
+  /** Error tracking for the page (lib/error-reporting.ts); its host joins the CSP. */
+  VITE_SENTRY_DSN?: string;
 }
 
 export const DEFAULT_API = 'https://api.pekohub.ai';

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { EventEmitter } from "events";
 import Fastify from "fastify";
 import { TunnelManager, announcedAvatar, refusalMessage } from "../../src/services/tunnel-manager.js";
+import { setErrorReporterForTests } from "../../src/services/error-reporting.js";
 import { instanceService } from "../../src/services/instances.js";
 import { db } from "../../src/db/index.js";
 import { ed25519 } from "@noble/curves/ed25519.js";
@@ -255,6 +256,43 @@ describe("TunnelManager", () => {
     // The runtime must NOT have received a challenge or a ready
     expect(socket.sent.some((m) => m.type === "tunnel_challenge")).toBe(false);
     expect(socket.sent.some((m) => m.type === "tunnel_ready")).toBe(false);
+  });
+
+  it("reports a hub fault in the handshake, not a refused runtime", async () => {
+    const captureException = vi.fn();
+    setErrorReporterForTests({ captureException, flush: vi.fn() } as never);
+    try {
+      const helloFrom = async (manager: TunnelManager) => {
+        const socket = new MockWebSocket();
+        const { did, privateKey } = makeRuntimeIdentity();
+        manager.handleSocket(socket as any);
+        socket.triggerMessage({
+          type: "runtime_hello",
+          runtimeId: did,
+          nonce: "nonce-report",
+          signature: signHello(privateKey, "nonce-report"),
+        });
+        for (let i = 0; i < 100 && !socket.closed; i++) {
+          await new Promise((r) => setTimeout(r, 2));
+        }
+        return socket;
+      };
+
+      const refusing = new TunnelManager(app);
+      vi.spyOn(refusing as any, "isRuntimeAllowed").mockResolvedValue(false);
+      expect((await helloFrom(refusing)).closeCode).toBe(1008);
+      expect(captureException).not.toHaveBeenCalled();
+
+      const broken = new TunnelManager(app);
+      vi.spyOn(broken as any, "isRuntimeAllowed").mockRejectedValue(new Error("db down"));
+      const socket = await helloFrom(broken);
+      expect(socket.closeReason).toBe("Authentication failed");
+      expect(captureException).toHaveBeenCalledTimes(1);
+      expect(captureException.mock.calls[0][0]).toMatchObject({ message: "db down" });
+      expect(captureException.mock.calls[0][1].extra).toMatchObject({ where: "tunnel handshake" });
+    } finally {
+      setErrorReporterForTests(null);
+    }
   });
 
   it("rejects a replayed tunnel_challenge_ack (same nonce reused)", async () => {

@@ -21,6 +21,7 @@ import groupRoutes from "../../src/routes/api/groups.js";
 import oauthRoutes from "../../src/routes/auth/oauth.js";
 import oauthServerRoutes from "../../src/routes/auth/oauth-server.js";
 import apiKeyRoutes from "../../src/routes/auth/api-keys.js";
+import opsRoutes, { type OpsRoutesOptions } from "../../src/routes/ops.js";
 
 import type { TestDb } from "./db.js";
 
@@ -32,6 +33,8 @@ export interface TestAppOptions {
   allowVisitorChat?: boolean;
   /** Search the test database (the no-Meilisearch path) instead of the in-memory mock. */
   postgresSearch?: boolean;
+  /** `/health` and `/metrics` options (src/routes/ops.ts). */
+  ops?: OpsRoutesOptions;
 }
 
 /**
@@ -121,10 +124,7 @@ export async function buildTestApp(options: TestAppOptions) {
   await app.register(oauthRoutes, { prefix: "/v1/auth" });
   await app.register(apiKeyRoutes, { prefix: "/v1/auth" });
   await app.register(oauthServerRoutes);
-
-
-  // Health check
-  app.get("/health", async () => ({ status: "ok", version: "0.1.0" }));
+  await app.register(opsRoutes, options.ops ?? {});
 
   // Error handler
   app.setErrorHandler(apiErrorHandler);

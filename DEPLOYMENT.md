@@ -1,6 +1,13 @@
 # PekoHub Deployment Guide
 
-> **Recommended path: Cloudflare Pages + Lightsail + R2** — ~$5-10/month, 30 min setup, auto-deploy on git push.
+> **Today:** the website on Cloudflare Pages, the API on one Lightsail box (Postgres in Docker
+> beside it, backups on the same disk), staging on Fly.io + Neon.
+> **For launch:** move the production API to the staging shape — Fly.io + Neon with
+> point-in-time restore, plus a nightly encrypted dump to R2 —
+> [Production: Fly.io + Neon](#production-flyio--neon-proposed). Then
+> [Error tracking](#error-tracking), [Health and alerts](#health-and-alerts), and
+> [Backups and the restore drill](#backups-and-the-restore-drill). Steps 1–7 below describe the
+> Lightsail setup that runs until the move.
 
 ---
 
@@ -56,7 +63,7 @@ PekoHub has two origins:
 | Hostname | Serves | Hosted on |
 |----------|--------|-----------|
 | `pekohub.ai` | The website: directory, peko and seed pages, sign-in consent (`/authorize`, `/device`) | Cloudflare Pages |
-| `api.pekohub.ai` | The backend: REST (`/v1/*`), OAuth (`/oauth/*`), the runtime tunnel (`wss://api.pekohub.ai/v1/tunnel`), JWKS, OCI (`/v2/*`), `/docs` | Lightsail (nginx → Fastify) |
+| `api.pekohub.ai` | The backend: REST (`/v1/*`), OAuth (`/oauth/*`), the runtime tunnel (`wss://api.pekohub.ai/v1/tunnel`), JWKS, `/health`; `/metrics` with `METRICS_TOKEN`, `/docs` with `API_DOCS=true` | Lightsail (nginx → Fastify); Fly.io after the move |
 | `pekohub.org` | 301 redirect to `pekohub.ai` (legacy) | Cloudflare redirect rule |
 
 Clients discover both from `GET https://api.pekohub.ai/v1/meta`
@@ -134,15 +141,221 @@ Point a runtime at it with `peko runtime register --hub https://pekohub-staging.
 (or the desktop's hub setting). The first request after an idle spell waits a second or two
 for the machine, and Neon's first query after its own idle spell adds about half a second.
 
-### Blob uploads require auth (breaking change)
+---
 
-`POST /v2/<repo>/blobs/uploads/` and
-`PUT /v2/<repo>/blobs/uploads/<uuid>` previously accepted anonymous
-requests. They now require the same JWT or `pkr_` API key as the
-manifest PUT (the runtime already sends
-`Authorization: Bearer <key>` on every push request, so no CLI
-change is needed). Anonymous `HEAD`/`GET` on blobs and manifests
-stays public so unauthenticated `peko pull` keeps working.
+## Production: Fly.io + Neon (proposed)
+
+Production today is one Lightsail box: Postgres runs in Docker next to the API, and the daily
+`pg_dump` lands in `~/backups` on the same disk, so losing the box loses the backups too.
+Nothing restores to a point in time, and no restore has been tried. The proposal is to give
+production the shape staging already runs (`fly.staging.toml`), with production settings
+(`fly.production.toml`):
+
+| Piece | Where | Notes |
+|-------|-------|-------|
+| API + tunnel relay | Fly.io app `pekohub`: one `shared-cpu-1x` / 512 MB machine that never stops | `min_machines_running = 1`; Fly checks `/health` every 30 s and holds a deploy until it passes |
+| Postgres | Neon, paid plan, `aws-us-east-1` (next to Fly's `iad`) | Point-in-time restore over the plan's history window (choose 7 days or more); scale-to-zero off |
+| Second copy | Cloudflare R2 bucket `pekohub-backups`, nightly, age-encrypted | `.github/workflows/backup-production.yml`; survives losing the Neon project or account |
+| Search, quotas, blobs | As staging: Postgres search, in-memory quotas, no blob storage | Meilisearch and R2 blobs drop out with the box |
+| Website | Unchanged (Cloudflare Pages) | |
+
+Keep exactly one machine: the relay holds runtime connections in process, so a second
+machine would split them (multi-node relay is gap map B1). `--ha=false` on every deploy stops
+Fly from adding a standby. A deploy replaces the machine; connected runtimes reconnect within
+seconds.
+
+Neon's free plan keeps only hours of history and suspends after five idle minutes. Pick a paid
+plan whose restore window is at least 7 days, set the window in the project settings, and turn
+off scale-to-zero for the production branch (the 30-second health check would keep it awake
+anyway).
+
+### The move (manual; each step creates or changes cloud resources)
+
+The production API is off during the dev stage, so there is no live traffic to drain. Run
+these when launching:
+
+1. **Neon** — create the project `pekohub-production` (Postgres 17, `aws-us-east-1`) on a paid
+   plan; set the restore window; turn off scale-to-zero. Note the pooled and the direct
+   connection strings. For backups, add a read-only role:
+   ```sql
+   CREATE ROLE backup LOGIN PASSWORD '…';
+   GRANT pg_read_all_data TO backup;
+   ```
+2. **Data from Lightsail** (only if the old database holds anything worth keeping) — on the box,
+   `docker exec pekohub-db pg_dump -U pekohub --format=custom --no-owner --no-privileges pekohub > pekohub.dump`,
+   copy it off, and `pg_restore --no-owner --no-privileges --dbname="<Neon direct URL>" pekohub.dump`
+   into the empty database. The dump carries `drizzle.__drizzle_migrations`, so the first
+   deploy applies only newer migrations.
+3. **Fly** —
+   ```bash
+   fly apps create pekohub
+   fly secrets set -c fly.production.toml \
+     DATABASE_URL='<Neon pooled connection string>' \
+     MIGRATION_DATABASE_URL='<Neon direct connection string>' \
+     JWT_SECRET='<the Lightsail value, or a new one: openssl rand -hex 32>' \
+     GITHUB_CLIENT_ID=… GITHUB_CLIENT_SECRET=… \
+     SENTRY_DSN='<backend DSN>' METRICS_TOKEN="$(openssl rand -hex 32)"
+   fly deploy -c fly.production.toml --ha=false --env SENTRY_RELEASE="$(git rev-parse HEAD)"
+   node scripts/probe-uptime.mjs https://pekohub.fly.dev
+   ```
+   A new `JWT_SECRET` signs everyone out and changes the bridge-token key runtimes fetch from
+   `/v1/jwks.json`; keeping the old one avoids both.
+4. **Hostname** — `fly certs add api.pekohub.ai -c fly.production.toml` and add the records it
+   prints in Cloudflare DNS. With the orange-cloud proxy on, the `_acme-challenge` CNAME is what
+   validates the certificate. Then replace the `api` A record with a proxied CNAME to
+   `pekohub.fly.dev`; SSL/TLS stays **Full (strict)**. Runtimes keep
+   `wss://api.pekohub.ai/v1/tunnel`; the GitHub/Google OAuth callbacks don't change.
+5. **Check** — `node scripts/probe-uptime.mjs https://api.pekohub.ai`, sign in on the website,
+   connect a runtime.
+6. **Retire Lightsail** — `docker compose -f docker-compose.lightsail.yml down` on the box and
+   stop the instance (a stopped instance is the rollback: start it and point the A record
+   back). After a week, take a final snapshot, delete the instance and release the static IP.
+   `deploy-lightsail.yml` then has nothing to deploy to; delete it, or leave it (it deploys
+   only on `[lightsail]` or a manual run).
+7. **Backups and monitoring** — the sections below.
+
+Later deploys: `fly deploy -c fly.production.toml --ha=false --env SENTRY_RELEASE="$(git rev-parse HEAD)"`
+(a workflow like `deploy-staging.yml` can run it once launch settles).
+
+**Rollback:** `fly releases -c fly.production.toml` lists releases; redeploy an earlier image
+with `fly deploy -c fly.production.toml --ha=false --image <image ref from the list>`. A
+migration that must be undone is a Neon point-in-time restore (below).
+
+---
+
+## Error tracking
+
+Sentry, off unless configured. Make two projects in one Sentry organization: a Node.js one for
+the API and a Browser JavaScript one for the website. Each has its own DSN.
+
+**API** (`backend/src/services/error-reporting.ts`) — set `SENTRY_DSN` (a Fly secret, or in the
+Lightsail `.env`). Optional: `SENTRY_ENVIRONMENT` (`fly.*.toml` sets `staging` / `production`)
+and `SENTRY_RELEASE` (the deploy commands above pass the commit). It reports:
+
+- requests that end in a 5xx (method, route pattern and status; never the URL, whose query
+  can hold an OAuth code),
+- tunnel faults: a handshake that fails for a reason other than a refused runtime, a message
+  the hub fails to handle, a group registration error, failing to mark a runtime offline,
+- scheduled-job failures, and uncaught exceptions / unhandled rejections (the process still
+  exits on those, as before, after the report is sent).
+
+The SDK loads only when `SENTRY_DSN` is set and runs with a short integration list: no request
+data, headers, cookies, local variables or HTTP breadcrumbs.
+
+**Website** (`frontend/src/lib/error-reporting.ts`) — set `VITE_SENTRY_DSN` as a Cloudflare
+Pages environment variable. The build bakes it into the page, and the Pages middleware reads
+the same variable to add the DSN's host to the CSP `connect-src`; set only one of the two and
+reports are dropped (no DSN baked in) or blocked (CSP). Optional `VITE_SENTRY_ENVIRONMENT`
+and `VITE_SENTRY_RELEASE`. The SDK is a separate ~33 KB (gzipped) chunk fetched only when the
+DSN is set. It reports uncaught errors and errors a route shows instead of its page (API 4xx
+answers excluded), with query strings stripped from every URL.
+
+For staging, set the repository variable `STAGING_WEB_SENTRY_DSN` (read by
+`deploy-staging.yml`'s build) and the same value as `VITE_SENTRY_DSN` on the
+`pekohub-staging` Pages project.
+
+Source maps: the website build emits them (`frontend/dist/assets/*.map`) and serves them
+publicly. Uploading them to Sentry (`sentry-cli sourcemaps upload`) for readable stacks is
+optional.
+
+**Alerts** — in each Sentry project, an alert rule for a new issue and one for a spike (for
+example more than 20 events in 5 minutes), sent to email or Slack.
+
+---
+
+## Health and alerts
+
+- `GET /health` — `200 {"status":"ok","version":"0.1.0","database":"ok"}` when the API answers
+  and `select 1` returns within 5 s; `503 {"status":"error",…,"database":"unreachable"}`
+  otherwise. Unauthenticated and under the global rate limit.
+- `GET /metrics` — the relay counters (`services/metrics.ts`) as JSON, only with
+  `Authorization: Bearer $METRICS_TOKEN`. Without `METRICS_TOKEN` (32+ chars) the route
+  doesn't exist.
+- `/docs` — the Swagger UI exists only with `API_DOCS=true`. The routes carry no schemas, so it
+  lists paths and little else.
+
+Three checks cover the API:
+
+1. **Fly health check** (`fly.production.toml`): `/health` every 30 s. It gates deploys and
+   shows in `fly checks list -c fly.production.toml`, but Fly sends no alert.
+2. **External HTTP monitor** — the alert. Any uptime service works (Better Stack, UptimeRobot,
+   Checkly): `GET https://api.pekohub.ai/health` every 1–3 minutes, expect status 200 and the
+   text `"database":"ok"`, alert after two failures, by email and phone or Slack. Don't point
+   one at staging: it would keep the machine and Neon awake.
+3. **Tunnel probe** — an HTTP monitor can't check the tunnel (without a WebSocket upgrade the
+   route answers 404 either way). `scripts/probe-uptime.mjs <origin>` checks `/health` and
+   opens and closes a tunnel WebSocket through Cloudflare and Fly. `.github/workflows/uptime.yml`
+   runs it every 10 minutes once the repository variable `UPTIME_API_ORIGIN` is set
+   (`https://api.pekohub.ai`). Make a heartbeat monitor in the uptime service (expected every
+   10 minutes, grace 20) and put its URL in the secret `UPTIME_HEARTBEAT_URL`: each passing
+   run pings it, so a failing or stalled probe alerts like the HTTP monitor.
+
+A failed run of `uptime.yml` also emails whoever last changed its schedule; GitHub runs
+schedules late at times and pauses them after 60 days without a commit, so the heartbeat is
+what to rely on.
+
+---
+
+## Backups and the restore drill
+
+Two independent copies once production is on Neon:
+
+1. **Neon point-in-time restore** — the first line. Any moment in the restore window can
+   become a new branch (to inspect or copy from) or replace the production branch
+   (Neon console → the branch → **Restore**, or `neonctl branches restore`). Use it for a bad
+   migration or a mistaken delete.
+2. **Nightly dump to R2** — `.github/workflows/backup-production.yml` runs `pg_dump` (custom
+   format) at 04:17 UTC, encrypts it to an [age](https://age-encryption.org) public key and
+   stores `postgres/pekohub-<timestamp>.dump.age` in an R2 bucket. It survives losing the Neon
+   project or account. Set up (manual, creates resources):
+   - R2 bucket `pekohub-backups` with a lifecycle rule deleting objects after 35 days, and an
+     R2 API token limited to that bucket (Object Read & Write).
+   - `age-keygen -o pekohub-backup.key`: keep the file offline (a password manager), put the
+     public key it prints in the repository variable `BACKUP_AGE_RECIPIENT`.
+   - Secrets `BACKUP_DATABASE_URL` (the direct connection string for the read-only `backup`
+     role), `BACKUP_R2_ACCESS_KEY_ID`, `BACKUP_R2_SECRET_ACCESS_KEY`; variables
+     `BACKUP_R2_ENDPOINT`, `BACKUP_R2_BUCKET`, `BACKUP_PG_MAJOR` (17).
+   - Run it once by hand (`gh workflow run backup-production.yml`) and check the object.
+
+Until the move, the Lightsail box keeps 7 daily dumps in `~/backups` on its own disk. To get
+them off the box in the meantime, add to the backup cron line a copy to R2, e.g.
+`aws s3 cp ~/backups/pekohub-$(date +%Y%m%d).sql s3://pekohub-backups/lightsail/ --endpoint-url https://<account id>.r2.cloudflarestorage.com`
+(with an R2 token in `~/.aws/credentials`), or take a weekly Lightsail snapshot (it lives
+outside the instance).
+
+### Restore drill (quarterly, and after any change to the backup setup)
+
+Record each drill in [`docs/ops/restore-drills.md`](docs/ops/restore-drills.md): the date, how
+long each part took, and anything that went wrong.
+
+1. **Point in time** — make a branch of production as of an hour ago:
+   `neonctl branches create --project-id <id> --name drill-$(date +%Y%m%d) --parent <ISO-8601 timestamp>`
+   (check `neonctl branches create --help` for your version; Neon console → Branches → New
+   branch → a past point does the same). Get its URL with
+   `neonctl connection-string drill-$(date +%Y%m%d) --project-id <id>`.
+2. **From the dump** — download the newest dump
+   (`aws s3 cp s3://pekohub-backups/postgres/<name> . --endpoint-url …`) and make an empty
+   database — a new Neon project, or
+   `docker run -d --name drill -e POSTGRES_PASSWORD=drill -p 5440:5432 postgres:17-alpine` — then:
+   ```bash
+   scripts/restore-drill.sh pekohub-<timestamp>.dump.age \
+     postgres://postgres:drill@localhost:5440/postgres pekohub-backup.key
+   ```
+   It refuses a database that has tables, prints how long the restore took, every table's row
+   count and the number of migrations applied.
+3. **Compare** with production (Neon SQL editor, read-only role):
+   `select relname, n_live_tup from pg_stat_user_tables order by relname;` — counts close to
+   the dump's (they drift by a day's writes), and the same number of migrations.
+4. **Start the API on it** — `DATABASE_URL=<drill URL> JWT_SECRET=<any 32+ chars> NODE_ENV=production node backend/dist/index.js`
+   (after `pnpm --filter @pekohub/backend build`), then `curl localhost:3000/health` and
+   `curl "localhost:3000/v1/search?q="`.
+5. **Clean up** — delete the drill branch (`neonctl branches delete …`) and the container, and
+   delete the decrypted dump if you made one.
+
+Restoring production for real: from the point in time, use Neon's **Restore** on the
+production branch (the connection strings stay the same), then `fly machine restart`. From a
+dump, restore into a new Neon project as in step 2 and point the `DATABASE_URL` and
+`MIGRATION_DATABASE_URL` secrets at it (`fly secrets set` restarts the machine).
 
 ---
 
@@ -431,8 +644,8 @@ curl https://api.pekohub.ai/health
 # Where things live
 curl https://api.pekohub.ai/v1/meta
 
-# API docs
-curl https://api.pekohub.ai/docs
+# Health and the tunnel, from outside
+node scripts/probe-uptime.mjs https://api.pekohub.ai
 
 # Search
 curl "https://api.pekohub.ai/v1/search?q=test"
@@ -540,7 +753,9 @@ docker compose -f docker-compose.lightsail.yml exec backend npx drizzle-kit migr
 
 ### Backups
 
-Automated daily backups are configured by `setup-instance.sh`:
+Automated daily backups are configured by `setup-instance.sh`. They stay on the instance's
+own disk; see [Backups and the restore drill](#backups-and-the-restore-drill) for getting a
+copy off the box.
 
 ```bash
 # Backups stored in ~/backups/
@@ -597,12 +812,13 @@ The workflows I've set up are **minimal but complete**:
 
 | File | Purpose |
 |------|---------|
-| `.github/workflows/deploy-lightsail.yml` | Backend deploy to Lightsail |
-| `.github/workflows/deploy-frontend.yml` | Frontend deploy to Cloudflare Pages |
-| `.github/workflows/deploy.yml` | ECS Fargate deploy (future use) |
-| `.github/workflows/deploy-ec2.yml` | EC2 deploy (alternative path) |
+| `.github/workflows/ci.yml` | Typecheck and tests on every PR and push |
+| `.github/workflows/deploy-lightsail.yml` | Backend deploy to Lightsail (only with `[lightsail]`) |
+| `.github/workflows/deploy-staging.yml` | Staging API (Fly.io) and website (Pages) after CI passes on `master` |
+| `.github/workflows/uptime.yml` | Production `/health` and tunnel probe every 10 minutes, once `UPTIME_API_ORIGIN` is set |
+| `.github/workflows/backup-production.yml` | Nightly encrypted dump of production to R2, once its secrets are set |
 
-**Recommendation:** Keep `deploy-lightsail.yml` and `deploy-frontend.yml`. The ECS/EC2 workflows are there for when you migrate later — they won't run unless triggered.
+The production website deploys through the Pages Git integration.
 
 ---
 
@@ -628,10 +844,10 @@ When you're ready to scale:
 | Current | Migrate To | When |
 |---------|-----------|------|
 | Lightsail $5 | Lightsail $10 or EC2 t3.medium | > 500 MAU |
-| Self-hosted Postgres | RDS PostgreSQL | Need automated backups / HA |
+| Self-hosted Postgres | Neon (as staging) | Before launch — see [Production: Fly.io + Neon](#production-flyio--neon-proposed) |
 | Cloudflare R2 | S3 (if leaving Cloudflare ecosystem) | Rarely needed — R2 scales well |
 | Self-hosted Meilisearch | Meilisearch Cloud | Need managed search |
-| Single Lightsail instance | ECS Fargate + ALB | Need auto-scaling, multi-AZ |
+| Single Lightsail instance | Fly.io, one machine | Before launch; more than one machine needs a multi-node relay (gap map B1) |
 
 Everything runs in Docker. Migration = move containers, not rewrite code.
 

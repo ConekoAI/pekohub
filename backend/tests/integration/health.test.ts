@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from "vitest";
 import { createTestDb, resetTables } from "../fixtures/db.js";
 import { buildTestApp } from "../fixtures/app.js";
 import { createUser } from "../fixtures/factories.js";
 import { authHeaders } from "../fixtures/auth.js";
 import type { TestDb } from "../fixtures/db.js";
+import { HEALTH_DB_TIMEOUT_MS } from "../../src/routes/ops.js";
 
 describe("Health Check", () => {
   let testDb: TestDb;
@@ -16,7 +17,7 @@ describe("Health Check", () => {
     await testDb.client.close();
   });
 
-  it("should return ok status", async () => {
+  it("is ok when the database answers", async () => {
     const app = await buildTestApp({ testDb });
 
     const response = await app.inject({
@@ -28,7 +29,39 @@ describe("Health Check", () => {
     expect(JSON.parse(response.payload)).toEqual({
       status: "ok",
       version: "0.1.0",
+      database: "ok",
     });
+  });
+
+  it("is 503 when the database doesn't answer", async () => {
+    const app = await buildTestApp({
+      testDb,
+      ops: { pingDatabase: () => Promise.reject(new Error("connection refused")) },
+    });
+
+    const response = await app.inject({ method: "GET", url: "/health" });
+
+    expect(response.statusCode).toBe(503);
+    expect(JSON.parse(response.payload)).toEqual({
+      status: "error",
+      version: "0.1.0",
+      database: "unreachable",
+    });
+  });
+
+  it("is 503 when the database hangs", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const app = await buildTestApp({
+        testDb,
+        ops: { pingDatabase: () => new Promise(() => {}) },
+      });
+      const pending = app.inject({ method: "GET", url: "/health" });
+      await vi.advanceTimersByTimeAsync(HEALTH_DB_TIMEOUT_MS);
+      expect((await pending).statusCode).toBe(503);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
