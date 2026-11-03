@@ -4,9 +4,9 @@
  * The unit test in `tests/unit/metrics.test.ts` covers the
  * `CounterRegistry` class. This file covers the consumer-facing
  * surface — the Fastify route mounted in `src/index.ts` that exposes
- * the counter snapshot as JSON. A regression here (wrong route, wrong
- * payload shape, unauthenticated when it shouldn't be, etc.) would be
- * silent without an integration test.
+ * the counter snapshot as JSON to callers holding METRICS_TOKEN. A
+ * regression here (wrong route, wrong payload shape, readable without
+ * the token, etc.) would be silent without an integration test.
  */
 
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
@@ -28,10 +28,14 @@ import authPlugin from "../../src/plugins/auth.js";
 import { setDb } from "../../src/db/index.js";
 import { TunnelManager } from "../../src/services/tunnel-manager.js";
 import { metrics, CounterName } from "../../src/services/metrics.js";
+import opsRoutes from "../../src/routes/ops.js";
 
 import type { TestDb } from "../fixtures/db.js";
 
-async function buildMetricsTestApp(testDb: TestDb) {
+const METRICS_TOKEN = "metrics-token-that-is-32-chars-long!";
+const authorized = { authorization: `Bearer ${METRICS_TOKEN}` };
+
+async function buildMetricsTestApp(testDb: TestDb, { metricsToken = METRICS_TOKEN as string | undefined } = {}) {
   const originalEnv = { ...process.env };
   process.env.DATABASE_URL = "postgres://localhost:5432/pekohub_test";
   process.env.S3_ENDPOINT = "http://localhost:9000";
@@ -60,8 +64,8 @@ async function buildMetricsTestApp(testDb: TestDb) {
 
   const tunnelManager = new TunnelManager(app);
   app.decorate("tunnelManager", tunnelManager);
-  // Mirror the production route wiring (src/index.ts).
-  app.get("/metrics", async () => metrics.snapshot());
+  // The production route wiring (src/index.ts).
+  await app.register(opsRoutes, { metricsToken });
 
   process.env = originalEnv;
 
@@ -86,10 +90,32 @@ describe("GET /metrics (issue #16)", () => {
     await testDb.client.close();
   });
 
+  it("doesn't exist without METRICS_TOKEN", async () => {
+    const { app } = await buildMetricsTestApp(testDb, { metricsToken: "" });
+
+    const response = await app.inject({ method: "GET", url: "/metrics", headers: authorized });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it("refuses a caller without the token", async () => {
+    const { app } = await buildMetricsTestApp(testDb);
+
+    const none = await app.inject({ method: "GET", url: "/metrics" });
+    const wrong = await app.inject({
+      method: "GET",
+      url: "/metrics",
+      headers: { authorization: "Bearer not-the-token" },
+    });
+
+    expect(none.statusCode).toBe(401);
+    expect(wrong.statusCode).toBe(401);
+  });
+
   it("returns an empty snapshot when no forwarding has happened", async () => {
     const { app } = await buildMetricsTestApp(testDb);
 
-    const response = await app.inject({ method: "GET", url: "/metrics" });
+    const response = await app.inject({ method: "GET", url: "/metrics", headers: authorized });
 
     expect(response.statusCode).toBe(200);
     expect(response.headers["content-type"]).toMatch(/application\/json/);
@@ -128,7 +154,7 @@ describe("GET /metrics (issue #16)", () => {
     });
     await flush();
 
-    const response = await app.inject({ method: "GET", url: "/metrics" });
+    const response = await app.inject({ method: "GET", url: "/metrics", headers: authorized });
 
     expect(response.statusCode).toBe(200);
     const body = JSON.parse(response.payload);

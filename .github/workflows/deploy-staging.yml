@@ -52,7 +52,9 @@ jobs:
 
       - name: Deploy (migrations run as the release command)
         if: env.FLY_API_TOKEN != ''
-        run: flyctl deploy -c fly.staging.toml --ha=false --remote-only
+        run: >
+          flyctl deploy -c fly.staging.toml --ha=false --remote-only
+          --env SENTRY_RELEASE=${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Health check
         if: env.FLY_API_TOKEN != ''
@@ -101,6 +103,12 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm --filter @pekohub/shared build
           VITE_API_BASE_URL="$STAGING_API" pnpm --filter @pekohub/frontend build
+        env:
+          # Optional error tracking; the Pages project needs the same
+          # VITE_SENTRY_DSN variable for its CSP (DEPLOYMENT.md § Error tracking).
+          VITE_SENTRY_DSN: ${{ vars.STAGING_WEB_SENTRY_DSN }}
+          VITE_SENTRY_ENVIRONMENT: staging
+          VITE_SENTRY_RELEASE: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       # From the repo root, so the Pages Functions in `functions/` deploy too.
       - name: Deploy

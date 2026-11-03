@@ -14,7 +14,8 @@
 #
 # Secrets (`fly secrets set -c fly.staging.toml ...`): DATABASE_URL (Neon's
 # pooled connection string), MIGRATION_DATABASE_URL (its direct one, for
-# the release command), JWT_SECRET (32+ chars).
+# the release command), JWT_SECRET (32+ chars); optional SENTRY_DSN and
+# METRICS_TOKEN (32+ chars).
 
 app = "pekohub-staging"
 primary_region = "iad" # next to Neon's aws-us-east-1
@@ -37,6 +38,8 @@ primary_region = "iad" # next to Neon's aws-us-east-1
   FRONTEND_URL = "https://pekohub-staging.pages.dev"
   ALLOW_DEV_AUTH_BYPASS = "false"
   ALLOW_VISITOR_CHAT = "false"
+  # Error tracking is on when the SENTRY_DSN secret is set.
+  SENTRY_ENVIRONMENT = "staging"
 
 [http_service]
   internal_port = 3000

@@ -2,6 +2,18 @@
 
 ## 0.1.0 — pre-launch
 
+- Errors reach Sentry when a DSN is set: the API's 5xx answers, tunnel faults, scheduled-job
+  failures and crashes (`SENTRY_DSN`), and the website's uncaught errors and route errors
+  (`VITE_SENTRY_DSN`, whose host the CSP then allows). Neither sends URLs' query strings,
+  headers or cookies; without a DSN the SDK isn't loaded.
+- `/health` checks the database: 503 with `"database":"unreachable"` when `select 1` fails or
+  takes over 5 s. `/metrics` needs `Authorization: Bearer $METRICS_TOKEN` and doesn't exist
+  without one. `/docs` exists only with `API_DOCS=true` and no longer calls the API an OCI
+  registry.
+- `fly.production.toml`, a nightly encrypted backup to R2 (`backup-production.yml`), a tunnel
+  and health probe (`scripts/probe-uptime.mjs`, `uptime.yml`) and a restore drill
+  (`scripts/restore-drill.sh`), all described in DEPLOYMENT.md; the workflows stay off until
+  their secrets and variables are set.
 - A peko changes owner only when the new owner accepts (ADR-081 D4, amended). Transferring
   makes an offer (`POST …/transfer` answers 202; one open offer per peko, for 7 days);
   the recipient accepts with `POST …/transfer/accept` or declines with `DELETE …/transfer`,
