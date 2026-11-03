@@ -3,37 +3,29 @@
 @tailwind utilities;
 
 /* ───────────────────────────────────────────────────────────────────────────
-   PekoHub design system — "runtime console"
-   Dark, technical, high-contrast. Cyan primary, violet secondary, hairline
-   borders, mono readouts. All surfaces are defined here so pages compose
-   classes instead of inventing their own colour math.
+   PekoHub design system
+   Quiet navy surfaces, one muted blue accent, hairline borders. Pages
+   compose these classes instead of inventing their own colour math; the
+   only other hue is a soft red for destructive actions and errors.
    ─────────────────────────────────────────────────────────────────────────── */
 
 @layer base {
-  :root {
-    --canvas: 4 6 10;
-    --surface: 10 14 22;
-    --elevated: 13 18 27;
-    --line: 26 33 48;
-    --text: 226 232 240;
-    --muted: 148 163 184;
-    --faint: 100 116 139;
-    --accent: 34 211 238;
-  }
-
   html {
     font-family: 'Inter', system-ui, sans-serif;
+    font-feature-settings: 'cv11' 1, 'ss01' 1;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
     scroll-behavior: smooth;
   }
 
   body {
-    @apply bg-ink-950 text-slate-200;
-    background-image:
-      radial-gradient(900px 420px at 12% -8%, rgba(34, 211, 238, 0.1), transparent 62%),
-      radial-gradient(760px 400px at 88% -4%, rgba(139, 92, 246, 0.1), transparent 60%);
-    background-attachment: fixed;
+    @apply bg-ink-950 text-slate-300;
+    background-image: radial-gradient(
+      1100px 480px at 50% -12%,
+      rgba(106, 130, 171, 0.12),
+      transparent 70%
+    );
+    background-repeat: no-repeat;
   }
 
   code,
@@ -41,16 +33,15 @@
   kbd,
   samp {
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-feature-settings: 'calt' 1, 'liga' 1;
   }
 
   ::selection {
-    background: rgba(34, 211, 238, 0.28);
-    color: #f0fdff;
+    background: rgba(134, 156, 192, 0.35);
+    color: #f3f6fa;
   }
 
   :focus-visible {
-    @apply outline-none ring-2 ring-peko-400/70 ring-offset-2 ring-offset-ink-950;
+    @apply outline-none ring-2 ring-peko-400/60 ring-offset-2 ring-offset-ink-950;
   }
 
   ::-webkit-scrollbar {
@@ -58,18 +49,14 @@
     height: 10px;
   }
   ::-webkit-scrollbar-track {
-    background: #04060a;
+    background: #0c1018;
   }
   ::-webkit-scrollbar-thumb {
-    background: #1a2130;
-    border: 2px solid #04060a;
+    background: #252e3f;
+    border: 2px solid #0c1018;
     border-radius: 9999px;
   }
-  ::-webkit-scrollbar-thumb:hover {
-    background: #242e40;
-  }
 
-  /* Kill the light UA chrome on form controls re-skinned via .input. */
   input[type='search']::-webkit-search-cancel-button,
   input[type='search']::-webkit-search-decoration {
     -webkit-appearance: none;
@@ -78,7 +65,7 @@
 
   input::placeholder,
   textarea::placeholder {
-    @apply text-slate-600;
+    @apply text-slate-500;
   }
 
   select option {
@@ -87,27 +74,27 @@
 }
 
 @layer components {
-  /* ── Typographic atoms ─────────────────────────────────────────────────── */
+  /* ── Type ──────────────────────────────────────────────────────────────── */
 
-  /* Mono uppercase readout label. The signature voice of the system. */
-  .eyebrow {
-    @apply font-mono text-2xs uppercase tracking-[0.18em] text-slate-500;
+  .h-page {
+    @apply text-2xl font-semibold tracking-tight text-slate-50 sm:text-[1.75rem];
   }
 
-  .grad-text {
-    @apply bg-brand-gradient bg-clip-text text-transparent;
+  .h-section {
+    @apply text-base font-semibold tracking-tight text-slate-100;
   }
 
-  .display {
-    @apply font-semibold tracking-[-0.025em] text-slate-50;
-  }
-
-  .lede {
-    @apply text-[15px] leading-relaxed text-slate-400;
+  .field-label {
+    @apply text-[13px] font-medium text-slate-300;
   }
 
   .link {
-    @apply text-peko-300 underline decoration-peko-500/40 underline-offset-4 transition-colors hover:text-peko-200 hover:decoration-peko-300;
+    @apply text-peko-300 transition-colors hover:text-peko-100;
+  }
+
+  /* The small "← back" link above a detail page. */
+  .back-link {
+    @apply mb-6 inline-flex items-center gap-1.5 text-[13px] text-slate-500 transition-colors hover:text-slate-200;
   }
 
   .kbd {
@@ -117,16 +104,15 @@
   /* ── Buttons ───────────────────────────────────────────────────────────── */
 
   .btn {
-    @apply inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3.5 py-2 text-sm font-medium transition-all duration-150 disabled:pointer-events-none disabled:opacity-40;
+    @apply inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3.5 py-2 text-sm font-medium transition-colors duration-150 disabled:pointer-events-none disabled:opacity-40;
   }
 
-  /* Primary: gradient fill with a luminous halo. */
   .btn-primary {
-    @apply btn bg-brand-gradient font-semibold text-ink-950 shadow-glow-sm hover:brightness-110 active:brightness-95;
+    @apply btn bg-peko-600 text-white hover:bg-peko-500;
   }
 
   .btn-secondary {
-    @apply btn border border-ink-600 bg-ink-800/70 text-slate-200 hover:border-ink-500 hover:bg-ink-750 hover:text-white;
+    @apply btn border border-ink-600 bg-ink-850 text-slate-200 hover:border-ink-500 hover:bg-ink-800 hover:text-white;
   }
 
   .btn-ghost {
@@ -134,21 +120,21 @@
   }
 
   .btn-danger {
-    @apply btn border border-rose-500/25 bg-rose-500/10 text-rose-300 hover:border-rose-500/40 hover:bg-rose-500/20 hover:text-rose-200;
+    @apply btn text-rose-300/90 hover:bg-rose-400/10 hover:text-rose-200;
   }
 
   .btn-sm {
     @apply px-2.5 py-1.5 text-xs;
   }
 
+  .btn-icon {
+    @apply btn-ghost p-2;
+  }
+
   /* ── Form controls ─────────────────────────────────────────────────────── */
 
   .input {
-    @apply block w-full rounded-lg border border-ink-600 bg-ink-900/80 px-3 py-2 text-sm text-slate-100 transition-colors placeholder:text-slate-600 hover:border-ink-500 focus:border-peko-400/70 focus:bg-ink-900 focus:outline-none focus:ring-2 focus:ring-peko-400/25;
-  }
-
-  .input-lg {
-    @apply input px-4 py-3 text-base;
+    @apply block w-full rounded-lg border border-ink-600 bg-ink-900 px-3 py-2 text-sm text-slate-100 transition-colors hover:border-ink-500 focus:border-peko-500 focus:outline-none focus:ring-2 focus:ring-peko-500/20;
   }
 
   .textarea {
@@ -163,138 +149,80 @@
   /* ── Surfaces ──────────────────────────────────────────────────────────── */
 
   .card {
-    @apply relative rounded-xl border border-white/[0.07] bg-ink-850/90 shadow-card;
-    background-image: linear-gradient(
-      180deg,
-      rgba(255, 255, 255, 0.035) 0%,
-      rgba(255, 255, 255, 0) 38%
-    );
+    @apply rounded-xl border border-ink-700 bg-ink-900/80;
   }
 
   .card-hover {
-    @apply transition-all duration-200 hover:-translate-y-0.5 hover:border-peko-400/25 hover:shadow-lifted;
+    @apply transition-colors duration-150 hover:border-ink-600 hover:bg-ink-850;
   }
 
-  /* Gradient-hairline panel. Used for hero blocks and modals. */
-  .panel {
-    @apply relative rounded-2xl bg-ink-850/95 shadow-card;
-  }
-  .panel::before {
-    content: '';
-    @apply pointer-events-none absolute inset-0 rounded-2xl;
-    padding: 1px;
-    background: linear-gradient(
-      140deg,
-      rgba(34, 211, 238, 0.32) 0%,
-      rgba(139, 92, 246, 0.18) 45%,
-      rgba(255, 255, 255, 0.04) 100%
-    );
-    -webkit-mask:
-      linear-gradient(#000 0 0) content-box,
-      linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
+  /* A bordered list of rows: runtimes, keys, versions. */
+  .rows {
+    @apply divide-y divide-ink-700 overflow-hidden rounded-xl border border-ink-700 bg-ink-900/80;
   }
 
-  /* Recessed well — code blocks, empty states, inset readouts. */
-  .well {
-    @apply rounded-lg border border-white/[0.06] bg-ink-950/70;
+  /* Square tile holding an emoji avatar or two initials. */
+  .tile {
+    @apply flex flex-shrink-0 items-center justify-center rounded-lg border border-ink-600 bg-ink-800 font-medium text-peko-200;
   }
 
-  .divider {
-    @apply h-px w-full bg-gradient-to-r from-transparent via-white/[0.08] to-transparent;
-  }
-
-  /* ── Chips, badges, pills ──────────────────────────────────────────────── */
-
-  .chip {
-    @apply inline-flex items-center gap-1.5 rounded-full border border-ink-600 bg-ink-800/60 px-3 py-1 text-xs font-medium text-slate-400 transition-colors hover:border-ink-500 hover:text-slate-200;
-  }
-
-  .chip-on {
-    @apply border-peko-400/50 bg-peko-400/10 text-peko-200 hover:border-peko-400/70 hover:text-peko-100;
-  }
+  /* ── Badges ────────────────────────────────────────────────────────────── */
 
   .badge {
-    @apply inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-mono text-2xs uppercase tracking-wider;
-  }
-
-  .badge-peko {
-    @apply badge border-peko-400/25 bg-peko-400/10 text-peko-300;
-  }
-
-  .badge-iris {
-    @apply badge border-iris-400/25 bg-iris-400/10 text-iris-300;
+    @apply inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-2xs font-medium;
   }
 
   .badge-neutral {
-    @apply badge border-ink-600 bg-ink-800 text-slate-400;
+    @apply badge bg-ink-750 text-slate-400;
   }
 
-  .badge-warn {
-    @apply badge border-amber-400/25 bg-amber-400/10 text-amber-300;
+  .badge-accent {
+    @apply badge bg-peko-500/15 text-peko-200;
   }
 
   .badge-danger {
-    @apply badge border-rose-400/25 bg-rose-400/10 text-rose-300;
+    @apply badge bg-rose-400/10 text-rose-300;
   }
 
   /* ── Nav ───────────────────────────────────────────────────────────────── */
 
   .nav-link {
-    @apply relative rounded-md px-2.5 py-1.5 text-sm font-medium text-slate-400 transition-colors hover:text-slate-100;
+    @apply rounded-md px-2.5 py-1.5 text-sm text-slate-400 transition-colors hover:text-slate-100;
   }
 
   .nav-link-active {
-    @apply text-white;
+    @apply text-slate-50;
   }
 
   .tab {
-    @apply relative flex items-center gap-2 px-3.5 py-2.5 text-sm font-medium text-slate-500 transition-colors hover:text-slate-200;
+    @apply relative flex items-center gap-2 px-1 py-3 text-sm text-slate-400 transition-colors hover:text-slate-100;
   }
 
   .tab-active {
-    @apply text-peko-200;
+    @apply text-slate-50;
   }
   .tab-active::after {
     content: '';
-    @apply absolute inset-x-2 -bottom-px h-px bg-brand-gradient;
+    @apply absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-peko-400;
   }
 
   /* ── Code ──────────────────────────────────────────────────────────────── */
 
   .code-block {
-    @apply block overflow-x-auto rounded-lg border border-white/[0.07] bg-ink-950 px-4 py-3 font-mono text-[13px] leading-relaxed text-peko-200;
+    @apply block overflow-x-auto rounded-lg border border-ink-700 bg-ink-950 px-3.5 py-2.5 font-mono text-[12.5px] leading-relaxed text-slate-200;
   }
 
   .code-inline {
-    @apply rounded border border-white/[0.07] bg-ink-900 px-1.5 py-0.5 font-mono text-[0.8em] text-peko-200;
-  }
-
-  /* ── Decorative ────────────────────────────────────────────────────────── */
-
-  .grid-bg {
-    @apply pointer-events-none absolute inset-0 bg-grid bg-grid opacity-70;
-    mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 35%, transparent 78%);
-    -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 35%, transparent 78%);
-  }
-
-  .glow-orb {
-    @apply pointer-events-none absolute rounded-full blur-3xl;
+    @apply rounded bg-ink-800 px-1.5 py-0.5 font-mono text-[0.85em] text-slate-200;
   }
 
   .skeleton {
-    @apply relative overflow-hidden rounded-md bg-ink-750;
+    @apply relative overflow-hidden rounded-md bg-ink-800;
   }
   .skeleton::after {
     content: '';
     @apply absolute inset-0 -translate-x-full animate-shimmer;
-    background-image: linear-gradient(
-      90deg,
-      transparent,
-      rgba(255, 255, 255, 0.06),
-      transparent
-    );
+    background-image: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
   }
 
   /* ── Markdown ──────────────────────────────────────────────────────────── */
@@ -312,35 +240,32 @@
     @apply mb-3 mt-6 text-xl font-semibold tracking-tight text-slate-50;
   }
   .markdown-body h2 {
-    @apply mb-2.5 mt-6 border-b border-white/[0.07] pb-2 text-lg font-semibold text-slate-100;
+    @apply mb-2.5 mt-6 border-b border-ink-700 pb-2 text-lg font-semibold text-slate-100;
   }
   .markdown-body h3 {
     @apply mb-2 mt-5 text-base font-semibold text-slate-100;
   }
   .markdown-body h4 {
-    @apply mb-2 mt-4 text-sm font-semibold uppercase tracking-wide text-slate-300;
+    @apply mb-2 mt-4 text-sm font-semibold text-slate-200;
   }
   .markdown-body p {
-    @apply mb-3 text-slate-300;
+    @apply mb-3;
   }
   .markdown-body ul {
-    @apply mb-3 list-disc space-y-1 pl-5 text-slate-300 marker:text-peko-500/70;
+    @apply mb-3 list-disc space-y-1 pl-5 marker:text-slate-600;
   }
   .markdown-body ol {
-    @apply mb-3 list-decimal space-y-1 pl-5 text-slate-300 marker:text-slate-600;
+    @apply mb-3 list-decimal space-y-1 pl-5 marker:text-slate-600;
   }
   .markdown-body li > ul,
   .markdown-body li > ol {
     @apply mb-0 mt-1;
   }
   .markdown-body a {
-    @apply link;
+    @apply link underline decoration-peko-500/40 underline-offset-4;
   }
   .markdown-body strong {
     @apply font-semibold text-slate-100;
-  }
-  .markdown-body em {
-    @apply text-slate-400;
   }
   .markdown-body code {
     @apply code-inline;
@@ -349,27 +274,24 @@
     @apply code-block mb-4;
   }
   .markdown-body pre code {
-    @apply border-0 bg-transparent p-0 text-inherit;
+    @apply bg-transparent p-0 text-inherit;
   }
   .markdown-body blockquote {
-    @apply mb-3 border-l-2 border-peko-500/40 bg-peko-500/[0.04] py-2 pl-4 pr-3 text-slate-400;
+    @apply mb-3 border-l-2 border-ink-600 pl-4 text-slate-400;
   }
   .markdown-body hr {
-    @apply my-6 border-white/[0.07];
+    @apply my-6 border-ink-700;
   }
   .markdown-body table {
-    @apply mb-4 w-full border-collapse overflow-hidden rounded-lg text-[13px];
-  }
-  .markdown-body thead {
-    @apply bg-white/[0.03];
+    @apply mb-4 w-full border-collapse text-[13px];
   }
   .markdown-body th {
-    @apply border border-white/[0.07] px-3 py-2 text-left font-semibold text-slate-200;
+    @apply border border-ink-700 bg-ink-850 px-3 py-2 text-left font-semibold text-slate-200;
   }
   .markdown-body td {
-    @apply border border-white/[0.07] px-3 py-2 text-slate-400;
+    @apply border border-ink-700 px-3 py-2 text-slate-400;
   }
   .markdown-body img {
-    @apply my-3 max-w-full rounded-lg border border-white/[0.07];
+    @apply my-3 max-w-full rounded-lg border border-ink-700;
   }
 }

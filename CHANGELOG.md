@@ -2,6 +2,12 @@
 
 ## 0.1.0 — pre-launch
 
+- The website is redesigned: navy surfaces, one muted blue accent, flat cards and hairline
+  borders in place of the cyan/violet gradients, glows and graph paper. Pages say less — no
+  mono eyebrow labels or explanatory subtitles; the home page is a hero, four short features,
+  seeds, the ID search and three questions; the footer is one row of links. The owner
+  console tabs are text-only and the manage dialog's options are one line each.
+  Destructive actions and errors keep a soft red; it is the only other hue.
 - Groups get IDs, pages and invite links (peko-runtime ADR-092 D3–D6). A group's home
   registers it over the tunnel (`group_register` → `group_registered { groupId }`); the Hub
   assigns a bare-number ID (a snowflake, like a Discord server's), so group names can be

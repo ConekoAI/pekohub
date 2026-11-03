@@ -15,12 +15,12 @@ export function LegalPage({
 }) {
   return (
     <PageShell width="narrow">
-      <PageHeader eyebrow="legal" title={title} description={`Last updated ${updated}`} />
-      <div className="markdown-body mt-8 space-y-8 text-sm leading-relaxed text-slate-300">
+      <PageHeader title={title} subtitle={`Updated ${updated}`} />
+      <div className="markdown-body mt-10 space-y-8 text-sm leading-relaxed text-slate-300">
         <p>{intro}</p>
         {sections.map(({ heading, body }, i) => (
           <section key={heading}>
-            <h2 className="text-base font-semibold text-slate-100">
+            <h2 className="h-section">
               {i + 1}. {heading}
             </h2>
             <div className="mt-2 space-y-2">{body}</div>

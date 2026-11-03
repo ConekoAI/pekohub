@@ -1,25 +1,12 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  ArrowUpRight,
-  CircleDot,
-  EyeOff,
-  Globe,
-  UserRound,
-  Lock,
-  PowerOff,
-  RefreshCw,
-  Settings2,
-  Trash2,
-  TriangleAlert,
-  X,
-} from 'lucide-react';
+import { CircleDot, EyeOff, Globe, Lock, RefreshCw, X } from 'lucide-react';
 import { useAuth } from '~/hooks/useAuth';
 import { api, type OwnedInstanceRecord } from '~/lib/api';
 import { AppShell } from '~/components/AppShell';
-import { Badge, CopyButton, EmptyState, ErrorNote, Spinner, Stat } from '~/components/ui';
-import { relativeTime } from '~/lib/format';
+import { PageHeader } from '~/components/PageShell';
+import { Badge, CopyButton, EmptyState, ErrorNote, Loading, Spinner, StatusDot, type BadgeTone } from '~/components/ui';
 
 /**
  * Owner dashboard.
@@ -44,25 +31,25 @@ const EXPOSURE_ORDER: Exposure[] = ['public', 'private', 'local_only'];
 
 const EXPOSURE_META: Record<
   Exposure,
-  { label: string; blurb: string; icon: typeof Globe; tone: 'peko' | 'iris' | 'neutral' | 'danger' }
+  { label: string; blurb: string; icon: typeof Globe; tone: BadgeTone }
 > = {
   public: {
     label: 'Public',
-    blurb: 'Listed in the directory. Anyone with Peko can find and message it.',
+    blurb: 'Anyone with its ID can message it',
     icon: Globe,
-    tone: 'peko',
+    tone: 'accent',
   },
   private: {
     label: 'Private',
-    blurb: 'Not listed. Only actors the runtime’s permissions allow may message it.',
+    blurb: 'Only those you allow',
     icon: Lock,
     tone: 'neutral',
   },
   local_only: {
     label: 'Local only',
-    blurb: 'Not reachable through the hub at all.',
+    blurb: 'Not reachable through PekoHub',
     icon: EyeOff,
-    tone: 'danger',
+    tone: 'neutral',
   },
 };
 
@@ -95,50 +82,26 @@ function DashboardPage() {
 
   const instances = owned.data?.data ?? [];
 
-  const counts = useMemo(
-    () => ({
-      total: instances.length,
-      public: instances.filter((i) => i.exposure === 'public').length,
-      online: instances.filter((i) => i.status === 'online').length,
-    }),
-    [instances],
-  );
-
   return (
     <AppShell>
-      <header className="flex flex-wrap items-end justify-between gap-5">
-        <div className="min-w-0">
-          <p className="eyebrow mb-2.5">owner console</p>
-          <h1 className="display text-2xl sm:text-[28px]">Your pekos</h1>
-          <p className="lede mt-2 max-w-2xl">
-            Pekos announced by runtimes you own. Exposure and status changes are pushed down the
-            tunnel — the runtime remains the authority on its own permissions.
-          </p>
-        </div>
-        <button
-          onClick={() => void owned.refetch()}
-          disabled={owned.isFetching}
-          className="btn-secondary btn-sm"
-        >
-          {owned.isFetching ? <Spinner className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />}
-          Refresh
-        </button>
-      </header>
-
-      {instances.length > 0 && (
-        <section className="mt-8 grid grid-cols-3 gap-3">
-          <Stat label="total" value={counts.total} />
-          <Stat label="public" value={counts.public} hint="indexed in the directory" />
-          <Stat label="online" value={counts.online} hint="heartbeat within 90s" />
-        </section>
-      )}
+      <PageHeader
+        title="Your pekos"
+        action={
+          <button
+            onClick={() => void owned.refetch()}
+            disabled={owned.isFetching}
+            className="btn-icon"
+            aria-label="Refresh"
+            title="Refresh"
+          >
+            {owned.isFetching ? <Spinner className="h-4 w-4" /> : <RefreshCw className="h-4 w-4" />}
+          </button>
+        }
+      />
 
       <section className="mt-8">
         {owned.isLoading ? (
-          <div className="flex items-center justify-center gap-2.5 py-24 text-sm text-slate-500">
-            <Spinner className="h-4 w-4" />
-            Loading your pekos…
-          </div>
+          <Loading />
         ) : owned.isError ? (
           <ErrorNote>
             Could not load your pekos —{' '}
@@ -147,18 +110,8 @@ function DashboardPage() {
         ) : instances.length === 0 ? (
           <EmptyState
             icon={<CircleDot className="h-5 w-5" />}
-            title="No pekos announced yet"
-            body={
-              <>
-                Start a runtime, create a peko, then register it with the hub. It appears here after
-                registration succeeds.
-              </>
-            }
-            action={
-              <code className="code-block text-xs">
-                {'peko register <name> --public'}
-              </code>
-            }
+            title="No pekos online yet"
+            body="Sign in from Peko desktop and put a peko online."
           />
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -202,93 +155,58 @@ function InstanceCard({
   onManage: () => void;
 }) {
   const meta = EXPOSURE_META[instance.exposure];
-  const ExposureIcon = meta.icon;
   // The peko's ID is its page (hub ADR-009); only a public one has one.
   const shareUrl = ownerHandle ? `${window.location.origin}/@${ownerHandle}/${instance.name}` : null;
   const live = instance.exposure === 'public';
 
   return (
-    <article className="card card-hover flex flex-col p-5">
+    <article className="card flex flex-col p-5">
       <header className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="truncate text-[15px] font-semibold tracking-tight text-slate-100">
+          <h3 className="truncate text-[15px] font-medium text-slate-100">
             {instance.publicName ?? instance.name}
           </h3>
-          <p className="mt-1 truncate font-mono text-2xs text-slate-500">
+          <p className="mt-0.5 truncate text-xs text-slate-500">
             {ownerHandle ? `@${ownerHandle}/${instance.name}` : instance.name}
           </p>
         </div>
-        <Badge tone={meta.tone}>
-          <ExposureIcon className="h-2.5 w-2.5" />
-          {meta.label}
-        </Badge>
+        <Badge tone={meta.tone}>{meta.label}</Badge>
       </header>
 
-      <p className="mt-3 line-clamp-2 min-h-[2.4rem] text-[13px] leading-relaxed text-slate-400">
-        {instance.description ?? 'No public description yet.'}
+      {instance.description && (
+        <p className="mt-3 line-clamp-2 text-[13px] leading-relaxed text-slate-400">{instance.description}</p>
+      )}
+
+      <p className="mt-4 flex items-center gap-2 text-xs text-slate-500">
+        <StatusDot status={instance.status} />
+        <span>{instance.status}</span>
+        <span aria-hidden>·</span>
+        <span className="truncate" title={instance.principalDid ?? undefined}>
+          {instance.runtimeDisplayName ?? instance.runtimeId}
+        </span>
       </p>
 
-      <dl className="mt-4 space-y-1.5 font-mono text-2xs text-slate-600">
-        <div className="flex items-center justify-between gap-3">
-          <dt>runtime</dt>
-          <dd className="truncate text-slate-500">
-            {instance.runtimeDisplayName ?? instance.runtimeId}
-          </dd>
-        </div>
-        <div className="flex items-center justify-between gap-3">
-          <dt>status</dt>
-          <dd className="flex items-center gap-1.5 text-slate-500">
-            <StatusGlyph status={instance.status} />
-            {instance.status}
-            {instance.lastSeenAt && (
-              <span className="text-slate-700">· {relativeTime(instance.lastSeenAt)}</span>
-            )}
-          </dd>
-        </div>
-        {instance.principalDid && (
-          <div className="flex items-center justify-between gap-3">
-            <dt>did</dt>
-            <dd className="truncate text-slate-500" title={instance.principalDid}>
-              {instance.principalDid}
-            </dd>
-          </div>
-        )}
-      </dl>
-
-      <div className="mt-auto flex items-center justify-between gap-2 border-t border-white/[0.06] pt-4">
-        <div className="flex items-center gap-1.5">
+      <div className="mt-auto flex items-center justify-between gap-2 pt-5">
+        <div className="-ml-2.5 flex items-center">
           {live && shareUrl && (
             <>
-              <CopyButton value={shareUrl} label="Link" className="btn-ghost btn-sm" />
               <Link
                 to="/@{$owner}/$name"
                 params={{ owner: ownerHandle ?? '', name: instance.name }}
                 className="btn-ghost btn-sm"
               >
                 Open
-                <ArrowUpRight className="h-3 w-3" />
               </Link>
+              <CopyButton value={shareUrl} label="Link" className="btn-ghost btn-sm" />
             </>
           )}
         </div>
         <button onClick={onManage} className="btn-secondary btn-sm">
-          <Settings2 className="h-3.5 w-3.5" />
           Manage
         </button>
       </div>
     </article>
   );
-}
-
-function StatusGlyph({ status }: { status: Status }) {
-  const map: Record<Status, { cls: string; Icon: typeof CircleDot }> = {
-    online: { cls: 'text-emerald-400', Icon: CircleDot },
-    busy: { cls: 'text-amber-400', Icon: CircleDot },
-    error: { cls: 'text-rose-400', Icon: TriangleAlert },
-    offline: { cls: 'text-slate-600', Icon: PowerOff },
-  };
-  const { cls, Icon } = map[status];
-  return <Icon className={`h-3 w-3 ${cls}`} />;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -386,24 +304,21 @@ function ManageInstanceModal({
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-ink-950/80 p-4 backdrop-blur-md sm:items-center"
+      className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-ink-950/80 p-4 backdrop-blur-sm sm:items-center"
       onClick={onClose}
       role="presentation"
     >
       <div
-        className="panel animate-scale-in my-8 w-full max-w-xl"
+        className="card animate-scale-in my-8 w-full max-w-lg bg-ink-900 shadow-lifted"
         onClick={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label={`Manage ${instance.name}`}
       >
-        <header className="flex items-start justify-between gap-4 border-b border-white/[0.06] px-6 py-5">
-          <div className="min-w-0">
-            <p className="font-mono text-2xs text-slate-500">@{instance.name}</p>
-            <h2 className="display mt-1 truncate text-lg">
-              {instance.publicName ?? instance.name}
-            </h2>
-          </div>
+        <header className="flex items-center justify-between gap-4 px-6 pt-5">
+          <h2 className="truncate text-lg font-semibold tracking-tight text-slate-50">
+            {instance.publicName ?? instance.name}
+          </h2>
           <button
             onClick={onClose}
             className="rounded-md p-1 text-slate-500 transition-colors hover:bg-white/[0.06] hover:text-slate-200"
@@ -413,29 +328,17 @@ function ManageInstanceModal({
           </button>
         </header>
 
-        <div className="flex items-center gap-1 border-b border-white/[0.06] px-4">
-          <button
-            onClick={() => setTab('exposure')}
-            className={`tab ${tab === 'exposure' ? 'tab-active' : ''}`}
-          >
-            <Globe className="h-3.5 w-3.5" />
+        <div className="flex items-center gap-6 border-b border-ink-700 px-6">
+          <TabButton active={tab === 'exposure'} onClick={() => setTab('exposure')}>
             Exposure
-          </button>
-          <button
-            onClick={() => setTab('status')}
-            className={`tab ${tab === 'status' ? 'tab-active' : ''}`}
-          >
-            <CircleDot className="h-3.5 w-3.5" />
+          </TabButton>
+          <TabButton active={tab === 'status'} onClick={() => setTab('status')}>
             Status
-          </button>
+          </TabButton>
           {instance.hubId && (
-            <button
-              onClick={() => setTab('owner')}
-              className={`tab ${tab === 'owner' ? 'tab-active' : ''}`}
-            >
-              <UserRound className="h-3.5 w-3.5" />
+            <TabButton active={tab === 'owner'} onClick={() => setTab('owner')}>
               Owner
-            </button>
+            </TabButton>
           )}
         </div>
 
@@ -452,52 +355,18 @@ function ManageInstanceModal({
                 {EXPOSURE_ORDER.map((value) => {
                   const meta = EXPOSURE_META[value];
                   const Icon = meta.icon;
-                  const selected = value === exposure;
                   return (
-                    <button
-                      key={value}
-                      onClick={() => setExposure(value)}
-                      aria-pressed={selected}
-                      className={`flex w-full items-start gap-3 rounded-lg border px-3.5 py-3 text-left transition-all ${
-                        selected
-                          ? 'border-peko-400/50 bg-peko-400/[0.07]'
-                          : 'border-white/[0.07] bg-white/[0.015] hover:border-ink-500 hover:bg-white/[0.035]'
-                      }`}
-                    >
-                      <span
-                        className={`mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md border ${
-                          selected
-                            ? 'border-peko-400/40 bg-peko-400/15 text-peko-200'
-                            : 'border-white/[0.08] bg-white/[0.03] text-slate-500'
-                        }`}
-                      >
-                        <Icon className="h-3.5 w-3.5" />
-                      </span>
-                      <span className="min-w-0">
-                        <span
-                          className={`block text-sm font-medium ${
-                            selected ? 'text-peko-100' : 'text-slate-200'
-                          }`}
-                        >
-                          {meta.label}
-                        </span>
-                        <span className="mt-0.5 block text-2xs leading-relaxed text-slate-500">
-                          {meta.blurb}
-                        </span>
-                      </span>
-                    </button>
+                    <Choice key={value} selected={value === exposure} onClick={() => setExposure(value)}>
+                      <Icon className="h-4 w-4 flex-shrink-0 text-slate-500" />
+                      <span className="text-sm text-slate-100">{meta.label}</span>
+                      <span className="ml-auto text-xs text-slate-500">{meta.blurb}</span>
+                    </Choice>
                   );
                 })}
               </div>
 
               {publishing && (
-                <div className="space-y-4 rounded-lg border border-white/[0.07] bg-white/[0.015] p-4">
-                  <p className="eyebrow">public profile</p>
-                  <p className="text-2xs leading-relaxed text-slate-500">
-                    Required to be listed. The hub only stores what it needs to render the directory
-                    card — never your peko&apos;s memory or keys.
-                  </p>
-
+                <div className="space-y-4">
                   <ModalField label="Display name">
                     <input
                       value={publicName}
@@ -513,7 +382,6 @@ function ManageInstanceModal({
                       onChange={(event) => setDescription(event.target.value)}
                       rows={3}
                       className="textarea"
-                      placeholder="What does this peko do, and what is it good at?"
                     />
                   </ModalField>
 
@@ -531,7 +399,7 @@ function ManageInstanceModal({
                         ))}
                       </select>
                     </ModalField>
-                    <ModalField label="Tags" hint="comma separated">
+                    <ModalField label="Tags">
                       <input
                         value={tags}
                         onChange={(event) => setTags(event.target.value)}
@@ -540,7 +408,6 @@ function ManageInstanceModal({
                       />
                     </ModalField>
                   </div>
-
                 </div>
               )}
             </div>
@@ -554,44 +421,32 @@ function ManageInstanceModal({
               }}
             />
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-3">
               <div className="grid grid-cols-2 gap-2">
                 {STATUSES.map((value) => (
-                  <button
-                    key={value}
-                    onClick={() => setStatus(value)}
-                    aria-pressed={value === status}
-                    className={`flex items-center gap-2.5 rounded-lg border px-3.5 py-3 text-left transition-all ${
-                      value === status
-                        ? 'border-peko-400/50 bg-peko-400/[0.07] text-peko-100'
-                        : 'border-white/[0.07] bg-white/[0.015] text-slate-300 hover:border-ink-500 hover:bg-white/[0.035]'
-                    }`}
-                  >
-                    <StatusGlyph status={value} />
-                    <span className="text-sm font-medium capitalize">{value}</span>
-                  </button>
+                  <Choice key={value} selected={value === status} onClick={() => setStatus(value)}>
+                    <StatusDot status={value} />
+                    <span className="text-sm capitalize text-slate-100">{value}</span>
+                  </Choice>
                 ))}
               </div>
-              <p className="text-2xs leading-relaxed text-slate-500">
-                Status is a hub-side mirror used for discovery badges. The runtime drives it through
-                its heartbeat — manual changes are reverted on the next beat.
-              </p>
+              <p className="text-xs text-slate-500">The runtime&apos;s heartbeat overrides this.</p>
             </div>
           )}
         </div>
 
-        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.06] px-6 py-4">
+        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-ink-700 px-6 py-4">
           <button
             onClick={() => void handleDelete()}
             disabled={deleting || saving}
-            className="btn-danger btn-sm"
+            className="btn-danger btn-sm -ml-2.5"
           >
-            {deleting ? <Spinner className="h-3.5 w-3.5" /> : <Trash2 className="h-3.5 w-3.5" />}
-            Delete peko
+            {deleting && <Spinner className="h-3.5 w-3.5" />}
+            Delete
           </button>
 
           <div className="flex items-center gap-2">
-            <button onClick={onClose} className="btn-secondary btn-sm">
+            <button onClick={onClose} className="btn-ghost btn-sm">
               Cancel
             </button>
             <button
@@ -600,12 +455,36 @@ function ManageInstanceModal({
               className="btn-primary btn-sm"
             >
               {saving && <Spinner className="h-3.5 w-3.5" />}
-              {exposureChanged || statusChanged ? 'Save changes' : 'No changes'}
+              Save
             </button>
           </div>
         </footer>
       </div>
     </div>
+  );
+}
+
+function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <button onClick={onClick} className={`tab ${active ? 'tab-active' : ''}`}>
+      {children}
+    </button>
+  );
+}
+
+/** One selectable option in the manage dialog. */
+function Choice({ selected, onClick, children }: { selected: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={selected}
+      className={`flex w-full items-center gap-3 rounded-lg border px-3.5 py-3 text-left transition-colors ${
+        selected ? 'border-peko-500 bg-peko-500/10' : 'border-ink-700 hover:border-ink-600 hover:bg-ink-850'
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -640,9 +519,8 @@ function TransferPanel({
 
   return (
     <div className="space-y-4">
-      <p className="text-[13px] leading-relaxed text-slate-400">
-        Transfer {name} to another PekoHub account. Its runtime is told, and the new owner decides
-        what it does from then on. It keeps running on the same computer.
+      <p className="text-sm text-slate-400">
+        Give {name} to another PekoHub account. It keeps running on the same computer.
       </p>
       <ModalField label="New owner's handle">
         <input
@@ -654,8 +532,8 @@ function TransferPanel({
           spellCheck={false}
         />
       </ModalField>
-      {error && <p className="text-2xs text-rose-300">{error}</p>}
-      <button type="button" disabled={busy || !target} onClick={() => void transfer()} className="btn-danger btn-sm">
+      {error && <p className="text-xs text-rose-300">{error}</p>}
+      <button type="button" disabled={busy || !target} onClick={() => void transfer()} className="btn-secondary btn-sm">
         {busy && <Spinner className="h-3.5 w-3.5" />}
         Transfer {name}
       </button>
@@ -663,21 +541,10 @@ function TransferPanel({
   );
 }
 
-function ModalField({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  children: ReactNode;
-}) {
+function ModalField({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1.5 flex items-baseline gap-2">
-        <span className="eyebrow">{label}</span>
-        {hint && <span className="font-mono text-2xs text-slate-600">{hint}</span>}
-      </span>
+      <span className="field-label mb-1.5 block">{label}</span>
       {children}
     </label>
   );

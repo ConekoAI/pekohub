@@ -8,10 +8,10 @@
 
 import { createFileRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { CheckCircle2, RefreshCw, XCircle } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { API_BASE } from '~/lib/api';
 import { PageHeader, PageShell } from '~/components/PageShell';
-import { Spinner } from '~/components/ui';
+import { Spinner, StatusDot } from '~/components/ui';
 
 export const Route = createFileRoute('/status')({
   component: StatusPage,
@@ -21,14 +21,13 @@ export const Route = createFileRoute('/status')({
 interface Check {
   id: string;
   label: string;
-  detail: string;
   path: string;
 }
 
 const CHECKS: Check[] = [
-  { id: 'api', label: 'API and relay', detail: 'Sign-in, runtime registration, the tunnel relay', path: '/health' },
-  { id: 'search', label: 'Search', detail: 'Finding people, pekos and seeds', path: '/v1/search?q=peko&perPage=1' },
-  { id: 'seeds', label: 'Seed registry', detail: 'Seed pages, publishing and downloads', path: '/v1/seeds?perPage=1' },
+  { id: 'api', label: 'API and relay', path: '/health' },
+  { id: 'search', label: 'Search', path: '/v1/search?q=peko&perPage=1' },
+  { id: 'seeds', label: 'Seeds', path: '/v1/seeds?perPage=1' },
 ];
 
 interface Result {
@@ -56,20 +55,17 @@ function StatusRow({ check }: { check: Check }) {
     retry: false,
   });
   return (
-    <li className="flex items-center gap-4 px-5 py-4" data-testid={`status-${check.id}`}>
+    <li className="flex items-center gap-3.5 px-5 py-4" data-testid={`status-${check.id}`}>
       {result.isLoading ? (
-        <Spinner className="h-5 w-5" />
-      ) : result.data?.ok ? (
-        <CheckCircle2 className="h-5 w-5 text-emerald-400" aria-label="up" />
+        <Spinner className="h-3 w-3" />
       ) : (
-        <XCircle className="h-5 w-5 text-rose-400" aria-label="down" />
+        <span aria-label={result.data?.ok ? 'up' : 'down'}>
+          <StatusDot status={result.data?.ok ? 'online' : 'error'} />
+        </span>
       )}
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-slate-100">{check.label}</p>
-        <p className="text-2xs text-slate-500">{check.detail}</p>
-      </div>
-      <span className="font-mono text-2xs text-slate-500">
-        {result.data ? (result.data.ok ? `${result.data.ms} ms` : 'not answering') : ''}
+      <p className="flex-1 text-sm text-slate-200">{check.label}</p>
+      <span className="text-xs tabular-nums text-slate-500">
+        {result.data ? (result.data.ok ? `${result.data.ms} ms` : 'Down') : ''}
       </span>
     </li>
   );
@@ -86,7 +82,6 @@ function StatusPage() {
   return (
     <PageShell width="narrow">
       <PageHeader
-        eyebrow="status"
         title={
           overall.isLoading
             ? 'Checking PekoHub…'
@@ -94,23 +89,23 @@ function StatusPage() {
               ? 'All systems normal'
               : 'Some of PekoHub isn’t answering'
         }
-        description="Checked from your browser, every 30 seconds."
         action={
-          <button type="button" onClick={() => void overall.refetch()} className="btn-ghost btn-sm">
-            <RefreshCw className="h-3.5 w-3.5" />
-            Check now
+          <button
+            type="button"
+            onClick={() => void overall.refetch()}
+            className="btn-icon"
+            aria-label="Check now"
+            title="Check now"
+          >
+            <RefreshCw className="h-4 w-4" />
           </button>
         }
       />
-      <ul className="panel mt-8 divide-y divide-white/[0.05]">
+      <ul className="rows mt-8">
         {CHECKS.map((check) => (
           <StatusRow key={check.id} check={check} />
         ))}
       </ul>
-      <p className="mt-6 text-2xs text-slate-500">
-        Pekos you already talk to keep working on your computer while PekoHub is down; messages
-        to other computers wait and are delivered when it's back.
-      </p>
     </PageShell>
   );
 }

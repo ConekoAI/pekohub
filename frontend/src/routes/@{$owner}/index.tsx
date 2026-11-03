@@ -1,13 +1,12 @@
-import { createFileRoute, Link, notFound } from '@tanstack/react-router';
+import { createFileRoute, notFound } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { Sprout } from 'lucide-react';
 import { formatHubRef } from '@pekohub/shared';
 import { api, isApiError } from '~/lib/api';
 import { formatDate } from '~/lib/format';
 import { useSeedList } from '~/hooks/useSeed';
 import { PageShell } from '~/components/PageShell';
 import { SeedCard } from '~/components/SeedCard';
-import { Avatar, CopyButton, EmptyState, ErrorNote, Spinner } from '~/components/ui';
+import { Avatar, CopyButton, Loading, SectionTitle, Unavailable } from '~/components/ui';
 
 /**
  * A person's page — `/@alice`, their ID (hub ADR-009).
@@ -33,10 +32,7 @@ function PersonPage() {
   if (person.isLoading) {
     return (
       <PageShell width="default">
-        <div className="flex items-center justify-center gap-2.5 py-32 text-sm text-slate-500">
-          <Spinner className="h-4 w-4" />
-          Looking up @{owner}…
-        </div>
+        <Loading />
       </PageShell>
     );
   }
@@ -44,7 +40,7 @@ function PersonPage() {
     if (isApiError(person.error) && person.error.status === 404) throw notFound();
     return (
       <PageShell width="default">
-        <ErrorNote>PekoHub isn&apos;t answering right now. Try again in a moment.</ErrorNote>
+        <Unavailable />
       </PageShell>
     );
   }
@@ -57,48 +53,27 @@ function PersonPage() {
 
   return (
     <PageShell width="default">
-      <header className="panel flex flex-wrap items-center gap-4 px-6 py-6">
-        <Avatar name={profile.displayName} src={profile.avatarUrl} size="lg" />
+      <header className="flex flex-wrap items-center gap-5">
+        <Avatar name={profile.displayName} src={profile.avatarUrl} size="xl" />
         <div className="min-w-0 flex-1">
-          <h1 className="display truncate text-2xl">{profile.displayName}</h1>
-          <p className="mt-1 font-mono text-2xs text-slate-500">
-            {id} · on PekoHub since {formatDate(profile.joinedAt)}
+          <h1 className="h-page truncate">{profile.displayName}</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            {id} · joined {formatDate(profile.joinedAt)}
           </p>
         </div>
         <CopyButton value={pageUrl} label="Share" className="btn-secondary btn-sm flex-shrink-0" />
       </header>
 
-      <section className="mt-10">
-        <p className="eyebrow">seeds</p>
-        <div className="mt-4">
-          {seeds.isLoading ? (
-            <div className="flex items-center gap-2 text-sm text-slate-500">
-              <Spinner className="h-4 w-4" />
-              Loading seeds…
-            </div>
-          ) : items.length === 0 ? (
-            <EmptyState
-              icon={<Sprout className="h-5 w-5" />}
-              title="No seeds yet"
-              body={
-                <>
-                  {profile.displayName} hasn&apos;t published a seed.{' '}
-                  <Link to="/seeds" className="text-peko-300 hover:text-peko-200">
-                    Browse all seeds
-                  </Link>
-                  .
-                </>
-              }
-            />
-          ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {items.map((item) => (
-                <SeedCard key={`${item.owner}/${item.name}`} item={item} />
-              ))}
-            </div>
-          )}
-        </div>
-      </section>
+      {items.length > 0 && (
+        <section className="mt-14">
+          <SectionTitle title="Seeds" />
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {items.map((item) => (
+              <SeedCard key={`${item.owner}/${item.name}`} item={item} />
+            ))}
+          </div>
+        </section>
+      )}
     </PageShell>
   );
 }

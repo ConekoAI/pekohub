@@ -1,20 +1,12 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useCallback, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  CalendarDays,
-  Copy,
-  KeyRound,
-  Laptop,
-  Mail,
-  Plus,
-  ShieldCheck,
-  Trash2,
-} from 'lucide-react';
+import { KeyRound, Laptop, X } from 'lucide-react';
 import { useAuth } from '~/hooks/useAuth';
 import { api } from '~/lib/api';
 import { AppShell } from '~/components/AppShell';
-import { Avatar, Badge, EmptyState, ErrorNote, Spinner } from '~/components/ui';
+import { Avatar, CopyField, EmptyState, ErrorNote, Loading, SectionTitle, Spinner, Unavailable } from '~/components/ui';
+import { PageHeader } from '~/components/PageShell';
 import { formatDate, relativeTime } from '~/lib/format';
 
 /**
@@ -39,83 +31,24 @@ function ProfilePage() {
 
   return (
     <AppShell>
-      <div className="mb-8">
-        <p className="eyebrow mb-2.5">console</p>
-        <h1 className="display text-2xl sm:text-[28px]">Account</h1>
-        <p className="lede mt-2 max-w-2xl">
-          Who you are on PekoHub, the apps signed in as you, and keys for scripts.
-        </p>
-      </div>
+      <PageHeader title="Account" />
 
-      <div className="space-y-10">
-        <IdentityPanel
-          displayName={user?.displayName ?? ''}
-          namespace={user?.namespace ?? ''}
-          email={user?.email}
-          avatarUrl={user?.avatarUrl}
-          createdAt={user?.createdAt}
-        />
+      <div className="mt-8 space-y-14">
+        <section className="flex items-center gap-4">
+          <Avatar name={user?.displayName ?? ''} src={user?.avatarUrl} size="lg" />
+          <div className="min-w-0">
+            <p className="truncate text-base font-medium text-slate-100">{user?.displayName}</p>
+            <p className="mt-0.5 truncate text-sm text-slate-500">
+              @{user?.namespace}
+              {user?.email && <> · {user.email}</>}
+              {user?.createdAt && <> · joined {formatDate(user.createdAt)}</>}
+            </p>
+          </div>
+        </section>
         <SignedInAppsPanel />
         <ApiKeysPanel />
       </div>
     </AppShell>
-  );
-}
-
-/* ─────────────────────────────────────────────────────────────────────────
-   Identity
-   ───────────────────────────────────────────────────────────────────────── */
-
-function IdentityPanel({
-  displayName,
-  namespace,
-  email,
-  avatarUrl,
-  createdAt,
-}: {
-  displayName: string;
-  namespace: string;
-  email?: string;
-  avatarUrl?: string | null;
-  createdAt?: string;
-}) {
-  return (
-    <section className="panel p-6">
-      <div className="flex flex-wrap items-center gap-5">
-        <Avatar name={displayName} src={avatarUrl} size="xl" />
-        <div className="min-w-0">
-          <h2 className="display text-xl">{displayName}</h2>
-          <p className="mt-1 font-mono text-xs text-slate-500">@{namespace}</p>
-          <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2">
-            {email && (
-              <span className="flex items-center gap-1.5 text-xs text-slate-400">
-                <Mail className="h-3.5 w-3.5 text-slate-600" />
-                {email}
-              </span>
-            )}
-            {createdAt && (
-              <span className="flex items-center gap-1.5 text-xs text-slate-400">
-                <CalendarDays className="h-3.5 w-3.5 text-slate-600" />
-                joined {formatDate(createdAt)}
-              </span>
-            )}
-            <span className="flex items-center gap-1.5 text-xs text-emerald-300">
-              <ShieldCheck className="h-3.5 w-3.5" />
-              OAuth verified
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <div className="divider my-6" />
-
-      <p className="text-2xs leading-relaxed text-slate-500">
-        Your handle is what share links resolve against (
-        <code className="code-inline">/peko/{namespace}/&lt;peko&gt;</code>). The hub stores your
-        OAuth identity and nothing else about you — peko memory, sessions and keys never leave the
-        runtime that hosts them.
-      </p>
-    </section>
   );
 }
 
@@ -135,33 +68,22 @@ function SignedInAppsPanel() {
 
   return (
     <section>
-      <div className="mb-4">
-        <p className="eyebrow mb-2">sessions</p>
-        <h2 className="display text-xl">Signed-in apps</h2>
-      </div>
+      <SectionTitle title="Signed-in apps" />
       {apps.isLoading ? (
-        <div className="flex items-center justify-center gap-2.5 py-10 text-sm text-slate-500">
-          <Spinner className="h-4 w-4" />
-          Loading…
-        </div>
+        <Loading />
       ) : apps.isError ? (
-        <ErrorNote>PekoHub isn&apos;t answering right now. Try again in a moment.</ErrorNote>
+        <Unavailable />
       ) : rows.length === 0 ? (
-        <EmptyState
-          icon={<Laptop className="h-5 w-5" />}
-          title="No apps signed in"
-          body="Sign in from Peko desktop, or run peko runtime register, and it shows up here."
-        />
+        <EmptyState icon={<Laptop className="h-5 w-5" />} title="No apps signed in" />
       ) : (
-        <ul className="divide-y divide-white/[0.06] overflow-hidden rounded-xl border border-white/[0.07] bg-ink-850/70">
+        <ul className="rows">
           {rows.map((app) => (
-            <li key={app.clientId} className="flex flex-wrap items-center gap-4 px-4 py-3.5" data-testid="signed-in-app">
-              <Laptop className="h-4 w-4 text-slate-400" />
+            <li key={app.clientId} className="flex flex-wrap items-center gap-4 px-5 py-4" data-testid="signed-in-app">
+              <Laptop className="h-4 w-4 text-slate-500" />
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-slate-200">{app.name}</p>
-                <p className="truncate font-mono text-2xs text-slate-600">
-                  {app.sessions} session{app.sessions === 1 ? '' : 's'} · active {relativeTime(app.lastActiveAt)}
-                  {app.devices[0] ? ` · ${app.devices[0]}` : ''}
+                <p className="text-sm font-medium text-slate-100">{app.name}</p>
+                <p className="mt-0.5 truncate text-xs text-slate-500">
+                  {app.devices[0] ? `${app.devices[0]} · ` : ''}active {relativeTime(app.lastActiveAt)}
                 </p>
               </div>
               <button
@@ -170,7 +92,7 @@ function SignedInAppsPanel() {
                 onClick={() => {
                   if (window.confirm(`Sign ${app.name} out everywhere?`)) signOut.mutate(app.clientId);
                 }}
-                className="btn-ghost btn-sm text-rose-300 hover:text-rose-200"
+                className="btn-danger btn-sm"
               >
                 Sign out
               </button>
@@ -253,14 +175,7 @@ function ApiKeysPanel() {
 
   return (
     <section>
-      <div className="mb-4">
-        <p className="eyebrow mb-2">credentials</p>
-        <h2 className="display text-xl">API keys</h2>
-        <p className="lede mt-1.5 max-w-2xl">
-          Used by the CLI to push seeds and by CI to publish. Keys are shown once — the hub only
-          keeps a hash.
-        </p>
-      </div>
+      <SectionTitle title="API keys" />
 
       {error && (
         <div className="mb-4">
@@ -269,118 +184,63 @@ function ApiKeysPanel() {
       )}
 
       {revealed && (
-        <div className="mb-4 rounded-lg border border-emerald-400/25 bg-emerald-400/[0.06] p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="eyebrow text-emerald-300">copy it now</p>
-              <p className="mt-1 text-[13px] text-emerald-200/80">
-                This key will not be shown again.
-              </p>
-            </div>
-            <button
-              onClick={() => setRevealed(null)}
-              className="font-mono text-2xs text-emerald-300/70 transition-colors hover:text-emerald-200"
-            >
-              dismiss
+        <div className="mb-4 rounded-xl border border-peko-600 bg-peko-500/[0.06] p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <p className="text-sm text-peko-100">Copy this key now. It won&apos;t be shown again.</p>
+            <button onClick={() => setRevealed(null)} className="btn-icon p-1" aria-label="Dismiss">
+              <X className="h-4 w-4" />
             </button>
           </div>
-          <div className="mt-3 flex items-center gap-2">
-            <code className="code-block flex-1 break-all text-emerald-200">{revealed}</code>
-            <button
-              onClick={() => void navigator.clipboard?.writeText(revealed)}
-              className="btn-secondary btn-sm flex-shrink-0"
-              title="Copy key"
-            >
-              <Copy className="h-3.5 w-3.5" />
-            </button>
-          </div>
+          <CopyField value={revealed} />
         </div>
       )}
 
-      <div className="flex flex-col gap-2 sm:flex-row">
+      <form
+        className="flex gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void handleCreate();
+        }}
+      >
         <input
           value={newName}
           onChange={(event) => setNewName(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') void handleCreate();
-          }}
-          placeholder="Key name — e.g. “laptop” or “ci-publish”"
+          placeholder="Key name"
           aria-label="New key name"
-          className="input flex-1"
+          className="input max-w-xs"
         />
-        <button
-          onClick={() => void handleCreate()}
-          disabled={creating || !newName.trim()}
-          className="btn-primary flex-shrink-0"
-        >
-          {creating ? <Spinner className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-          Generate key
+        <button type="submit" disabled={creating || !newName.trim()} className="btn-secondary flex-shrink-0">
+          {creating && <Spinner className="h-4 w-4" />}
+          Create key
         </button>
-      </div>
+      </form>
 
       {loading ? (
-        <div className="flex items-center justify-center gap-2.5 py-12 text-sm text-slate-500">
-          <Spinner className="h-4 w-4" />
-          Loading keys…
-        </div>
-      ) : keys.length === 0 ? (
-        <div className="mt-4">
-          <EmptyState
-            icon={<KeyRound className="h-5 w-5" />}
-            title="No API keys yet"
-            body="Generate one to authenticate the CLI without a browser round-trip."
-          />
-        </div>
-      ) : (
-        <ul className="mt-4 divide-y divide-white/[0.06] overflow-hidden rounded-xl border border-white/[0.07] bg-ink-850/70">
+        <Loading />
+      ) : keys.length > 0 ? (
+        <ul className="rows mt-4">
           {keys.map((key) => (
-            <li
-              key={key.id}
-              className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5"
-            >
-              <div className="flex min-w-0 items-center gap-3">
-                <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-white/[0.07] bg-white/[0.03]">
-                  <KeyRound className="h-3.5 w-3.5 text-slate-500" />
-                </span>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-slate-200">{key.name}</p>
-                  <p className="truncate font-mono text-2xs text-slate-600">
-                    {key.prefix}••••••••
-                  </p>
-                </div>
+            <li key={key.id} className="flex flex-wrap items-center gap-4 px-5 py-4">
+              <KeyRound className="h-4 w-4 text-slate-500" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-slate-100">{key.name}</p>
+                <p className="mt-0.5 truncate text-xs text-slate-500">
+                  <span className="font-mono">{key.prefix}…</span> ·{' '}
+                  {key.lastUsedAt ? `used ${relativeTime(key.lastUsedAt)}` : 'never used'}
+                </p>
               </div>
-
-              <div className="flex items-center gap-4">
-                <div className="text-right font-mono text-2xs text-slate-600">
-                  <p>created {formatDate(key.createdAt)}</p>
-                  <p>
-                    {key.lastUsedAt ? `last used ${relativeTime(key.lastUsedAt)}` : 'never used'}
-                  </p>
-                </div>
-                <button
-                  onClick={() => void handleRevoke(key.id)}
-                  disabled={revoking === key.id}
-                  className="btn-ghost btn-sm text-rose-300 hover:bg-rose-500/10 hover:text-rose-200"
-                >
-                  {revoking === key.id ? (
-                    <Spinner className="h-3.5 w-3.5" />
-                  ) : (
-                    <Trash2 className="h-3.5 w-3.5" />
-                  )}
-                  Revoke
-                </button>
-              </div>
+              <button
+                onClick={() => void handleRevoke(key.id)}
+                disabled={revoking === key.id}
+                className="btn-danger btn-sm"
+              >
+                {revoking === key.id && <Spinner className="h-3.5 w-3.5" />}
+                Revoke
+              </button>
             </li>
           ))}
         </ul>
-      )}
-
-      <div className="mt-4 flex items-center gap-2">
-        <Badge tone="neutral">scope: registry write</Badge>
-        <p className="font-mono text-2xs text-slate-600">
-          send as <span className="text-slate-500">Authorization: Bearer pkr_…</span>
-        </p>
-      </div>
+      ) : null}
     </section>
   );
 }
