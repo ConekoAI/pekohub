@@ -33,9 +33,6 @@ export function AppShell({ children }: { children: ReactNode }) {
           <button onClick={() => setSignInOpen(true)} className="btn-primary">
             Sign in
           </button>
-          <Link to="/seeds" className="btn-ghost">
-            Browse seeds
-          </Link>
         </div>
         <SignInModal isOpen={signInOpen} onClose={() => setSignInOpen(false)} />
       </div>

@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ArrowLeft, ChevronDown, Download } from 'lucide-react';
+import { ChevronDown, Download } from 'lucide-react';
 import { parseHubRef } from '@pekohub/shared';
 import { api, isApiError, type SeedDetail } from '~/lib/api';
 import { useAuth } from '~/hooks/useAuth';
@@ -93,11 +93,6 @@ function SeedBody({ data, version }: { data: SeedDetail; version: string }) {
 
   return (
     <>
-      <Link to="/seeds" className="back-link">
-        <ArrowLeft className="h-3.5 w-3.5" />
-        Seeds
-      </Link>
-
       <header className="flex flex-wrap items-start gap-5">
         <Tile avatar={data.avatar} name={data.name} size="lg" />
         <div className="min-w-[13rem] flex-1">
@@ -233,7 +228,7 @@ function SeedBody({ data, version }: { data: SeedDetail; version: string }) {
                 onClick={() => {
                   if (!window.confirm(`Delete ${owner}/${data.name} and every version? This can't be undone.`)) return;
                   void run('delete:seed', () => api.deleteSeed(owner, data.name), () =>
-                    void navigate({ to: '/seeds' }),
+                    void navigate({ to: '/dashboard/seeds' }),
                   );
                 }}
                 className="btn-danger btn-sm -ml-2.5"

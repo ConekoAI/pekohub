@@ -1,16 +1,14 @@
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
-import { ArrowRight, BrainCircuit, Clock, Download, MessagesSquare, ShieldCheck } from 'lucide-react';
+import { createFileRoute, Link } from '@tanstack/react-router';
+import { Bot, BrainCircuit, Clock, Download, MessagesSquare, ShieldCheck } from 'lucide-react';
+import { AgentSetup } from '~/components/AgentSetup';
 import { PageShell } from '~/components/PageShell';
-import { SearchBar } from '~/components/SearchBar';
-import { SeedCard } from '~/components/SeedCard';
-import { SectionTitle } from '~/components/ui';
-import { useSeedList } from '~/hooks/useSeed';
 
 /**
- * The front door. Most visitors arrive from a share link or a search and
- * have never heard of Peko: say what a peko is, get them to the desktop
- * download, and show the seeds people have published. Pekos and people
- * are never shown or searched here (hub ADR-009); the desktop finds them.
+ * The front door. Most visitors arrive from a share link and have never
+ * heard of Peko: say what a peko is, and get it onto their computer — the
+ * desktop download, or a prompt for the coding agent they already use.
+ * Nothing here needs Peko installed, so there are no seeds or pekos to
+ * browse (hub ADR-009); the header's search box finds seeds.
  */
 export const Route = createFileRoute('/')({
   component: HomePage,
@@ -39,10 +37,6 @@ const FAQ = [
 ];
 
 function HomePage() {
-  const navigate = useNavigate();
-  const seeds = useSeedList(1, 3);
-  const seedItems = seeds.data?.items ?? [];
-
   return (
     <PageShell width="wide">
       <section className="mx-auto max-w-2xl pb-8 pt-12 text-center sm:pt-20">
@@ -59,9 +53,10 @@ function HomePage() {
             <Download className="h-4 w-4" />
             Download Peko
           </Link>
-          <Link to="/seeds" className="btn-secondary px-5 py-2.5">
-            Browse seeds
-          </Link>
+          <a href="#agent" className="btn-secondary px-5 py-2.5">
+            <Bot className="h-4 w-4" />
+            Set up with your agent
+          </a>
         </div>
       </section>
 
@@ -75,32 +70,17 @@ function HomePage() {
         ))}
       </section>
 
-      <section className="mt-20">
-        <SectionTitle
-          title="Start from a seed"
-          action={
-            <Link to="/seeds" className="link inline-flex items-center gap-1 text-sm">
-              All seeds
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
-          }
-        />
-        <div className="max-w-xl">
-          <SearchBar
-            onSearch={(query) => void navigate({ to: '/seeds', search: query ? { q: query } : {} })}
-            placeholder="Search seeds"
-          />
+      <section id="agent" className="mt-24 grid scroll-mt-24 gap-8 lg:grid-cols-[1fr_1.6fr]">
+        <div>
+          <h2 className="text-xl font-semibold tracking-tight text-slate-100">Set up with your agent</h2>
+          <p className="mt-2 max-w-sm text-sm text-slate-400">
+            Paste this into Claude Code, Codex or any coding agent. It installs Peko and asks you the rest.
+          </p>
         </div>
-        {seedItems.length > 0 && (
-          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {seedItems.map((item) => (
-              <SeedCard key={`${item.owner}/${item.name}`} item={item} />
-            ))}
-          </div>
-        )}
+        <AgentSetup />
       </section>
 
-      <section className="mt-20 border-t border-ink-700 pt-12">
+      <section className="mt-24 border-t border-ink-700 pt-12">
         <dl className="grid gap-10 md:grid-cols-3">
           {FAQ.map(({ q, a }) => (
             <div key={q}>

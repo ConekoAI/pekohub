@@ -34,10 +34,7 @@ function NotFound() {
       <p className="text-sm font-medium text-slate-500">404</p>
       <h1 className="h-page mt-2">Nothing lives at this address</h1>
       <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
-        <Link to="/seeds" className="btn-primary">
-          Browse seeds
-        </Link>
-        <Link to="/" className="btn-ghost">
+        <Link to="/" className="btn-primary">
           Home
         </Link>
       </div>

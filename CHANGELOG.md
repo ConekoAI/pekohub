@@ -4,15 +4,19 @@
 
 - The website is redesigned: navy surfaces, one brand-blue accent, flat cards and hairline
   borders in place of the cyan/violet gradients, glows and graph paper. Pages say less — no
-  mono eyebrow labels or explanatory subtitles; the home page is a hero, four short features,
-  seeds with a seed search, and three questions; the footer is one row of links. The owner
-  console tabs are text-only and the manage dialog's options are one line each.
+  mono eyebrow labels or explanatory subtitles. The home page is a hero, four short
+  features, "Set up with your agent" and three questions; the footer is one row of links.
+  The owner console tabs are text-only and the manage dialog's options are one line each.
   Destructive actions and errors keep a soft red; it is the only other hue.
-- The website searches seeds only (ADR-009 amendment). Its search box finds seeds on
-  `/seeds?q=` and never shows people or pekos; a leading `@` is dropped, so `@alice` finds
-  alice's seeds. `/search` redirects to `/seeds`, as `/pekos` and `/discover` now do.
-  Finding a person or peko by ID is the desktop's job; `GET /v1/search` keeps its `exact`
-  hits for it.
+- Set up with your agent: the home and download pages carry a prompt to paste into a
+  coding agent (Claude Code, Codex, …), which installs the peko CLI, adds a model, starts
+  the daemon and creates a first peko, asking the person for the model, key and name. The
+  install command sits beside it.
+- The website searches seeds only, from one box in the header (ADR-009 amendment): results
+  on `/search?q=`, `/` focuses it, and people and pekos never show. A leading `@` is
+  dropped, so `@alice` finds alice's seeds. There is no seed directory any more: `/seeds`,
+  `/pekos` and `/discover` redirect to `/search`. Finding a person or peko by ID is the
+  desktop's job; `GET /v1/search` keeps its `exact` hits for it.
 - Groups get IDs, pages and invite links (peko-runtime ADR-092 D3–D6). A group's home
   registers it over the tunnel (`group_register` → `group_registered { groupId }`); the Hub
   assigns a bare-number ID (a snowflake, like a Discord server's), so group names can be

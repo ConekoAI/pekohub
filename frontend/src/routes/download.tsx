@@ -8,12 +8,12 @@
  */
 
 import type { ReactNode } from 'react';
-import { createFileRoute, Link } from '@tanstack/react-router';
+import { createFileRoute } from '@tanstack/react-router';
 import { Apple, ArrowUpRight, Download, Monitor, Terminal } from 'lucide-react';
 import { PageHeader, PageShell } from '~/components/PageShell';
-import { CopyField, SectionTitle } from '~/components/ui';
+import { SectionTitle } from '~/components/ui';
+import { AgentSetup } from '~/components/AgentSetup';
 import {
-  CLI_INSTALL_COMMAND,
   DESKTOP_RELEASES_URL,
   GETTING_STARTED_URL,
   detectPlatform,
@@ -75,8 +75,8 @@ function DownloadPage() {
       </section>
 
       <section className="mt-14">
-        <SectionTitle title="Command line" />
-        <CopyField value={CLI_INSTALL_COMMAND} />
+        <SectionTitle title="With your agent" />
+        <AgentSetup />
       </section>
 
       <section className="mt-14">
@@ -91,12 +91,7 @@ function DownloadPage() {
         />
         <ol className="grid gap-4 sm:grid-cols-3">
           <Step n={1}>Add a model</Step>
-          <Step n={2}>
-            Create a peko, or grow one from a{' '}
-            <Link to="/seeds" className="link">
-              seed
-            </Link>
-          </Step>
+          <Step n={2}>Create a peko</Step>
           <Step n={3}>Sign in to PekoHub</Step>
         </ol>
       </section>

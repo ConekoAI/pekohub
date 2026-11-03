@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate } from '@tanstack/react-router';
+import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import {
   Github,
   Globe,
@@ -18,13 +18,11 @@ import { DOCS_URL, GETTING_STARTED_URL, RUNTIME_REPO_URL } from '~/lib/links';
 const REPO_URL = RUNTIME_REPO_URL;
 
 /**
- * Primary destinations: the seed registry and the app. Pekos and people
- * have no directory (hub ADR-009); finding them by ID is the desktop's job.
+ * Primary destinations. Seeds have no directory — the header's search box
+ * finds them; pekos and people have none either (hub ADR-009), and finding
+ * them by ID is the desktop's job.
  */
-const NAV = [
-  { to: '/seeds', label: 'Seeds' },
-  { to: '/download', label: 'Download' },
-] as const;
+const NAV = [{ to: '/download', label: 'Download' }] as const;
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -44,7 +42,9 @@ export function Layout({ children }: LayoutProps) {
             <span className="text-[15px] font-semibold tracking-tight text-slate-50">PekoHub</span>
           </Link>
 
-          <nav className="hidden items-center gap-1 md:flex">
+          <NavSearch className="hidden max-w-sm flex-1 sm:block" shortcut />
+
+          <nav className="ml-auto hidden items-center gap-1 md:flex">
             {NAV.map((item) => (
               <Link
                 key={item.to}
@@ -66,8 +66,7 @@ export function Layout({ children }: LayoutProps) {
             )}
           </nav>
 
-          <div className="ml-auto flex items-center gap-2">
-            <NavSearch className="hidden w-60 lg:block" />
+          <div className="ml-auto flex items-center gap-2 md:ml-0">
             <a
               href={REPO_URL}
               target="_blank"
@@ -108,7 +107,7 @@ export function Layout({ children }: LayoutProps) {
 
         {mobileOpen && (
           <div className="animate-fade-in border-t border-ink-700 bg-ink-950 px-5 py-4 md:hidden">
-            <NavSearch className="mb-3" onSearched={() => setMobileOpen(false)} />
+            <NavSearch className="mb-3 sm:hidden" onSearched={() => setMobileOpen(false)} />
             <nav className="flex flex-col gap-0.5">
               {NAV.map((item) => (
                 <Link
@@ -334,32 +333,70 @@ function MenuItem({
   );
 }
 
-/** The nav's search box: searches seeds, with results on `/seeds`. */
-function NavSearch({ className = '', onSearched }: { className?: string; onSearched?: () => void }) {
+/**
+ * The header's search box, like GitHub's: it searches seeds, with results on
+ * `/search`, and shows the query while you are there. `shortcut`: `/`
+ * focuses it from anywhere but a text field.
+ */
+function NavSearch({
+  className = '',
+  onSearched,
+  shortcut = false,
+}: {
+  className?: string;
+  onSearched?: () => void;
+  shortcut?: boolean;
+}) {
   const navigate = useNavigate();
-  const [value, setValue] = useState('');
+  const current = useRouterState({
+    select: (state) =>
+      state.location.pathname === '/search' ? ((state.location.search as { q?: string }).q ?? '') : '',
+  });
+  const [value, setValue] = useState(current);
+  const input = useRef<HTMLInputElement>(null);
+
+  useEffect(() => setValue(current), [current]);
+
+  useEffect(() => {
+    if (!shortcut) return;
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const typing = target?.closest('input, textarea, select, [contenteditable="true"]');
+      if (event.key === '/' && !typing && !event.metaKey && !event.ctrlKey) {
+        event.preventDefault();
+        input.current?.focus();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [shortcut]);
+
   return (
     <form
       role="search"
-      className={`relative ${className}`}
+      className={`group relative ${className}`}
       onSubmit={(event) => {
         event.preventDefault();
         const q = value.trim();
         if (!q) return;
-        setValue('');
+        input.current?.blur();
         onSearched?.();
-        void navigate({ to: '/seeds', search: { q } });
+        void navigate({ to: '/search', search: { q } });
       }}
     >
       <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" aria-hidden />
       <input
+        ref={input}
         type="search"
         value={value}
         onChange={(event) => setValue(event.target.value)}
         placeholder="Search seeds"
         aria-label="Search seeds"
-        className="input h-8 border-ink-700 bg-ink-900/70 py-1 pl-8 text-[13px]"
+        className="input h-8 border-ink-700 bg-ink-900/70 py-1 pl-8 pr-8 text-[13px]"
       />
+      {shortcut && !value && (
+        <kbd className="kbd pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 group-focus-within:hidden">/</kbd>
+      )}
     </form>
   );
 }
@@ -374,7 +411,6 @@ function SiteFooter() {
         </div>
         <nav className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
           <FooterLink to="/download">Download</FooterLink>
-          <FooterLink to="/seeds">Seeds</FooterLink>
           <FooterAnchor href={GETTING_STARTED_URL}>Getting started</FooterAnchor>
           <FooterAnchor href={DOCS_URL}>Docs</FooterAnchor>
           <FooterLink to="/status">Status</FooterLink>
@@ -390,7 +426,7 @@ function FooterLink({
   to,
   children,
 }: {
-  to: '/seeds' | '/download' | '/status' | '/terms' | '/privacy';
+  to: '/download' | '/status' | '/terms' | '/privacy';
   children: React.ReactNode;
 }) {
   return (

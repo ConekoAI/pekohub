@@ -24,6 +24,6 @@ export const Route = createFileRoute('/templates_/$')({
   beforeLoad: ({ params }) => {
     // A seed's page is its ID (hub ADR-009); anything else, the directory.
     const ref = parseHubRef(`/seeds/${params._splat ?? ''}`);
-    throw redirect({ href: ref?.kind === 'seed' ? hubRefPath(ref) : '/seeds', replace: true });
+    throw redirect({ href: ref?.kind === 'seed' ? hubRefPath(ref) : '/search', replace: true });
   },
 });

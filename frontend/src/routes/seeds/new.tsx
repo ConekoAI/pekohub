@@ -29,9 +29,9 @@ function PublishSeedPage() {
 
   return (
     <PageShell width="narrow">
-      <Link to="/seeds" className="back-link">
+      <Link to="/dashboard/seeds" className="back-link">
         <ArrowLeft className="h-3.5 w-3.5" />
-        Seeds
+        Your seeds
       </Link>
       <PageHeader title="Publish a seed" />
       <div className="mt-8">
