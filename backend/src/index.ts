@@ -80,6 +80,14 @@ async function main() {
   process.on("uncaughtException", fatal("uncaughtException"));
   process.on("unhandledRejection", fatal("unhandledRejection"));
 
+  // Report 5xx answers, whichever error handler answers them. The route
+  // pattern, not the URL: query strings carry OAuth codes.
+  app.addHook("onError", async (request, _reply, error) => {
+    const status = error.statusCode ?? 500;
+    if (status < 500) return;
+    reportError(error, { method: request.method, route: request.routeOptions.url, status });
+  });
+
   await app.register(cors, {
     origin: [
       "http://localhost:5173",
@@ -191,16 +199,7 @@ async function main() {
   // Error handler
   app.setErrorHandler((error, request, reply) => {
     app.log.error(error);
-    const status = error.statusCode ?? 500;
-    if (status >= 500) {
-      // The route pattern, not the URL: query strings carry OAuth codes.
-      reportError(error, {
-        method: request.method,
-        route: request.routeOptions.url,
-        status,
-      });
-    }
-    reply.status(status).send({
+    reply.status(error.statusCode ?? 500).send({
       error: error.message,
       ...(process.env.NODE_ENV === "development" ? { stack: error.stack } : {}),
     });
