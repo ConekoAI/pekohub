@@ -1,8 +1,8 @@
 /**
  * Legacy `/discover` redirect.
  *
- * The public peko directory is gone: pekos are found only by their exact
- * ID (hub ADR-009). Old links go to the one search.
+ * The public peko directory is gone (hub ADR-009). Old links go to the
+ * seed search.
  */
 
 import { createFileRoute, redirect } from '@tanstack/react-router';

@@ -9,7 +9,7 @@
 
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useState, type DragEvent, type FormEvent } from 'react';
-import { ArrowLeft, FileUp, Terminal } from 'lucide-react';
+import { ArrowLeft, FileUp } from 'lucide-react';
 import { api } from '~/lib/api';
 import { useAuth } from '~/hooks/useAuth';
 import { PageHeader, PageShell } from '~/components/PageShell';
@@ -29,20 +29,11 @@ function PublishSeedPage() {
 
   return (
     <PageShell width="narrow">
-      <Link
-        to="/seeds"
-        className="inline-flex items-center gap-1.5 font-mono text-2xs text-slate-500 transition-colors hover:text-peko-300"
-      >
-        <ArrowLeft className="h-3 w-3" />
-        all seeds
+      <Link to="/dashboard/seeds" className="back-link">
+        <ArrowLeft className="h-3.5 w-3.5" />
+        Your seeds
       </Link>
-      <div className="mt-5">
-        <PageHeader
-          eyebrow="registry"
-          title="Publish a seed"
-          description="Share what one of your pekos grows from. Others get its definition — never its identity, memory, or keys."
-        />
-      </div>
+      <PageHeader title="Publish a seed" />
       <div className="mt-8">
         {isLoading ? (
           <div className="flex justify-center py-16">
@@ -51,11 +42,8 @@ function PublishSeedPage() {
         ) : user ? (
           <PublishForm handle={user.namespace} />
         ) : (
-          <div className="panel max-w-sm p-6">
-            <p className="text-sm text-slate-300">Sign in to publish under your handle.</p>
-            <div className="mt-4">
-              <SignInOptions />
-            </div>
+          <div className="max-w-xs">
+            <SignInOptions />
           </div>
         )}
       </div>
@@ -111,19 +99,13 @@ function PublishForm({ handle }: { handle: string }) {
 
   return (
     <form onSubmit={(event) => void submit(event)} className="space-y-6">
-      <div className="panel flex items-start gap-3 p-4 text-[13px] text-slate-400">
-        <Terminal className="mt-0.5 h-4 w-4 flex-shrink-0 text-peko-300" />
-        <p>
-          Export the seed from your peko first:{' '}
-          <code className="code-inline">peko seed &lt;name&gt; -o &lt;name&gt;.seed.toml</code>. It
-          strips the identity, owner, and grants for you.
-        </p>
-      </div>
-
       <div>
-        <label htmlFor="seed-toml" className="text-sm font-medium text-slate-200">
-          Seed
-        </label>
+        <div className="flex items-baseline justify-between gap-3">
+          <label htmlFor="seed-toml" className="field-label">
+            Seed
+          </label>
+          <code className="text-xs text-slate-500">peko seed &lt;name&gt;</code>
+        </div>
         <div
           onDragOver={(event) => {
             event.preventDefault();
@@ -131,7 +113,7 @@ function PublishForm({ handle }: { handle: string }) {
           }}
           onDragLeave={() => setDragging(false)}
           onDrop={onDrop}
-          className={`mt-2 rounded-lg border ${dragging ? 'border-peko-400/60 bg-peko-400/[0.04]' : 'border-transparent'}`}
+          className={`mt-2 rounded-lg ring-2 transition-shadow ${dragging ? 'ring-peko-500/50' : 'ring-transparent'}`}
         >
           <textarea
             id="seed-toml"
@@ -143,10 +125,10 @@ function PublishForm({ handle }: { handle: string }) {
             placeholder={'name = "ada"\npreferred_model_id = "…"\n\n[identity]\ndisplay_name = "Ada"\ndescription = "…"'}
           />
         </div>
-        <div className="mt-2 flex items-center justify-between text-2xs text-slate-500">
+        <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
           <label className="inline-flex cursor-pointer items-center gap-1.5 hover:text-slate-300">
             <FileUp className="h-3.5 w-3.5" />
-            Choose a file, or drop it on the box
+            Choose a file
             <input
               type="file"
               accept=".toml,text/plain,application/toml"
@@ -163,7 +145,7 @@ function PublishForm({ handle }: { handle: string }) {
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
-          <label htmlFor="seed-version" className="text-sm font-medium text-slate-200">
+          <label htmlFor="seed-version" className="field-label">
             Version
           </label>
           <input
@@ -173,21 +155,19 @@ function PublishForm({ handle }: { handle: string }) {
             className="input mt-2 font-mono"
             aria-invalid={!versionValid}
           />
-          <p className={`mt-1.5 text-2xs ${versionValid ? 'text-slate-500' : 'text-rose-300'}`}>
-            Like 1.0.0. Published versions can&apos;t change.
-          </p>
+          {!versionValid && <p className="mt-1.5 text-xs text-rose-300">Like 1.0.0</p>}
         </div>
         <div>
-          <p className="text-sm font-medium text-slate-200">Published as</p>
-          <p className="mt-2 rounded-lg border border-white/[0.07] bg-ink-900/60 px-3 py-2 font-mono text-[13px] text-slate-300">
-            {handle}/<span className="text-slate-500">&lt;its name&gt;</span>
+          <p className="field-label">Published as</p>
+          <p className="mt-2 rounded-lg border border-ink-700 px-3 py-2 font-mono text-[13px] text-slate-300">
+            {handle}/<span className="text-slate-500">&lt;name&gt;</span>
           </p>
         </div>
       </div>
 
       <div>
-        <label htmlFor="seed-readme" className="text-sm font-medium text-slate-200">
-          README <span className="font-normal text-slate-500">(optional, Markdown)</span>
+        <label htmlFor="seed-readme" className="field-label">
+          README <span className="font-normal text-slate-500">(optional)</span>
         </label>
         <textarea
           id="seed-readme"
@@ -195,12 +175,12 @@ function PublishForm({ handle }: { handle: string }) {
           onChange={(event) => setReadme(event.target.value)}
           rows={6}
           className="textarea mt-2 text-sm"
-          placeholder="What this peko is good at, and how to get the most out of it."
+          placeholder="Markdown"
         />
       </div>
 
       {error && (
-        <p role="alert" className="rounded-lg border border-rose-400/25 bg-rose-500/[0.06] px-3.5 py-2.5 text-[13px] text-rose-200">
+        <p role="alert" className="rounded-lg border border-rose-400/20 bg-rose-400/[0.06] px-3.5 py-2.5 text-[13px] text-rose-200">
           {error}
         </p>
       )}
@@ -208,7 +188,7 @@ function PublishForm({ handle }: { handle: string }) {
       <button
         type="submit"
         disabled={busy || !seed.trim() || !versionValid || tooBig}
-        className="btn-primary w-full justify-center"
+        className="btn-primary"
       >
         {busy ? <Spinner className="h-4 w-4" /> : null}
         Publish

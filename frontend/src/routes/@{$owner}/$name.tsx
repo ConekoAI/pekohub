@@ -10,12 +10,12 @@
 
 import { createFileRoute, Link, notFound } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Download, MessageSquare } from 'lucide-react';
+import { ArrowLeft, MessageSquare } from 'lucide-react';
 import { formatHubRef } from '@pekohub/shared';
 import { api, desktopLinkFor, isApiError } from '~/lib/api';
 import { PageShell } from '~/components/PageShell';
 import { ProfileHeader } from '~/components/peko/ProfileHeader';
-import { ErrorNote, Spinner } from '~/components/ui';
+import { Loading, Unavailable } from '~/components/ui';
 
 export const Route = createFileRoute('/@{$owner}/$name')({
   component: PublicPekoPage,
@@ -52,27 +52,19 @@ function PublicPekoPage() {
   if (query.isLoading) {
     return (
       <PageShell width="narrow">
-        <div className="flex flex-col items-center justify-center gap-3 py-32 text-sm text-slate-500">
-          <Spinner className="h-5 w-5" />
-          Looking up {pekoName}…
-        </div>
+        <Loading />
       </PageShell>
     );
   }
 
   // A 404 means the peko isn't public (or doesn't exist) — a genuine
-  // not-found. Anything else is a
-  // transport failure worth reporting rather than masking.
+  // not-found. Anything else is a transport failure worth reporting
+  // rather than masking.
   if (query.isError) {
     if (isApiError(query.error) && query.error.status === 404) throw notFound();
     return (
       <PageShell width="narrow">
-        <ErrorNote>
-          <p className="font-medium">Could not load this peko</p>
-          <p className="mt-1 text-rose-200/70">
-            PekoHub is not answering right now. Try again in a moment.
-          </p>
-        </ErrorNote>
+        <Unavailable />
       </PageShell>
     );
   }
@@ -85,36 +77,20 @@ function PublicPekoPage() {
 
   return (
     <PageShell width="narrow">
-      <Link
-        to="/@{$owner}"
-        params={{ owner }}
-        className="inline-flex items-center gap-1.5 font-mono text-2xs text-slate-500 transition-colors hover:text-peko-300"
-      >
-        <ArrowLeft className="h-3 w-3" />@{owner}
+      <Link to="/@{$owner}" params={{ owner }} className="back-link">
+        <ArrowLeft className="h-3.5 w-3.5" />@{owner}
       </Link>
 
-      <div className="mt-5 space-y-4">
-        <ProfileHeader profile={profile} id={id} shareUrl={shareUrl} />
+      <ProfileHeader profile={profile} id={id} shareUrl={shareUrl} />
 
-        <section className="panel px-6 py-5">
-          <h2 className="text-[15px] font-semibold tracking-tight text-slate-100">
-            Message {profile.liveInstance.publicName}
-          </h2>
-          <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-slate-400">
-            Pekos talk over Peko. Open this one in the desktop app, signed in to PekoHub, and
-            message it from there.
-          </p>
-          <div className="mt-4 flex flex-wrap items-center gap-2.5">
-            <a href={desktopLinkFor(shareUrl)} className="btn-primary btn-sm">
-              <MessageSquare className="h-3.5 w-3.5" />
-              Open in Peko
-            </a>
-            <Link to="/download" className="btn-secondary btn-sm">
-              <Download className="h-3.5 w-3.5" />
-              Get Peko desktop
-            </Link>
-          </div>
-        </section>
+      <div className="mt-10 flex flex-wrap items-center gap-3 border-t border-ink-700 pt-8">
+        <a href={desktopLinkFor(shareUrl)} className="btn-primary">
+          <MessageSquare className="h-4 w-4" />
+          Open in Peko
+        </a>
+        <Link to="/download" className="btn-ghost">
+          Get Peko
+        </Link>
       </div>
     </PageShell>
   );

@@ -132,11 +132,8 @@ function DevicePage() {
 
   return (
     <ConsentShell>
-      <p className="eyebrow">connect a device</p>
-      <h1 className="display mt-2 text-xl">Enter the code from your terminal</h1>
-      <p className="lede mt-1.5">
-        Signing in as <span className="text-slate-200">@{user.namespace}</span>.
-      </p>
+      <h1 className="text-lg font-semibold text-slate-50">Enter the code from your terminal</h1>
+      <p className="mt-1.5 text-sm text-slate-500">Signing in as @{user.namespace}</p>
       <form onSubmit={(event) => void lookUp(event)} className="mt-6 space-y-3">
         <label htmlFor="user-code" className="sr-only">
           Device code
@@ -154,7 +151,7 @@ function DevicePage() {
           aria-describedby={lookupError ? 'user-code-error' : undefined}
         />
         {lookupError && (
-          <p id="user-code-error" className="text-2xs text-rose-300">
+          <p id="user-code-error" className="text-xs text-rose-300">
             {lookupError}
           </p>
         )}

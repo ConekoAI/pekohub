@@ -51,12 +51,12 @@ export function SignInModal({ isOpen, onClose }: SignInModalProps) {
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-ink-950/80 p-4 backdrop-blur-md"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-ink-950/80 p-4 backdrop-blur-sm"
       onClick={onClose}
       role="presentation"
     >
       <div
-        className="panel animate-scale-in relative w-full max-w-sm p-7"
+        className="card animate-scale-in relative w-full max-w-sm bg-ink-900 p-7 shadow-lifted"
         onClick={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -70,27 +70,20 @@ export function SignInModal({ isOpen, onClose }: SignInModalProps) {
           <X className="h-4 w-4" />
         </button>
 
-        <p className="eyebrow">PekoHub account</p>
-        <h2 className="display mt-2 text-xl">Sign in to PekoHub</h2>
-        <p className="lede mt-1.5">
-          Manage exposure, publish seeds and keep your API keys in one place.
-        </p>
+        <h2 className="text-lg font-semibold tracking-tight text-slate-50">Sign in to PekoHub</h2>
 
         <div className="mt-6">
           <SignInOptions />
         </div>
 
-        <div className="divider my-6" />
-
-        <p className="text-center font-mono text-2xs leading-relaxed text-slate-600">
-          By signing in you agree to the{' '}
-          <a href="/terms" className="underline hover:text-slate-400">
+        <p className="mt-6 text-center text-xs text-slate-500">
+          You agree to the{' '}
+          <a href="/terms" className="link">
             Terms
-          </a>
-          <br />
-          and the{' '}
-          <a href="/privacy" className="underline hover:text-slate-400">
-            Privacy policy
+          </a>{' '}
+          and{' '}
+          <a href="/privacy" className="link">
+            Privacy
           </a>
           .
         </p>

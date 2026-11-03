@@ -108,7 +108,7 @@ that carries `id`, `did`, `actor_key`, `owner`, `permissions`, `boot_state`, `st
 | `POST /v1/seeds` | Publish `{ seed, version, readme? }` (signed in). 422 explains a refused seed; 409 on a repeated version. |
 | `POST /v1/seeds/:owner/:name/versions/:version/deprecate` | `{ deprecated, message? }` (publisher). |
 | `DELETE /v1/seeds/:owner/:name[/versions/:version]` | Remove a version or the seed (publisher). |
-| `GET /v1/search?q=` | One search space (ADR-009): an exact person or peko ID (`@alice`, `@alice/ada`) finds that one in `exact`, if it exists and is public; anything else is a full-text search over seeds in `items` (a seed ID, `alice/ada`, puts that seed — and a public peko `@alice/ada` — in `exact` first). |
+| `GET /v1/search?q=` | One search space (ADR-009): an exact person or peko ID (`@alice`, `@alice/ada`) finds that one in `exact`, if it exists and is public; anything else is a full-text search over seeds in `items` (a seed ID, `alice/ada`, puts that seed — and a public peko `@alice/ada` — in `exact` first). The desktop uses the `exact` hits to find people and pekos; the website's header search shows seeds only. |
 | `GET /v1/people/:handle` | A person's profile, by exact handle. Their seeds: `GET /v1/seeds?owner=`. |
 
 The OCI Distribution surface (`/v2/*`), the `/v1/bundles/*` API, the `/api/v1` aliases, and

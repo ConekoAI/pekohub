@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate } from '@tanstack/react-router';
+import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import {
   Github,
   Globe,
@@ -18,14 +18,11 @@ import { DOCS_URL, GETTING_STARTED_URL, RUNTIME_REPO_URL } from '~/lib/links';
 const REPO_URL = RUNTIME_REPO_URL;
 
 /**
- * Primary destinations: the seed registry and the app. Pekos and people
- * have no directory — they are found by their exact ID, through search
- * (hub ADR-009).
+ * Primary destinations. Seeds have no directory — the header's search box
+ * finds them; pekos and people have none either (hub ADR-009), and finding
+ * them by ID is the desktop's job.
  */
-const NAV = [
-  { to: '/seeds', label: 'Seeds' },
-  { to: '/download', label: 'Download' },
-] as const;
+const NAV = [{ to: '/download', label: 'Download' }] as const;
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -38,23 +35,21 @@ export function Layout({ children }: LayoutProps) {
 
   return (
     <div className="relative flex min-h-screen flex-col">
-      <header className="sticky top-0 z-50 border-b border-white/[0.06] bg-ink-950/80 backdrop-blur-xl">
-        <div className="mx-auto flex h-14 max-w-7xl items-center gap-3 px-4 sm:px-6 lg:px-8">
-          <Link to="/" className="group flex items-center gap-2.5 pr-2">
+      <header className="sticky top-0 z-50 border-b border-ink-700/70 bg-ink-950/85 backdrop-blur-lg">
+        <div className="mx-auto flex h-14 max-w-6xl items-center gap-6 px-5 sm:px-8">
+          <Link to="/" className="flex items-center gap-2">
             <LogoMark />
-            <span className="text-[15px] font-semibold tracking-tight text-slate-100">
-              Peko<span className="grad-text">Hub</span>
-            </span>
+            <span className="text-[15px] font-semibold tracking-tight text-slate-50">PekoHub</span>
           </Link>
 
-          <span className="mr-1 hidden h-4 w-px bg-white/[0.08] sm:block" />
+          <NavSearch className="hidden max-w-sm flex-1 sm:block" shortcut />
 
-          <nav className="hidden items-center gap-0.5 md:flex">
+          <nav className="ml-auto hidden items-center gap-1 md:flex">
             {NAV.map((item) => (
               <Link
                 key={item.to}
                 to={item.to}
-                activeProps={{ className: 'nav-link bg-white/[0.06] text-white' }}
+                activeProps={{ className: 'nav-link nav-link-active' }}
                 inactiveProps={{ className: 'nav-link' }}
               >
                 {item.label}
@@ -63,7 +58,7 @@ export function Layout({ children }: LayoutProps) {
             {isAuthenticated && (
               <Link
                 to="/dashboard"
-                activeProps={{ className: 'nav-link bg-white/[0.06] text-white' }}
+                activeProps={{ className: 'nav-link nav-link-active' }}
                 inactiveProps={{ className: 'nav-link' }}
               >
                 Dashboard
@@ -71,14 +66,13 @@ export function Layout({ children }: LayoutProps) {
             )}
           </nav>
 
-          <div className="ml-auto flex items-center gap-2">
-            <NavSearch className="hidden w-56 lg:block xl:w-72" />
+          <div className="ml-auto flex items-center gap-2 md:ml-0">
             <a
               href={REPO_URL}
               target="_blank"
               rel="noopener noreferrer"
-              className="btn-ghost hidden px-2 sm:inline-flex"
-              title="Source on GitHub"
+              className="btn-icon hidden sm:inline-flex"
+              aria-label="GitHub"
             >
               <Github className="h-4 w-4" />
             </a>
@@ -101,7 +95,7 @@ export function Layout({ children }: LayoutProps) {
             </div>
 
             <button
-              className="btn-ghost px-2 md:hidden"
+              className="btn-icon md:hidden"
               onClick={() => setMobileOpen((v) => !v)}
               aria-label="Toggle menu"
               aria-expanded={mobileOpen}
@@ -112,15 +106,15 @@ export function Layout({ children }: LayoutProps) {
         </div>
 
         {mobileOpen && (
-          <div className="animate-slide-up border-t border-white/[0.06] bg-ink-950/95 px-4 py-4 md:hidden">
-            <NavSearch className="mb-3" onSearched={() => setMobileOpen(false)} />
+          <div className="animate-fade-in border-t border-ink-700 bg-ink-950 px-5 py-4 md:hidden">
+            <NavSearch className="mb-3 sm:hidden" onSearched={() => setMobileOpen(false)} />
             <nav className="flex flex-col gap-0.5">
               {NAV.map((item) => (
                 <Link
                   key={item.to}
                   to={item.to}
                   onClick={() => setMobileOpen(false)}
-                  activeProps={{ className: 'nav-link block bg-white/[0.06] text-white' }}
+                  activeProps={{ className: 'nav-link nav-link-active block' }}
                   inactiveProps={{ className: 'nav-link block' }}
                 >
                   {item.label}
@@ -131,7 +125,7 @@ export function Layout({ children }: LayoutProps) {
                   <Link
                     to="/dashboard"
                     onClick={() => setMobileOpen(false)}
-                    activeProps={{ className: 'nav-link block bg-white/[0.06] text-white' }}
+                    activeProps={{ className: 'nav-link nav-link-active block' }}
                     inactiveProps={{ className: 'nav-link block' }}
                   >
                     Dashboard
@@ -139,10 +133,10 @@ export function Layout({ children }: LayoutProps) {
                   <Link
                     to="/profile"
                     onClick={() => setMobileOpen(false)}
-                    activeProps={{ className: 'nav-link block bg-white/[0.06] text-white' }}
+                    activeProps={{ className: 'nav-link nav-link-active block' }}
                     inactiveProps={{ className: 'nav-link block' }}
                   >
-                    Profile
+                    Account
                   </Link>
                 </>
               )}
@@ -157,11 +151,10 @@ export function Layout({ children }: LayoutProps) {
               </a>
             </nav>
 
-            <div className="mt-4 border-t border-white/[0.06] pt-4">
+            <div className="mt-4 border-t border-ink-700 pt-4">
               {isLoading ? (
                 <div className="flex items-center gap-2 text-sm text-slate-500">
                   <Spinner className="h-4 w-4" />
-                  Checking session…
                 </div>
               ) : isAuthenticated && user ? (
                 <div className="flex items-center justify-between gap-3">
@@ -171,9 +164,7 @@ export function Layout({ children }: LayoutProps) {
                       <p className="truncate text-sm font-medium text-slate-200">
                         {user.displayName}
                       </p>
-                      <p className="truncate font-mono text-2xs text-slate-500">
-                        @{user.namespace}
-                      </p>
+                      <p className="truncate text-xs text-slate-500">@{user.namespace}</p>
                     </div>
                   </div>
                   <button
@@ -216,33 +207,14 @@ export function Layout({ children }: LayoutProps) {
    Pieces
    ───────────────────────────────────────────────────────────────────────── */
 
-/** Orbit-node mark, shared with `public/favicon.svg`. */
+/** The PekoHub mark, shared with `public/favicon.svg`. */
 function LogoMark() {
   return (
-    <span className="relative flex h-8 w-8 items-center justify-center">
-      <svg viewBox="0 0 32 32" className="h-8 w-8">
-        <defs>
-          <linearGradient id="ph-mark" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#67e8f9" />
-            <stop offset="0.5" stopColor="#22d3ee" />
-            <stop offset="1" stopColor="#a78bfa" />
-          </linearGradient>
-        </defs>
-        <circle
-          cx="16"
-          cy="16"
-          r="12.5"
-          fill="none"
-          stroke="url(#ph-mark)"
-          strokeOpacity="0.35"
-          strokeWidth="1.25"
-          strokeDasharray="2 3"
-        />
-        <circle cx="16" cy="16" r="6" fill="url(#ph-mark)" />
-        <circle cx="16" cy="16" r="6" fill="none" stroke="#04060a" strokeWidth="1" />
-      </svg>
-      <span className="pointer-events-none absolute inset-0 rounded-full bg-peko-400/25 opacity-0 blur-md transition-opacity duration-300 group-hover:opacity-100" />
-    </span>
+    <svg viewBox="0 0 32 32" className="h-6 w-6" aria-hidden>
+      <rect width="32" height="32" rx="8" className="fill-peko-600" />
+      <circle cx="16" cy="16" r="5.5" className="fill-peko-50" />
+      <circle cx="16" cy="16" r="10" fill="none" className="stroke-peko-200" strokeOpacity="0.45" strokeWidth="1.5" />
+    </svg>
   );
 }
 
@@ -283,20 +255,20 @@ function AccountMenu({
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="flex items-center gap-2 rounded-lg border border-transparent py-1 pl-1 pr-2.5 transition-colors hover:border-white/[0.08] hover:bg-white/[0.04]"
+        aria-label="Account"
+        className="flex items-center rounded-full p-0.5 transition-colors hover:bg-white/[0.06]"
       >
         <Avatar name={name} src={avatarUrl} size="sm" />
-        <span className="max-w-[9rem] truncate text-sm font-medium text-slate-300">{name}</span>
       </button>
 
       {open && (
         <div
           role="menu"
-          className="absolute right-0 mt-2 w-56 animate-scale-in overflow-hidden rounded-xl border border-white/[0.08] bg-ink-850/95 shadow-lifted backdrop-blur-xl"
+          className="absolute right-0 mt-2 w-52 animate-scale-in overflow-hidden rounded-xl border border-ink-700 bg-ink-850 shadow-lifted"
         >
-          <div className="border-b border-white/[0.06] px-3.5 py-3">
+          <div className="border-b border-ink-700 px-3.5 py-3">
             <p className="truncate text-sm font-medium text-slate-100">{name}</p>
-            <p className="truncate font-mono text-2xs text-slate-500">@{namespace}</p>
+            <p className="truncate text-xs text-slate-500">@{namespace}</p>
           </div>
           <div className="p-1.5">
             <MenuItem
@@ -317,18 +289,17 @@ function AccountMenu({
             />
             <MenuItem
               icon={<UserIcon className="h-4 w-4" />}
-              label="Profile & API keys"
+              label="Account"
               onClick={() => {
                 setOpen(false);
                 void navigate({ to: '/profile' });
               }}
             />
           </div>
-          <div className="border-t border-white/[0.06] p-1.5">
+          <div className="border-t border-ink-700 p-1.5">
             <MenuItem
               icon={<LogOut className="h-4 w-4" />}
               label="Sign out"
-              danger
               onClick={() => {
                 setOpen(false);
                 onSignOut();
@@ -345,22 +316,16 @@ function MenuItem({
   icon,
   label,
   onClick,
-  danger = false,
 }: {
   icon: React.ReactNode;
   label: string;
   onClick: () => void;
-  danger?: boolean;
 }) {
   return (
     <button
       role="menuitem"
       onClick={onClick}
-      className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${
-        danger
-          ? 'text-rose-300 hover:bg-rose-500/10 hover:text-rose-200'
-          : 'text-slate-300 hover:bg-white/[0.05] hover:text-white'
-      }`}
+      className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-slate-300 transition-colors hover:bg-white/[0.05] hover:text-white [&>svg]:text-slate-500"
     >
       {icon}
       {label}
@@ -369,90 +334,91 @@ function MenuItem({
 }
 
 /**
- * The one search box (hub ADR-009): an exact `@person` or `@person/peko`
- * ID, or words to search seeds by. Results on `/search`.
+ * The header's search box, like GitHub's: it searches seeds, with results on
+ * `/search`, and shows the query while you are there. `shortcut`: `/`
+ * focuses it from anywhere but a text field.
  */
-function NavSearch({ className = '', onSearched }: { className?: string; onSearched?: () => void }) {
+function NavSearch({
+  className = '',
+  onSearched,
+  shortcut = false,
+}: {
+  className?: string;
+  onSearched?: () => void;
+  shortcut?: boolean;
+}) {
   const navigate = useNavigate();
-  const [value, setValue] = useState('');
+  const current = useRouterState({
+    select: (state) =>
+      state.location.pathname === '/search' ? ((state.location.search as { q?: string }).q ?? '') : '',
+  });
+  const [value, setValue] = useState(current);
+  const input = useRef<HTMLInputElement>(null);
+
+  useEffect(() => setValue(current), [current]);
+
+  useEffect(() => {
+    if (!shortcut) return;
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const typing = target?.closest('input, textarea, select, [contenteditable="true"]');
+      if (event.key === '/' && !typing && !event.metaKey && !event.ctrlKey) {
+        event.preventDefault();
+        input.current?.focus();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [shortcut]);
+
   return (
     <form
       role="search"
-      className={`relative ${className}`}
+      className={`group relative ${className}`}
       onSubmit={(event) => {
         event.preventDefault();
         const q = value.trim();
         if (!q) return;
-        setValue('');
+        input.current?.blur();
         onSearched?.();
         void navigate({ to: '/search', search: { q } });
       }}
     >
       <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" aria-hidden />
       <input
+        ref={input}
         type="search"
         value={value}
         onChange={(event) => setValue(event.target.value)}
-        placeholder="@alice/ada, or search seeds"
-        aria-label="Search PekoHub"
-        className="input h-8 py-1 pl-8 text-[13px]"
+        placeholder="Search seeds"
+        aria-label="Search seeds"
+        className="input h-8 border-ink-700 bg-ink-900/70 py-1 pl-8 pr-8 text-[13px]"
       />
+      {shortcut && !value && (
+        <kbd className="kbd pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 group-focus-within:hidden">/</kbd>
+      )}
     </form>
   );
 }
 
 function SiteFooter() {
   return (
-    <footer className="relative mt-20 border-t border-white/[0.06] bg-ink-950/60">
-      <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
-        <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-5">
-          <div className="lg:col-span-2">
-            <div className="flex items-center gap-2.5">
-              <LogoMark />
-              <span className="text-[15px] font-semibold tracking-tight text-slate-100">
-                Peko<span className="grad-text">Hub</span>
-              </span>
-            </div>
-            <p className="lede mt-4 max-w-sm">
-              Grow a peko from a seed, find people and pekos by their ID, and open them in
-              Peko.
-            </p>
-          </div>
-
-          <FooterColumn title="Product">
-            <FooterLink to="/download">Download</FooterLink>
-            <FooterLink to="/seeds">Seeds</FooterLink>
-          </FooterColumn>
-
-          <FooterColumn title="Resources">
-            <FooterAnchor href={GETTING_STARTED_URL}>Getting started</FooterAnchor>
-            <FooterAnchor href={DOCS_URL}>Docs</FooterAnchor>
-            <FooterAnchor href={RUNTIME_REPO_URL}>GitHub</FooterAnchor>
-            <FooterLink to="/status">Status</FooterLink>
-          </FooterColumn>
-
-          <FooterColumn title="Legal">
-            <FooterLink to="/terms">Terms</FooterLink>
-            <FooterLink to="/privacy">Privacy</FooterLink>
-          </FooterColumn>
+    <footer className="mt-24 border-t border-ink-700/70">
+      <div className="mx-auto flex max-w-6xl flex-col gap-6 px-5 py-10 sm:flex-row sm:items-center sm:justify-between sm:px-8">
+        <div className="flex items-center gap-2 text-sm text-slate-500">
+          <LogoMark />
+          <span>© {new Date().getFullYear()} ConekoAI</span>
         </div>
-
-        <div className="mt-10 flex flex-col items-start justify-between gap-3 border-t border-white/[0.06] pt-6 sm:flex-row sm:items-center">
-          <p className="font-mono text-2xs text-slate-600">
-            © {new Date().getFullYear()} ConekoAI · PekoHub
-          </p>
-        </div>
+        <nav className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
+          <FooterLink to="/download">Download</FooterLink>
+          <FooterAnchor href={GETTING_STARTED_URL}>Getting started</FooterAnchor>
+          <FooterAnchor href={DOCS_URL}>Docs</FooterAnchor>
+          <FooterLink to="/status">Status</FooterLink>
+          <FooterLink to="/terms">Terms</FooterLink>
+          <FooterLink to="/privacy">Privacy</FooterLink>
+        </nav>
       </div>
     </footer>
-  );
-}
-
-function FooterColumn({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <p className="eyebrow">{title}</p>
-      <ul className="mt-4 space-y-2.5">{children}</ul>
-    </div>
   );
 }
 
@@ -460,29 +426,25 @@ function FooterLink({
   to,
   children,
 }: {
-  to: '/seeds' | '/download' | '/status' | '/terms' | '/privacy';
+  to: '/download' | '/status' | '/terms' | '/privacy';
   children: React.ReactNode;
 }) {
   return (
-    <li>
-      <Link to={to} className="text-sm text-slate-400 transition-colors hover:text-peko-200">
-        {children}
-      </Link>
-    </li>
+    <Link to={to} className="text-slate-500 transition-colors hover:text-slate-200">
+      {children}
+    </Link>
   );
 }
 
 function FooterAnchor({ href, children }: { href: string; children: React.ReactNode }) {
   return (
-    <li>
-      <a
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-sm text-slate-400 transition-colors hover:text-peko-200"
-      >
-        {children}
-      </a>
-    </li>
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-slate-500 transition-colors hover:text-slate-200"
+    >
+      {children}
+    </a>
   );
 }

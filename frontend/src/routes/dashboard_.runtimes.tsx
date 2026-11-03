@@ -11,7 +11,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Cpu, RefreshCw } from 'lucide-react';
 import { api } from '~/lib/api';
 import { AppShell } from '~/components/AppShell';
-import { EmptyState, ErrorNote, Spinner, StatusDot } from '~/components/ui';
+import { EmptyState, Loading, Spinner, StatusDot, Unavailable } from '~/components/ui';
+import { PageHeader } from '~/components/PageShell';
 import { relativeTime } from '~/lib/format';
 
 export const Route = createFileRoute('/dashboard_/runtimes')({
@@ -33,80 +34,72 @@ function RuntimesPage() {
 
   return (
     <AppShell>
-      <div className="mb-8 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="eyebrow mb-2.5">console</p>
-          <h1 className="display text-2xl sm:text-[28px]">Runtimes</h1>
-          <p className="lede mt-2 max-w-2xl">
-            The computers your pekos run on. A runtime registered here can put its pekos online.
-          </p>
-        </div>
-        <button
-          onClick={() => void runtimes.refetch()}
-          disabled={runtimes.isFetching}
-          className="btn-secondary btn-sm"
-        >
-          {runtimes.isFetching ? <Spinner className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />}
-          Refresh
-        </button>
-      </div>
+      <PageHeader
+        title="Runtimes"
+        action={
+          <button
+            onClick={() => void runtimes.refetch()}
+            disabled={runtimes.isFetching}
+            className="btn-icon"
+            aria-label="Refresh"
+            title="Refresh"
+          >
+            {runtimes.isFetching ? <Spinner className="h-4 w-4" /> : <RefreshCw className="h-4 w-4" />}
+          </button>
+        }
+      />
 
-      {runtimes.isLoading ? (
-        <div className="flex items-center justify-center gap-2.5 py-12 text-sm text-slate-500">
-          <Spinner className="h-4 w-4" />
-          Loading runtimes…
-        </div>
-      ) : runtimes.isError ? (
-        <ErrorNote>PekoHub isn&apos;t answering right now. Try again in a moment.</ErrorNote>
-      ) : rows.length === 0 ? (
-        <EmptyState
-          icon={<Cpu className="h-5 w-5" />}
-          title="No computers registered yet"
-          body={
-            <>
-              Sign in to PekoHub from Peko desktop, or run{' '}
-              <code className="code-inline">peko runtime register</code> on the computer.
-            </>
-          }
-        />
-      ) : (
-        <ul className="divide-y divide-white/[0.06] overflow-hidden rounded-xl border border-white/[0.07] bg-ink-850/70">
-          {rows.map((runtime) => (
-            <li key={runtime.id} className="flex flex-wrap items-center gap-4 px-4 py-4" data-testid="runtime-row">
-              <StatusDot status={runtime.connected ? 'online' : 'offline'} />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-slate-200">
-                  {runtime.displayName ?? 'Peko runtime'}
-                  <span className="ml-2 text-2xs font-normal text-slate-500">
-                    {runtime.connected ? 'connected' : runtime.lastSeenAt ? `last seen ${relativeTime(runtime.lastSeenAt)}` : 'never connected'}
-                  </span>
-                </p>
-                <p className="truncate font-mono text-2xs text-slate-600" title={runtime.runtimeDid}>
-                  {runtime.runtimeDid}
-                </p>
-              </div>
-              <span className="font-mono text-2xs text-slate-500">
-                {runtime.pekoCount ?? 0} peko{runtime.pekoCount === 1 ? '' : 's'} online
-              </span>
-              <button
-                type="button"
-                disabled={unregister.isPending}
-                onClick={() => {
-                  const count = runtime.pekoCount ?? 0;
-                  const warning = count > 0 ? ` Its ${count} peko${count === 1 ? '' : 's'} will leave the directory.` : '';
-                  if (window.confirm(`Unregister this computer from PekoHub?${warning}`)) {
-                    unregister.mutate(runtime.runtimeDid);
-                  }
-                }}
-                className="btn-ghost btn-sm text-rose-300 hover:text-rose-200"
-              >
-                Unregister
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {unregister.isError && <p className="mt-3 text-2xs text-rose-300">{String(unregister.error)}</p>}
+      <div className="mt-8">
+        {runtimes.isLoading ? (
+          <Loading />
+        ) : runtimes.isError ? (
+          <Unavailable />
+        ) : rows.length === 0 ? (
+          <EmptyState
+            icon={<Cpu className="h-5 w-5" />}
+            title="No computers yet"
+            body="Sign in to PekoHub from Peko desktop."
+          />
+        ) : (
+          <ul className="rows">
+            {rows.map((runtime) => (
+              <li key={runtime.id} className="flex flex-wrap items-center gap-4 px-5 py-4" data-testid="runtime-row">
+                <StatusDot status={runtime.connected ? 'online' : 'offline'} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-slate-100" title={runtime.runtimeDid}>
+                    {runtime.displayName ?? 'Peko runtime'}
+                  </p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {runtime.connected
+                      ? 'connected'
+                      : runtime.lastSeenAt
+                        ? `last seen ${relativeTime(runtime.lastSeenAt)}`
+                        : 'never connected'}
+                  </p>
+                </div>
+                <span className="text-xs text-slate-500">
+                  {runtime.pekoCount ?? 0} peko{runtime.pekoCount === 1 ? '' : 's'} online
+                </span>
+                <button
+                  type="button"
+                  disabled={unregister.isPending}
+                  onClick={() => {
+                    const count = runtime.pekoCount ?? 0;
+                    const warning = count > 0 ? ` Its ${count} peko${count === 1 ? '' : 's'} will go offline.` : '';
+                    if (window.confirm(`Unregister this computer from PekoHub?${warning}`)) {
+                      unregister.mutate(runtime.runtimeDid);
+                    }
+                  }}
+                  className="btn-danger btn-sm"
+                >
+                  Unregister
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {unregister.isError && <p className="mt-3 text-xs text-rose-300">{String(unregister.error)}</p>}
+      </div>
     </AppShell>
   );
 }

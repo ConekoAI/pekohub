@@ -12,7 +12,10 @@ import { createTestQueryClient } from '~/test/utils';
  *  - pages are IDs (hub ADR-009): `/@alice` a person, `/@alice/ada` a
  *    peko, `/alice/ada` a seed; the old `/peko/*`, `/p/*`, `/seeds/*`,
  *    `/bundles/*`, `/templates/*` links still resolve;
- *  - there is no peko directory: `/pekos` and `/discover` go to search;
+ *  - there is no peko or seed directory: the header's search box finds
+ *    seeds only, results on `/search`, and `/seeds`, `/pekos` and
+ *    `/discover` land there (finding people and pekos by ID is the
+ *    desktop's job);
  *  - every page mounts without throwing.
  *
  * A page that renders here but throws in the browser is caught by the
@@ -52,10 +55,12 @@ describe('legacy URL redirects', () => {
     expect(router.state.location.pathname).toBe('/search');
   });
 
-  it('/pekos → /search, preserving the query (there is no peko directory)', async () => {
-    const router = await loadRouter('/pekos?q=ada');
-    expect(router.state.location.pathname).toBe('/search');
-    expect(router.state.location.search).toMatchObject({ q: 'ada' });
+  it('/seeds and /pekos → /search, preserving the query', async () => {
+    for (const from of ['/seeds?q=ada', '/pekos?q=ada']) {
+      const router = await loadRouter(from);
+      expect(router.state.location.pathname).toBe('/search');
+      expect(router.state.location.search).toMatchObject({ q: 'ada' });
+    }
   });
 
   it('/seeds/<owner>/<name> → /<owner>/<name>, the seed ID', async () => {
@@ -68,9 +73,9 @@ describe('legacy URL redirects', () => {
     expect((await loadRouter('/templates/alice/ada')).state.location.pathname).toBe('/alice/ada');
   });
 
-  it('bare /templates → /seeds (ADR-060)', async () => {
+  it('bare /templates → /search (ADR-060)', async () => {
     const router = await loadRouter('/templates');
-    expect(router.state.location.pathname).toBe('/seeds');
+    expect(router.state.location.pathname).toBe('/search');
   });
 
   it('/p/<owner>/<name> and /peko/<owner>/<name> → /@<owner>/<name>', async () => {
@@ -80,13 +85,16 @@ describe('legacy URL redirects', () => {
 });
 
 describe('page smoke tests', () => {
-  it('home leads to the desktop download and the seeds', async () => {
+  it('home leads to the desktop download and the agent setup', async () => {
     renderAt('/');
     expect(await screen.findByRole('heading', { name: /an ai of your own/i })).toBeInTheDocument();
     const downloads = screen.getAllByRole('link', { name: /download peko/i });
     expect(downloads.length).toBeGreaterThan(0);
     for (const link of downloads) expect(link).toHaveAttribute('href', '/download');
-    for (const link of screen.getAllByRole('link', { name: /browse seeds/i })) expect(link).toHaveAttribute('href', '/seeds');
+    expect(screen.getByRole('link', { name: /set up with your agent/i })).toHaveAttribute('href', '#agent');
+    expect(screen.getByTestId('agent-prompt')).toHaveTextContent('peko daemon start');
+    expect(screen.getByRole('button', { name: 'Copy prompt' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /browse seeds/i })).not.toBeInTheDocument();
     // The website offers no chat, and says nothing that suggests it.
     expect(screen.queryByText(/in the browser/i)).not.toBeInTheDocument();
   });
@@ -100,7 +108,8 @@ describe('page smoke tests', () => {
         'https://github.com/ConekoAI/peko-desktop/releases/latest',
       );
     }
-    expect(screen.getByText(/install\.sh \| bash/)).toBeInTheDocument();
+    expect(screen.getAllByText(/install\.sh \| bash/).length).toBeGreaterThan(0);
+    expect(screen.getByTestId('agent-prompt')).toBeInTheDocument();
   });
 
   it('/terms and /privacy render', async () => {
@@ -110,38 +119,28 @@ describe('page smoke tests', () => {
     expect(await screen.findByRole('heading', { name: 'Privacy' })).toBeInTheDocument();
   });
 
-  it('home shows seeds and no pekos (hub ADR-009)', async () => {
+  it('home browses nothing; the header search finds seeds (hub ADR-009)', async () => {
     renderAt('/');
-    expect(await screen.findByText('testuser/ada')).toBeInTheDocument();
-    expect(screen.queryByText(/made public/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /^pekos$/i })).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /know someone's id/i })).toBeInTheDocument();
+    await screen.findByRole('heading', { name: /an ai of your own/i });
+    expect(screen.queryByText('testuser/ada')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /^(pekos|seeds)$/i })).not.toBeInTheDocument();
+    const search = screen.getAllByRole('searchbox', { name: 'Search seeds' });
+    expect(search.length).toBeGreaterThan(0);
+    expect(screen.queryByText(/someone's id/i)).not.toBeInTheDocument();
   });
 
-  it('/search finds a person by exact handle, labelled as a person', async () => {
-    renderAt('/search?q=%40testuser');
-    const card = await screen.findByRole('link', { name: /Test User/ });
-    expect(card).toHaveAttribute('href', '/@testuser');
-    expect(within(card).getByText('person')).toBeInTheDocument();
-  });
-
-  it('/search finds a public peko by exact ID, labelled as a peko', async () => {
-    renderAt('/search?q=%40testuser%2Fada');
-    const card = await screen.findByRole('link', { name: /Ada/ });
-    expect(card).toHaveAttribute('href', '/@testuser/ada');
-    expect(within(card).getByText('peko')).toBeInTheDocument();
-  });
-
-  it('/search says when no one public has an ID', async () => {
-    renderAt('/search?q=%40nobody%2Fx');
-    expect(await screen.findByText('No one public is @nobody/x')).toBeInTheDocument();
-  });
-
-  it('/search searches seeds by text, labelled as seeds', async () => {
+  it('/search?q= searches seeds by text, and the header box shows the query', async () => {
     renderAt('/search?q=notes');
     const card = await screen.findByRole('link', { name: /my-peko/ });
     expect(card).toHaveAttribute('href', '/testuser/my-peko');
-    expect(within(card).getByText('seed')).toBeInTheDocument();
+    expect(screen.getAllByRole('searchbox', { name: 'Search seeds' })[0]).toHaveValue('notes');
+  });
+
+  it('/search?q=@handle finds that person\'s seeds, never the person', async () => {
+    renderAt('/search?q=%40testuser');
+    expect(await screen.findByRole('link', { name: /my-peko/ })).toBeInTheDocument();
+    expect(screen.queryByText('person')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Test User/ })).not.toBeInTheDocument();
   });
 
   it('/@<handle> shows the person and their seeds, not their pekos', async () => {
@@ -155,14 +154,6 @@ describe('page smoke tests', () => {
   it('/@<unknown handle> is not found', async () => {
     renderAt('/@nobody');
     expect(await screen.findByText('Nothing lives at this address')).toBeInTheDocument();
-  });
-
-  it('/seeds lists seeds newest first', async () => {
-    renderAt('/seeds');
-    expect(await screen.findByRole('heading', { name: 'Seeds' })).toBeInTheDocument();
-    expect(await screen.findByText('Ada')).toBeInTheDocument();
-    expect(screen.getByText('testuser/ada')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Publish a seed/ })).toBeInTheDocument();
   });
 
   it('/<owner>/<name> shows the seed: the download and the create command', async () => {

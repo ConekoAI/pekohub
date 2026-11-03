@@ -3,14 +3,14 @@ import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ArrowLeft, Cpu, Download, FileCode2, GitBranch, Terminal, Trash2 } from 'lucide-react';
+import { ChevronDown, Download } from 'lucide-react';
 import { parseHubRef } from '@pekohub/shared';
 import { api, isApiError, type SeedDetail } from '~/lib/api';
 import { useAuth } from '~/hooks/useAuth';
 import { useSeed } from '~/hooks/useSeed';
-import { compactNumber, formatBytes, formatDate, relativeTime, shortDigest } from '~/lib/format';
+import { compactNumber, formatDate, relativeTime } from '~/lib/format';
 import { PageShell } from '~/components/PageShell';
-import { Avatar, Badge, CopyButton, ErrorNote, Spinner, Stat } from '~/components/ui';
+import { Avatar, Badge, CopyField, Loading, Tile, Unavailable } from '~/components/ui';
 
 /**
  * Seed detail — `/alice/ada`, the seed's ID (hub ADR-009); a version,
@@ -40,10 +40,7 @@ function SeedDetailPage() {
   if (seed.isLoading) {
     return (
       <PageShell width="default">
-        <div className="flex items-center justify-center gap-2.5 py-32 text-sm text-slate-500">
-          <Spinner className="h-4 w-4" />
-          Loading seed…
-        </div>
+        <Loading />
       </PageShell>
     );
   }
@@ -51,7 +48,7 @@ function SeedDetailPage() {
     if (isApiError(seed.error) && seed.error.status === 404) throw notFound();
     return (
       <PageShell width="default">
-        <ErrorNote>PekoHub isn&apos;t answering right now. Try again in a moment.</ErrorNote>
+        <Unavailable />
       </PageShell>
     );
   }
@@ -96,100 +93,57 @@ function SeedBody({ data, version }: { data: SeedDetail; version: string }) {
 
   return (
     <>
-      <Link
-        to="/seeds"
-        className="inline-flex items-center gap-1.5 font-mono text-2xs text-slate-500 transition-colors hover:text-peko-300"
-      >
-        <ArrowLeft className="h-3 w-3" />
-        all seeds
-      </Link>
-
-      <header className="mt-5 flex flex-wrap items-start gap-4">
-        <span className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-2xl border border-iris-400/25 bg-iris-400/[0.07] text-2xl">
-          {data.avatar ?? <span className="font-mono text-base text-iris-300">{data.name.slice(0, 2)}</span>}
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <h1 className="display truncate text-2xl">{data.displayName ?? data.name}</h1>
-            <Badge tone="iris">seed</Badge>
-          </div>
-          <p className="mt-1 font-mono text-2xs text-slate-500">
-            {owner}/{data.name} · v{version}
-          </p>
-          <div className="mt-2.5 flex items-center gap-2">
-            <Avatar name={data.owner.displayName} src={data.owner.avatarUrl} size="xs" />
-            <span className="text-[13px] text-slate-400">
-              published by{' '}
-              <Link to="/@{$owner}" params={{ owner }} className="font-medium text-slate-300 hover:text-peko-200">
-                {data.owner.displayName}
-              </Link>
+      <header className="flex flex-wrap items-start gap-5">
+        <Tile avatar={data.avatar} name={data.name} size="lg" />
+        <div className="min-w-[13rem] flex-1">
+          <h1 className="h-page truncate">{data.displayName ?? data.name}</h1>
+          <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-500">
+            <span className="font-mono text-[13px]">
+              {owner}/{data.name}
             </span>
-          </div>
+            <span aria-hidden>·</span>
+            <Link to="/@{$owner}" params={{ owner }} className="inline-flex items-center gap-1.5 whitespace-nowrap hover:text-slate-200">
+              <Avatar name={data.owner.displayName} src={data.owner.avatarUrl} size="xs" />
+              {data.owner.displayName}
+            </Link>
+          </p>
         </div>
+        <a href={downloadUrl} download={fileName} className="btn-primary w-full sm:w-auto">
+          <Download className="h-4 w-4" />
+          Download v{version}
+        </a>
       </header>
 
-      {data.description && (
-        <p className="mt-5 max-w-2xl text-sm leading-relaxed text-slate-300">{data.description}</p>
-      )}
+      {data.description && <p className="mt-6 max-w-2xl text-[15px] leading-relaxed text-slate-300">{data.description}</p>}
 
-      <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <div className="min-w-0 space-y-6">
-          <section className="panel p-6">
-            <h2 className="flex items-center gap-2 text-[15px] font-semibold text-slate-100">
-              <Terminal className="h-4 w-4 text-peko-300" />
-              Grow a peko from this seed
-            </h2>
-            <ol className="mt-4 space-y-4 text-[13px] text-slate-400">
-              <li>
-                <p>
-                  <span className="mr-2 font-mono text-slate-600">1</span>Download{' '}
-                  <span className="font-mono text-slate-300">{fileName}</span>
-                </p>
-                <a href={downloadUrl} download={fileName} className="btn-secondary btn-sm mt-2">
-                  <Download className="h-3.5 w-3.5" />
-                  Download v{version}
-                </a>
-              </li>
-              <li>
-                <p>
-                  <span className="mr-2 font-mono text-slate-600">2</span>Create your peko from it — it
-                  gets a new identity, and you own it
-                </p>
-                <div className="mt-2 flex items-center gap-2">
-                  <code className="code-block flex-1 text-xs">{data.createCommand}</code>
-                  <CopyButton value={data.createCommand} label="Copy" className="btn-ghost btn-sm" />
-                </div>
-                {data.model && (
-                  <p className="mt-2 flex items-center gap-1.5 text-2xs text-slate-500">
-                    <Cpu className="h-3 w-3" />
-                    Written for <span className="font-mono text-slate-400">{data.model}</span>. Add{' '}
-                    <code className="code-inline">--model</code> to use another.
-                  </p>
-                )}
-              </li>
-            </ol>
+      <div className="mt-10 grid gap-10 lg:grid-cols-[minmax(0,1fr)_16rem]">
+        <div className="min-w-0 space-y-10">
+          <section>
+            <h2 className="h-section mb-3">Grow a peko</h2>
+            <CopyField value={data.createCommand} />
+            {data.model && (
+              <p className="mt-2 text-xs text-slate-500">
+                Written for <span className="text-slate-400">{data.model}</span>
+              </p>
+            )}
           </section>
 
           {data.readme && (
-            <section className="panel p-6">
-              <div className="markdown-body">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{data.readme}</ReactMarkdown>
-              </div>
+            <section className="markdown-body">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{data.readme}</ReactMarkdown>
             </section>
           )}
 
-          <section className="panel p-6">
+          <section className="border-t border-ink-700 pt-6">
             <button
               type="button"
               onClick={() => setShowToml((v) => !v)}
-              className="flex w-full items-center gap-2 text-left text-[15px] font-semibold text-slate-100"
+              className="flex items-center gap-1.5 text-sm text-slate-400 transition-colors hover:text-slate-100"
               aria-expanded={showToml}
             >
-              <FileCode2 className="h-4 w-4 text-iris-300" />
-              What&apos;s in it
-              <span className="ml-auto text-2xs font-normal text-slate-500">
-                {showToml ? 'Hide' : 'Show'} the TOML{version !== data.latestVersion ? ` of v${data.latestVersion}` : ''}
-              </span>
+              <ChevronDown className={`h-4 w-4 transition-transform ${showToml ? '' : '-rotate-90'}`} />
+              {fileName}
+              {version !== data.latestVersion && <span className="text-slate-600">(v{data.latestVersion})</span>}
             </button>
             {showToml && (
               <pre className="code-block mt-4 max-h-[28rem] overflow-auto whitespace-pre text-xs">{data.content}</pre>
@@ -197,40 +151,40 @@ function SeedBody({ data, version }: { data: SeedDetail; version: string }) {
           </section>
         </div>
 
-        <aside className="space-y-6">
-          <div className="grid grid-cols-2 gap-3">
-            <Stat label="downloads" value={compactNumber(data.pullCount.allTime)} />
-            <Stat label="this week" value={compactNumber(data.pullCount.weekly)} />
-          </div>
+        <aside className="space-y-8 text-sm">
+          <dl className="grid grid-cols-2 gap-4">
+            <div>
+              <dt className="text-xs text-slate-500">Downloads</dt>
+              <dd className="mt-1 text-lg font-semibold text-slate-100">{compactNumber(data.pullCount.allTime)}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-slate-500">This week</dt>
+              <dd className="mt-1 text-lg font-semibold text-slate-100">{compactNumber(data.pullCount.weekly)}</dd>
+            </div>
+          </dl>
 
-          <section className="panel p-5">
-            <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-100">
-              <GitBranch className="h-4 w-4 text-slate-400" />
-              Versions
-            </h2>
-            {error && <p className="mt-3 text-2xs text-rose-300">{error}</p>}
-            <ul className="mt-3 divide-y divide-white/[0.05]">
+          <section>
+            <h2 className="mb-2 text-xs text-slate-500">Versions</h2>
+            {error && <p className="mb-2 text-xs text-rose-300">{error}</p>}
+            <ul className="divide-y divide-ink-700">
               {data.versions.map((v) => (
                 <li key={v.version} className="py-2.5">
                   <div className="flex items-center gap-2">
                     <Link
                       to="/$owner/$name"
                       params={{ owner, name: `${data.name}@${v.version}` }}
-                      className={`font-mono text-[13px] hover:text-peko-200 ${v.version === version ? 'text-peko-200' : 'text-slate-200'}`}
+                      className={`font-mono text-[13px] hover:text-peko-200 ${v.version === version ? 'text-peko-300' : 'text-slate-300'}`}
                     >
-                      v{v.version}
+                      {v.version}
                     </Link>
-                    {v.deprecated && <Badge tone="warn">deprecated</Badge>}
-                    <span className="ml-auto text-2xs text-slate-500" title={formatDate(v.createdAt)}>
+                    {v.deprecated && <Badge>deprecated</Badge>}
+                    <span className="ml-auto text-xs text-slate-500" title={formatDate(v.createdAt)}>
                       {relativeTime(v.createdAt)}
                     </span>
                   </div>
-                  <p className="mt-0.5 font-mono text-2xs text-slate-600">
-                    {shortDigest(v.digest)} · {formatBytes(v.size)}
-                  </p>
-                  {v.deprecatedMessage && <p className="mt-1 text-2xs text-amber-200/70">{v.deprecatedMessage}</p>}
+                  {v.deprecatedMessage && <p className="mt-1 text-xs text-slate-500">{v.deprecatedMessage}</p>}
                   {isPublisher && (
-                    <div className="mt-1.5 flex gap-3 text-2xs">
+                    <div className="mt-1 flex gap-3 text-xs">
                       <button
                         type="button"
                         disabled={busy !== null}
@@ -239,7 +193,7 @@ function SeedBody({ data, version }: { data: SeedDetail; version: string }) {
                             api.setSeedVersionDeprecated(owner, data.name, v.version, !v.deprecated),
                           )
                         }
-                        className="text-slate-500 hover:text-slate-300"
+                        className="text-slate-500 hover:text-slate-200"
                       >
                         {v.deprecated ? 'Undeprecate' : 'Deprecate'}
                       </button>
@@ -264,8 +218,8 @@ function SeedBody({ data, version }: { data: SeedDetail; version: string }) {
           </section>
 
           {isPublisher && (
-            <section className="panel space-y-2.5 p-5">
-              <Link to="/seeds/new" className="btn-secondary btn-sm w-full justify-center">
+            <section className="flex flex-col items-start gap-1 border-t border-ink-700 pt-6">
+              <Link to="/seeds/new" className="btn-ghost btn-sm -ml-2.5">
                 Publish a new version
               </Link>
               <button
@@ -274,12 +228,11 @@ function SeedBody({ data, version }: { data: SeedDetail; version: string }) {
                 onClick={() => {
                   if (!window.confirm(`Delete ${owner}/${data.name} and every version? This can't be undone.`)) return;
                   void run('delete:seed', () => api.deleteSeed(owner, data.name), () =>
-                    void navigate({ to: '/seeds' }),
+                    void navigate({ to: '/dashboard/seeds' }),
                   );
                 }}
-                className="btn-ghost btn-sm w-full justify-center text-rose-300 hover:text-rose-200"
+                className="btn-danger btn-sm -ml-2.5"
               >
-                <Trash2 className="h-3.5 w-3.5" />
                 Delete seed
               </button>
             </section>

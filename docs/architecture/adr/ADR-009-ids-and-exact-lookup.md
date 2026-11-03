@@ -105,3 +105,17 @@ results on `/search`, each labelled person, peko or seed.
 - Pages Functions: Pages routes every two-segment path, `/@…` included, to
   `functions/[owner]/[name].ts`, which branches on the `@`. `/@owner` has its own
   `functions/@[owner]/index.ts`. `_routes.json` keeps built assets off Functions.
+
+## Amendment (2026-11-03): the website searches seeds only, from the header
+
+People talk on the desktop, so that is where they look someone up. The website has no
+directory of anything: no peko list (D2) and no seed list either, since nothing on it is
+useful before Peko is installed. One search box sits in the header, like GitHub's (`/`
+focuses it). It searches seeds only, with results on `/search?q=`, and never shows a
+person or a peko. A leading `@` is dropped, so `@alice` finds alice's seeds, and an exact
+seed ID (`alice/ada`) comes first. `/seeds`, `/pekos` and `/discover` redirect to
+`/search`. A person's page (`/@alice`) is reached from their seeds; a peko's page from its
+share link.
+
+`GET /v1/search` is unchanged: the desktop still uses its `exact` hits to find a person or
+a peko by ID and add them as a contact.
