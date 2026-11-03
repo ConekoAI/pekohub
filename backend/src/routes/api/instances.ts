@@ -52,42 +52,6 @@ const ListQuerySchema = z.object({
   per_page: z.coerce.number().min(1).max(100).default(20),
 });
 
-const CreateBodySchema = z.object({
-  id: z.string().uuid().optional(),
-  type: z.enum(["principal"]),
-  name: z.string().min(1).max(255),
-  runtime_id: z.string().min(1).max(255),
-  runtime_display_name: z.string().max(255).optional(),
-  bundle_ref: z.string().max(255).optional(),
-  status: z.enum(["online", "offline", "busy", "error"]).optional(),
-  exposure: z.enum(["private", "public", "local_only"]).optional(),
-  // Post-H4: allowedPrincipals request field is gone. The runtime
-  // owns the ACL surface (R4); pekohub only knows the public-vs-
-  // private exposure switch.
-  capabilities: z.array(z.string()).optional(),
-  metadata: z.record(z.unknown()).optional(),
-
-  // Public profile
-  public_name: z.string().max(255).optional(),
-  description: z.string().optional(),
-  tags: z.array(z.string()).optional(),
-  category: z
-    .enum([
-      "productivity",
-      "coding",
-      "creative",
-      "business",
-      "entertainment",
-      "education",
-      "other",
-    ])
-    .optional(),
-  tos_required: z.boolean().optional(),
-  tos_text: z.string().optional(),
-  daily_quota: z.coerce.number().int().nonnegative().optional(),
-  weekly_quota: z.coerce.number().int().nonnegative().optional(),
-});
-
 const UpdateBodySchema = z.object({
   name: z.string().min(1).max(255).optional(),
   runtime_display_name: z.string().max(255).optional(),
@@ -240,50 +204,10 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
     return instance;
   });
 
-  // ── Register a new instance ────────────────────────────────────────────────
-  fastify.post(
-    "/instances",
-    { preHandler: [authenticateOrDevBypass] },
-    async (request, reply) => {
-      const user = request.user;
-      const body = CreateBodySchema.safeParse(request.body);
-      if (!body.success) {
-        return reply
-          .status(400)
-          .send({
-            error: "Invalid request body",
-            details: body.error.format(),
-          });
-      }
-
-      if (body.data.exposure && body.data.exposure !== "local_only") {
-        return reply.status(400).send({error: "Register the principal from its runtime before enabling Hub access"});
-      }
-      const instance = await instanceService.create({
-        id: body.data.id,
-        type: body.data.type,
-        name: body.data.name,
-        ownerSubject: { kind: "user", id: String(user.id) },
-        runtimeId: body.data.runtime_id,
-        runtimeDisplayName: body.data.runtime_display_name,
-        bundleRef: body.data.bundle_ref,
-        status: body.data.status,
-        exposure: body.data.exposure,
-        capabilities: body.data.capabilities,
-        metadata: body.data.metadata,
-        publicName: body.data.public_name,
-        description: body.data.description,
-        tags: body.data.tags,
-        category: body.data.category,
-        tosRequired: body.data.tos_required,
-        tosText: body.data.tos_text,
-        dailyQuota: body.data.daily_quota,
-        weeklyQuota: body.data.weekly_quota,
-      });
-
-      return reply.status(201).send(instance);
-    },
-  );
+  // No `POST /instances`: a peko's row is made only by its runtime's
+  // announce over the tunnel, which proves the runtime and the peko's key.
+  // A row made here could take a peko's ID — runtimes derive it from their
+  // DID and the peko's name — and block its registration for good.
 
   // ── Update instance ────────────────────────────────────────────────────────
   fastify.patch(

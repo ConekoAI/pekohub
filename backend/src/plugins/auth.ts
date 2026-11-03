@@ -49,6 +49,14 @@ declare module "fastify" {
 
 const REFRESH_TOKEN_BYTES = 64;
 const REFRESH_TOKEN_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+/**
+ * A token rotated this recently still refreshes, as long as the token that
+ * replaced it is live. Two refreshes racing (two website tabs, two desktop
+ * calls) or a response lost on the way back present the old token again;
+ * that is not theft, and treating it as theft signs the person out of
+ * every app at once.
+ */
+export const REFRESH_REUSE_GRACE_MS = 30_000;
 
 function generateRefreshTokenValue(): string {
   const array = new Uint8Array(REFRESH_TOKEN_BYTES);
@@ -202,6 +210,22 @@ async function authPlugin(fastify: FastifyInstance) {
     for (const candidate of revokedCandidates) {
       const match = await bcrypt.compare(token, candidate.tokenHash);
       if (match) {
+        if (
+          candidate.revokedAt!.getTime() > now.getTime() - REFRESH_REUSE_GRACE_MS &&
+          (await db.query.refreshTokens.findFirst({
+            where: and(
+              eq(refreshTokens.rotatedFrom, candidate.id),
+              isNull(refreshTokens.revokedAt),
+              gt(refreshTokens.expiresAt, now),
+            ),
+          }))
+        ) {
+          return {
+            id: candidate.id,
+            userId: candidate.userId,
+            clientId: candidate.clientId ?? null,
+          };
+        }
         // Token reuse detected — revoke all tokens for this user atomically
         await db
           .update(refreshTokens)

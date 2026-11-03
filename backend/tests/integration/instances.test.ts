@@ -258,7 +258,7 @@ describe("Instance API", () => {
   });
 
   describe("POST /v1/instances", () => {
-    it("should create a new instance", async () => {
+    it("is gone: a peko's row comes only from its runtime's announce", async () => {
       const app = await buildTestApp({ testDb });
       const user = await createUser(testDb.client, { namespace: "alice" });
       const headers = await authHeaders(user);
@@ -268,33 +268,15 @@ describe("Instance API", () => {
         url: "/v1/instances",
         headers,
         payload: {
+          id: "6f1c1f8e-3b7a-5c1d-9a52-1f0b6a3c2d4e",
           type: "principal",
-          name: "new-agent",
-          runtime_id: "runtime-abc",
-          exposure: "local_only",
+          name: "ada",
+          runtime_id: "did:key:z6MkSquatter",
         },
       });
 
-      expect(response.statusCode).toBe(201);
-      const body = JSON.parse(response.payload);
-      expect(body.name).toBe("new-agent");
-      expect(body.type).toBe("principal");
-      expect(body.runtimeId).toBe("runtime-abc");
-      expect(body.exposure).toBe("local_only");
-    });
-
-    it("should return 401 when not authenticated", async () => {
-      const app = await buildTestApp({ testDb });
-      const response = await app.inject({
-        method: "POST",
-        url: "/v1/instances",
-        payload: {
-          type: "principal",
-          name: "new-agent",
-          runtime_id: "runtime-abc",
-        },
-      });
-      expect(response.statusCode).toBe(401);
+      expect(response.statusCode).toBe(404);
+      expect(await testDb.client.query("SELECT 1 FROM instances")).toMatchObject({ rows: [] });
     });
   });
 

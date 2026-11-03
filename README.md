@@ -155,7 +155,6 @@ Website pages are IDs (ADR-009): `/@alice` (a person), `/@alice/ada` (a peko), `
 |----------|-------------|
 | `GET /v1/instances` | List instances owned by the caller (any exposure). |
 | `GET /v1/me/accessible-pekos` | Same, with rich per-instance metadata. |
-| `POST /v1/instances` | Create a new instance. |
 | `GET /v1/instances/:id` | Read instance metadata. |
 | `PATCH /v1/instances/:id` | Update name / description / tags / category / `tosRequired` / `tosText`. |
 | `PATCH /v1/instances/:id/exposure` | Body `{ exposure }`. Pushes `exposure_update` down the tunnel; runtime persists to `principal.toml`. 409 on an ADR-056 D7 conflict (another instance with the same DID already public/unlisted). |

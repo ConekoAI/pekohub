@@ -260,13 +260,21 @@ describe("OAuth authorization server", () => {
     expect(rotated.statusCode).toBe(200);
     expect(rotated.json().refresh_token).not.toBe(first.refresh_token);
 
-    // The old token is spent.
-    const reuse = await app.inject({
+    // A refresh racing that one (or a retry after a lost response) presents
+    // the old token again moments later: it still refreshes, and the
+    // session it raced stays signed in.
+    const raced = await app.inject({
       method: "POST",
       url: "/oauth/token",
       ...form({ grant_type: "refresh_token", client_id: "peko-desktop", refresh_token: first.refresh_token }),
     });
-    expect(reuse.json().error).toBe("invalid_grant");
+    expect(raced.statusCode).toBe(200);
+    const racedAgain = await app.inject({
+      method: "POST",
+      url: "/oauth/token",
+      ...form({ grant_type: "refresh_token", client_id: "peko-desktop", refresh_token: raced.json().refresh_token }),
+    });
+    expect(racedAgain.statusCode).toBe(200);
 
     // Revocation (sign out) ends the session.
     const second = rotated.json().refresh_token;
@@ -282,6 +290,38 @@ describe("OAuth authorization server", () => {
       ...form({ grant_type: "refresh_token", client_id: "peko-desktop", refresh_token: second }),
     });
     expect(afterRevoke.json().error).toBe("invalid_grant");
+  });
+
+  it("a spent token presented after its successor moved on signs the account out everywhere", async () => {
+    const user = await createUser(testDb.client, { namespace: "alice" });
+    const { verifier, challenge } = pkce();
+    const code = await authorizeAndApprove(challenge, await authHeaders(user));
+    const refresh = (refresh_token: string) =>
+      app.inject({
+        method: "POST",
+        url: "/oauth/token",
+        ...form({ grant_type: "refresh_token", client_id: "peko-desktop", refresh_token }),
+      });
+    const first = (
+      await app.inject({
+        method: "POST",
+        url: "/oauth/token",
+        ...form({
+          grant_type: "authorization_code",
+          client_id: "peko-desktop",
+          code,
+          redirect_uri: REDIRECT,
+          code_verifier: verifier,
+        }),
+      })
+    ).json().refresh_token;
+    const second = (await refresh(first)).json().refresh_token;
+    const third = (await refresh(second)).json().refresh_token;
+
+    // `first` was replaced by `second`, which is itself spent: a copy of an
+    // old token is in someone else's hands.
+    expect((await refresh(first)).json().error).toBe("invalid_grant");
+    expect((await refresh(third)).json().error).toBe("invalid_grant");
   });
 
   it("CLI: device authorization — pending, slow_down, approval, one-time tokens", async () => {

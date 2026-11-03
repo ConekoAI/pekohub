@@ -4,6 +4,7 @@ import { db } from "../../db/index.js";
 import { users, refreshTokens } from "../../db/schema.js";
 import { eq, and, isNull, gt } from "drizzle-orm";
 import bcrypt from "bcryptjs";
+import { findOrCreateUser, type ProviderProfile } from "../../services/accounts.js";
 
 /**
  * OAuth 2.0 login flow + refresh-token endpoints
@@ -83,13 +84,7 @@ export default async function oauthRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ error: "Invalid OAuth state" });
     }
 
-    let userInfo: {
-      id: string;
-      namespace: string;
-      name: string;
-      email?: string;
-      avatar?: string;
-    };
+    let profile: ProviderProfile;
 
     if (provider === "github" && github) {
       const tokens = await github.validateAuthorizationCode(code);
@@ -103,12 +98,13 @@ export default async function oauthRoutes(fastify: FastifyInstance) {
         email?: string;
         avatar_url?: string;
       };
-      userInfo = {
-        id: `github:${data.id}`,
-        namespace: data.login,
-        name: data.name ?? data.login,
+      profile = {
+        externalId: `github:${data.id}`,
+        provider,
+        suggestedHandle: data.login,
+        displayName: data.name ?? data.login,
         email: data.email,
-        avatar: data.avatar_url,
+        avatarUrl: data.avatar_url,
       };
     } else if (provider === "google" && google) {
       const codeVerifier = request.cookies.oauth_code_verifier;
@@ -128,36 +124,20 @@ export default async function oauthRoutes(fastify: FastifyInstance) {
         email?: string;
         picture?: string;
       };
-      userInfo = {
-        id: `google:${data.sub}`,
-        namespace: data.email?.split("@")[0] ?? data.sub,
-        name: data.name,
+      profile = {
+        externalId: `google:${data.sub}`,
+        provider,
+        suggestedHandle: data.email?.split("@")[0] ?? data.name ?? "user",
+        displayName: data.name,
         email: data.email,
-        avatar: data.picture,
+        avatarUrl: data.picture,
       };
     } else {
       return reply.status(400).send({ error: "Unsupported provider" });
     }
 
-    // Upsert user
-    let user = await db.query.users.findFirst({
-      where: eq(users.externalId, userInfo.id),
-    });
-
-    if (!user) {
-      const [inserted] = await db
-        .insert(users)
-        .values({
-          externalId: userInfo.id,
-          provider,
-          namespace: userInfo.namespace,
-          displayName: userInfo.name,
-          email: userInfo.email,
-          avatarUrl: userInfo.avatar,
-        })
-        .returning();
-      user = inserted;
-    }
+    // First sign-in makes the account, with a free, valid handle.
+    const user = await findOrCreateUser(profile);
 
     // Issue short-lived access JWT (15 minutes)
     const accessToken = await reply.jwtSign(
@@ -180,9 +160,11 @@ export default async function oauthRoutes(fastify: FastifyInstance) {
     // Clear legacy session cookie if present
     reply.clearCookie("pekohub_session", { path: "/" });
 
-    // Redirect to frontend
+    // Redirect to the website. The token rides the fragment, which the
+    // browser never sends to a server or in a Referer; the callback page
+    // removes it from the address bar and history.
     return reply.redirect(
-      `${fastify.config.FRONTEND_URL ?? fastify.config.REGISTRY_BASE_URL}/auth/callback?token=${accessToken}`,
+      `${fastify.config.FRONTEND_URL ?? fastify.config.REGISTRY_BASE_URL}/auth/callback#token=${encodeURIComponent(accessToken)}`,
     );
   });
 
