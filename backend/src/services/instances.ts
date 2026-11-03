@@ -1,6 +1,6 @@
 import { db } from "../db/index.js";
 import { instances, runtimes, users, hubPrincipals, principalMoveApprovals } from "../db/schema.js";
-import { eq, and, sql, desc, count, gte, lt, ne, inArray } from "drizzle-orm";
+import { eq, and, sql, desc, count, gte, lt, ne, inArray, isNull } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import {
   Subject,
@@ -753,8 +753,9 @@ export class InstanceService {
     owner: string,
     principalName: string,
   ): Promise<InstanceRecord | null> {
+    // A suspended account's pekos resolve for no one.
     const ownerRow = await db.query.users.findFirst({
-      where: eq(users.namespace, owner),
+      where: and(eq(users.namespace, owner), isNull(users.suspendedAt)),
     });
     if (!ownerRow) return null;
 

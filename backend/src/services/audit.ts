@@ -137,6 +137,26 @@ export class AuditService {
     }
   }
 
+  /** A moderator's action or decision; `resource` names what it touched. */
+  async logModeration(
+    action: string,
+    moderatorId: string,
+    resource: string,
+    details?: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      await db.insert(auditLogs).values({
+        namespace: "moderation",
+        userId: moderatorId,
+        action,
+        resource,
+        details: details ?? null,
+      });
+    } catch (err) {
+      this.logError("logModeration", err);
+    }
+  }
+
   async logSecurityEvent(
     action: string,
     userId: string | undefined,

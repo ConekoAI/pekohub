@@ -12,7 +12,7 @@
  * programming error.
  */
 
-import { and, desc, eq, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, isNull, or, sql, type SQL } from "drizzle-orm";
 import { bundles } from "../db/schema.js";
 import type { DB } from "../db/index.js";
 import type { SearchService } from "../plugins/search.js";
@@ -74,9 +74,11 @@ export function createPostgresSearch(db: DB): SearchService {
       // columns unqualified, and a bare "id" here would be the version's.
       const version = sql<string>`(select "bv"."version" from "bundle_versions" "bv"
         where "bv"."bundle_id" = "bundles"."id" and "bv"."content" is not null
+          and "bv"."yanked_at" is null
         order by "bv"."deprecated" asc, "bv"."created_at" desc limit 1)`;
       const where = and(
         sql`${version} is not null`,
+        isNull(bundles.hiddenAt),
         ...filterSql(options.filter, SEED_FILTERS),
         matchesWords(query, [
           sql`${bundles.name}`,

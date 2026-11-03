@@ -2,7 +2,7 @@ import fp from "fastify-plugin";
 import fastifyJwt from "@fastify/jwt";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { db } from "../db/index.js";
-import { users, apiKeys, refreshTokens } from "../db/schema.js";
+import { users, apiKeys, refreshTokens, USER_ROLES, type UserRole } from "../db/schema.js";
 import { eq, and, isNull, gt, isNotNull, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { auditService } from "../services/audit.js";
@@ -16,6 +16,42 @@ export interface AuthenticatedUser {
   displayName: string | null;
   email: string | null;
   avatarUrl: string | null;
+  role: UserRole;
+}
+
+/** A suspended account's credentials are refused everywhere. */
+export class AccountSuspendedError extends Error {
+  readonly statusCode = 403;
+  constructor() {
+    super("This account is suspended");
+  }
+}
+
+/** Thrown by `requireRole`; carries the status the error handler sends. */
+export class AuthorizationError extends Error {
+  constructor(
+    readonly statusCode: 401 | 403,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+/** Whether `role` can do what `required` can (roles are ordered). */
+export function hasRole(role: UserRole, required: UserRole): boolean {
+  return USER_ROLES.indexOf(role) >= USER_ROLES.indexOf(required);
+}
+
+function authenticatedUser(user: typeof users.$inferSelect): AuthenticatedUser {
+  if (user.suspendedAt) throw new AccountSuspendedError();
+  return {
+    id: user.id,
+    namespace: user.namespace,
+    displayName: user.displayName,
+    email: user.email,
+    avatarUrl: user.avatarUrl,
+    role: user.role,
+  };
 }
 
 declare module "@fastify/jwt" {
@@ -27,6 +63,11 @@ declare module "@fastify/jwt" {
 declare module "fastify" {
   interface FastifyInstance {
     authenticate: (request: FastifyRequest) => Promise<AuthenticatedUser>;
+    /**
+     * The signed-in user, if their role is at least `role`; otherwise
+     * throws an `AuthorizationError` (401 signed out, 403 not staff).
+     */
+    requireRole: (request: FastifyRequest, role: UserRole) => Promise<AuthenticatedUser>;
     // Post-H3: userId is a UUID string (was number).
     issueRefreshToken: (
       userId: string,
@@ -124,13 +165,7 @@ async function authPlugin(fastify: FastifyInstance) {
           throw new Error("User not found");
         }
 
-        return {
-          id: user.id,
-          namespace: user.namespace,
-          displayName: user.displayName,
-          email: user.email,
-          avatarUrl: user.avatarUrl,
-        };
+        return authenticatedUser(user);
       }
 
       // Otherwise treat as JWT access token. Post-H3 the `sub` claim
@@ -154,16 +189,24 @@ async function authPlugin(fastify: FastifyInstance) {
         throw new Error("User not found");
       }
 
-      return {
-        id: user.id,
-        namespace: user.namespace,
-        displayName: user.displayName,
-        email: user.email,
-        avatarUrl: user.avatarUrl,
-      };
+      return authenticatedUser(user);
     }
 
     throw new Error("Missing or invalid authorization");
+  });
+
+  fastify.decorate("requireRole", async (request: FastifyRequest, role: UserRole) => {
+    let user: AuthenticatedUser;
+    try {
+      user = await fastify.authenticate(request);
+    } catch (err) {
+      if (err instanceof AccountSuspendedError) throw err;
+      throw new AuthorizationError(401, "Sign in first");
+    }
+    if (!hasRole(user.role, role)) {
+      throw new AuthorizationError(403, "Forbidden");
+    }
+    return user;
   });
 
   // ── Refresh token helpers ───────────────────────────────────────────────────

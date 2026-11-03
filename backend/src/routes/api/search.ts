@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { and, desc, eq, isNotNull } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import {
   formatHubRef,
   parseHubRef,
@@ -9,7 +9,8 @@ import {
   type HubRef,
 } from "@pekohub/shared";
 import { db } from "../../db/index.js";
-import { bundles, bundleVersions, users } from "../../db/schema.js";
+import { users } from "../../db/schema.js";
+import { findSeed } from "../../services/seed-store.js";
 import { instanceService } from "../../services/instances.js";
 import { pekoUrl, personUrl, seedUrl } from "../../services/origins.js";
 
@@ -100,7 +101,7 @@ export default async function searchRoutes(fastify: FastifyInstance) {
     const { handle } = request.params as { handle: string };
     const ref = parseHubRef(`@${handle.replace(/^@/, "")}`);
     const user = ref?.kind === "person"
-      ? await db.query.users.findFirst({ where: eq(users.namespace, ref.handle) })
+      ? await db.query.users.findFirst({ where: shownPerson(ref.handle) })
       : null;
     if (!user) return reply.status(404).send({ error: "No one has that handle" });
     return {
@@ -133,8 +134,13 @@ async function exactHits(fastify: FastifyInstance, ref: HubRef): Promise<ExactHi
   }
 }
 
+/** A person by handle, unless their account is suspended. */
+function shownPerson(handle: string) {
+  return and(eq(users.namespace, handle), isNull(users.suspendedAt));
+}
+
 async function personHit(fastify: FastifyInstance, handle: string): Promise<ExactHit | null> {
-  const user = await db.query.users.findFirst({ where: eq(users.namespace, handle) });
+  const user = await db.query.users.findFirst({ where: shownPerson(handle) });
   return user ? personHitOf(fastify, user) : null;
 }
 
@@ -171,16 +177,10 @@ async function seedHit(
   name: string,
   version: string | undefined,
 ): Promise<ExactHit | null> {
-  const bundle = await db.query.bundles.findFirst({
-    where: and(eq(bundles.namespace, owner), eq(bundles.name, name)),
-  });
-  if (!bundle) return null;
-  // Published as text; the retired OCI rows stay hidden.
-  const versions = await db
-    .select({ version: bundleVersions.version, deprecated: bundleVersions.deprecated })
-    .from(bundleVersions)
-    .where(and(eq(bundleVersions.bundleId, bundle.id), isNotNull(bundleVersions.content)))
-    .orderBy(desc(bundleVersions.createdAt), desc(bundleVersions.id));
+  // As its page shows it: not hidden or yanked by a moderator.
+  const found = await findSeed(owner, name);
+  if (!found) return null;
+  const { bundle, versions } = found;
   const shown = version
     ? versions.find((v) => v.version === version)
     : (versions.find((v) => !v.deprecated) ?? versions[0]);

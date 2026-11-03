@@ -84,6 +84,7 @@ async function issueTokens(
 ) {
   const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
   if (!user) return oauthError(reply, 400, "invalid_grant", "The account no longer exists");
+  if (user.suspendedAt) return oauthError(reply, 400, "invalid_grant", "This account is suspended");
 
   const accessToken = fastify.jwt.sign(
     { sub: user.id, namespace: user.namespace, client_id: client.id },

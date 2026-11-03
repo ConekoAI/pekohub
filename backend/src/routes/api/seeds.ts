@@ -1,11 +1,12 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../../db/index.js";
 import { bundles, bundleVersions, pullStats, users } from "../../db/schema.js";
 import { auditService } from "../../services/audit.js";
 import { shouldRecordPullStats } from "../../services/throttle.js";
 import { apiOrigin, seedUrl } from "../../services/origins.js";
+import { findSeed, indexSeed, latestOf, unindexSeed } from "../../services/seed-store.js";
 import {
   MAX_README_BYTES,
   isValidSeedVersion,
@@ -42,24 +43,6 @@ const PublishBody = z.object({
 
 type Params = { owner: string; name: string; version?: string };
 
-/** Only seeds with content: rows from the retired OCI surface stay hidden. */
-async function findSeed(owner: string, name: string) {
-  const bundle = await db.query.bundles.findFirst({
-    where: and(eq(bundles.namespace, owner), eq(bundles.name, name)),
-  });
-  if (!bundle) return null;
-  const versions = await db.query.bundleVersions.findMany({
-    where: and(eq(bundleVersions.bundleId, bundle.id), isNotNull(bundleVersions.content)),
-    orderBy: (v, { desc }) => [desc(v.createdAt), desc(v.id)],
-  });
-  return versions.length > 0 ? { bundle, versions } : null;
-}
-
-/** The newest version that isn't deprecated, else the newest. */
-function latestOf<T extends { deprecated: boolean | null }>(versions: T[]): T {
-  return versions.find((v) => !v.deprecated) ?? versions[0];
-}
-
 async function signedIn(fastify: FastifyInstance, request: FastifyRequest) {
   try {
     return await fastify.authenticate(request);
@@ -76,38 +59,16 @@ function seedPaths(fastify: FastifyInstance, owner: string, name: string, versio
   };
 }
 
-async function indexSeed(
-  fastify: FastifyInstance,
-  bundle: typeof bundles.$inferSelect,
-  version: string,
-) {
-  try {
-    await fastify.search.indexBundle({
-      objectID: `${bundle.namespace}-${bundle.name}`,
-      namespace: bundle.namespace,
-      name: bundle.name,
-      version,
-      description: bundle.description ?? undefined,
-      author: bundle.author ?? bundle.namespace,
-      bundleType: "principal",
-      tags: bundle.tags ?? [],
-      pullCount: bundle.pullCount,
-      updatedAt: bundle.updatedAt.toISOString(),
-    });
-  } catch (err) {
-    fastify.log.warn({ err }, "seed indexing failed; the seed is published but not searchable yet");
-  }
-}
-
 export default async function seedRoutes(fastify: FastifyInstance) {
   // ── List ──────────────────────────────────────────────────────────────────
   fastify.get("/seeds", async (request) => {
     const q = request.query as { page?: string; perPage?: string; owner?: string };
     const page = Math.max(1, Number(q.page) || 1);
     const perPage = Math.min(100, Math.max(1, Number(q.perPage) || 24));
-    const hasContent = sql`exists (select 1 from ${bundleVersions} where ${bundleVersions.bundleId} = ${bundles.id} and ${bundleVersions.content} is not null)`;
+    const hasContent = sql`exists (select 1 from ${bundleVersions} where ${bundleVersions.bundleId} = ${bundles.id} and ${bundleVersions.content} is not null and ${bundleVersions.yankedAt} is null)`;
+    const shown = and(hasContent, isNull(bundles.hiddenAt))!;
     // `owner=<handle>`: one publisher's seeds (the owner console's list).
-    const published = q.owner ? and(hasContent, eq(bundles.namespace, q.owner))! : hasContent;
+    const published = q.owner ? and(shown, eq(bundles.namespace, q.owner))! : shown;
     const rows = await db
       .select()
       .from(bundles)
@@ -250,6 +211,9 @@ export default async function seedRoutes(fastify: FastifyInstance) {
     if (bundle && bundle.publisherId && bundle.publisherId !== user.id) {
       return reply.status(403).send({ error: "Only the seed's publisher can publish new versions" });
     }
+    if (bundle?.hiddenAt) {
+      return reply.status(403).send({ error: "This seed was taken down by a PekoHub moderator" });
+    }
 
     const metadata = {
       displayName: summary.displayName,
@@ -386,11 +350,7 @@ export default async function seedRoutes(fastify: FastifyInstance) {
       owned.user.id,
       `${owned.bundle.namespace}/${owned.bundle.name}`,
     );
-    try {
-      await fastify.search.deleteBundleDocuments([`${owned.bundle.namespace}-${owned.bundle.name}`]);
-    } catch (err) {
-      fastify.log.warn({ err }, "seed removed but its search document lingers");
-    }
+    await unindexSeed(fastify, owned.bundle.namespace, owned.bundle.name);
     return reply.status(204).send();
   });
 }

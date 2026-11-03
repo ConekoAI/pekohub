@@ -21,6 +21,9 @@ const DDL_STATEMENTS = [
     display_name VARCHAR(256),
     email VARCHAR(256),
     avatar_url TEXT,
+    role VARCHAR(16) DEFAULT 'user' NOT NULL,
+    suspended_at TIMESTAMPTZ,
+    suspended_reason TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
   );`,
@@ -55,6 +58,8 @@ const DDL_STATEMENTS = [
     repository TEXT,
     readme TEXT,
     pull_count INTEGER DEFAULT 0 NOT NULL,
+    hidden_at TIMESTAMPTZ,
+    hidden_reason TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
   );`,
@@ -73,6 +78,8 @@ const DDL_STATEMENTS = [
     size INTEGER NOT NULL,
     deprecated BOOLEAN DEFAULT FALSE,
     deprecated_message TEXT,
+    yanked_at TIMESTAMPTZ,
+    yanked_reason TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
   );`,
 
@@ -167,7 +174,7 @@ const DDL_STATEMENTS = [
     joined_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
     PRIMARY KEY (group_id, user_id)
   );`,
-  `CREATE TABLE IF NOT EXISTS hub_principals (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), signing_did VARCHAR(512) UNIQUE NOT NULL, identity_key VARCHAR(512) UNIQUE NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL);`,
+  `CREATE TABLE IF NOT EXISTS hub_principals (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), signing_did VARCHAR(512) UNIQUE NOT NULL, identity_key VARCHAR(512) UNIQUE NOT NULL, taken_down_at TIMESTAMPTZ, taken_down_reason TEXT, created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL);`,
   `CREATE TABLE IF NOT EXISTS instances (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     type VARCHAR(16) NOT NULL,
@@ -248,6 +255,25 @@ const DDL_STATEMENTS = [
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
   );`,
   `CREATE INDEX IF NOT EXISTS idx_runtimes_runtime_did ON runtimes(runtime_did);`,
+
+  `CREATE TABLE IF NOT EXISTS reports (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    reporter_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    target_kind VARCHAR(16) NOT NULL,
+    target VARCHAR(512) NOT NULL,
+    target_id VARCHAR(255),
+    account_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    reason VARCHAR(32) NOT NULL,
+    note TEXT,
+    status VARCHAR(16) DEFAULT 'open' NOT NULL,
+    resolved_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    resolved_at TIMESTAMPTZ,
+    resolution TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+  );`,
+  `CREATE INDEX IF NOT EXISTS reports_status_created_idx ON reports(status, created_at);`,
+  `CREATE INDEX IF NOT EXISTS reports_reporter_created_idx ON reports(reporter_id, created_at);`,
+  `CREATE INDEX IF NOT EXISTS reports_target_idx ON reports(target_kind, target);`,
 ];
 
 /**
@@ -272,6 +298,7 @@ export async function createTestDb(): Promise<TestDb> {
  */
 export async function resetTables(client: PGlite) {
   const tables = [
+    "reports",
     "audit_logs",
     "hub_group_members",
     "hub_groups",

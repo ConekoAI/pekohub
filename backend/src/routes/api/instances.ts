@@ -6,6 +6,7 @@ import {
   type InstanceStatus,
   type InstanceType,
 } from "../../services/instances.js";
+import { isTakenDown } from "../../services/moderation.js";
 import { z } from "zod";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -43,6 +44,8 @@ async function extractCallerSubject(
     return null;
   }
 }
+
+const TAKEN_DOWN = "A PekoHub moderator took this peko off the Hub";
 
 const ListQuerySchema = z.object({
   status: z.enum(["online", "offline", "busy", "error"]).optional(),
@@ -236,6 +239,9 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
           });
       }
 
+      if (body.data.exposure && body.data.exposure !== "local_only" && (await isTakenDown(instance.hubId))) {
+        return reply.status(403).send({ error: TAKEN_DOWN });
+      }
       if (body.data.exposure && body.data.exposure !== "local_only" && !instance.hubId) {
         return reply.status(400).send({error: "Register the principal from its runtime before enabling Hub access"});
       }
@@ -295,6 +301,9 @@ export default async function instanceRoutes(fastify: FastifyInstance) {
       const { exposure, public_profile } = body.data;
       const from = instance.exposure;
 
+      if (exposure !== "local_only" && (await isTakenDown(instance.hubId))) {
+        return reply.status(403).send({ error: TAKEN_DOWN });
+      }
       if (exposure !== "local_only" && !instance.hubId) {
         return reply.status(400).send({ error: "Register the principal from its runtime before enabling Hub access" });
       }

@@ -21,6 +21,7 @@ import instanceRoutes from "./routes/api/instances.js";
 import publicPekoRoutes from "./routes/api/public-pekos.js";
 import principalDirectoryRoutes from "./routes/api/principals.js";
 import adminRoutes from "./routes/api/admin.js";
+import reportRoutes from "./routes/api/reports.js";
 import metaRoutes from "./routes/api/meta.js";
 import groupRoutes from "./routes/api/groups.js";
 import oauthRoutes from "./routes/auth/oauth.js";
@@ -123,6 +124,7 @@ async function main() {
   // `fastify.authenticate` is the gate.
   await app.register(principalDirectoryRoutes, { prefix: "/v1" });
   await app.register(adminRoutes, { prefix: "/v1/admin" });
+  await app.register(reportRoutes, { prefix: "/v1" });
   await app.register(metaRoutes, { prefix: "/v1" });
   await app.register(groupRoutes, { prefix: "/v1" });
 

@@ -64,6 +64,13 @@
       "when": 1793631760066,
       "tag": "0008_group_registry",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793709541462,
+      "tag": "0009_moderation",
+      "breakpoints": true
     }
   ]
 }
