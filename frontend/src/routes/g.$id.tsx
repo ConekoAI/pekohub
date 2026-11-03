@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { api } from '~/lib/api';
 import { PageHeader, PageShell } from '~/components/PageShell';
 import { CopyField, EmptyState, Loading, StatusDot } from '~/components/ui';
+import { ReportButton } from '~/components/ReportButton';
 
 const searchSchema = z.object({ invite: z.string().optional() });
 
@@ -82,6 +83,9 @@ function GroupPage() {
         </p>
         <CopyField value={invite ? link : g.id} />
       </section>
+      <div className="mt-10 border-t border-ink-700 pt-6">
+        <ReportButton target={g.id} className="-ml-2.5" />
+      </div>
     </PageShell>
   );
 }

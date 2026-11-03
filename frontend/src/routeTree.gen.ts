@@ -20,6 +20,7 @@ import { Route as DiscoverRouteImport } from './routes/discover'
 import { Route as DeviceRouteImport } from './routes/device'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AuthorizeRouteImport } from './routes/authorize'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SeedsIndexRouteImport } from './routes/seeds/index'
 import { Route as AtChar123ownerChar125IndexRouteImport } from './routes/@{$owner}/index'
@@ -89,6 +90,11 @@ const DashboardRoute = DashboardRouteImport.update({
 const AuthorizeRoute = AuthorizeRouteImport.update({
   id: '/authorize',
   path: '/authorize',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -171,6 +177,7 @@ const POwnerPrincipalNameRoute = POwnerPrincipalNameRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/authorize': typeof AuthorizeRoute
   '/dashboard': typeof DashboardRoute
   '/device': typeof DeviceRoute
@@ -199,6 +206,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/authorize': typeof AuthorizeRoute
   '/dashboard': typeof DashboardRoute
   '/device': typeof DeviceRoute
@@ -228,6 +236,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/authorize': typeof AuthorizeRoute
   '/dashboard': typeof DashboardRoute
   '/device': typeof DeviceRoute
@@ -258,6 +267,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/admin'
     | '/authorize'
     | '/dashboard'
     | '/device'
@@ -286,6 +296,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/admin'
     | '/authorize'
     | '/dashboard'
     | '/device'
@@ -314,6 +325,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/admin'
     | '/authorize'
     | '/dashboard'
     | '/device'
@@ -343,6 +355,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdminRoute: typeof AdminRoute
   AuthorizeRoute: typeof AuthorizeRoute
   DashboardRoute: typeof DashboardRoute
   DeviceRoute: typeof DeviceRoute
@@ -447,6 +460,13 @@ declare module '@tanstack/react-router' {
       path: '/authorize'
       fullPath: '/authorize'
       preLoaderRoute: typeof AuthorizeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -559,6 +579,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminRoute: AdminRoute,
   AuthorizeRoute: AuthorizeRoute,
   DashboardRoute: DashboardRoute,
   DeviceRoute: DeviceRoute,

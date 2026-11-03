@@ -203,6 +203,28 @@ revoke requests accept JSON or `application/x-www-form-urlencoded`.
 | `GET /v1/oauth/authorize/describe` · `POST /v1/oauth/authorize/decision` | Consent page: what's asking; allow or cancel (signed-in user). |
 | `GET /v1/oauth/device/describe` · `POST /v1/oauth/device/decision` | Device page: look up a user code; allow or deny (signed-in user). |
 
+### Reports and moderation (gap map B2/B3)
+
+Accounts have a role: `user` (default), `moderator`, or `admin`. Moderators work the report
+queue and take things down; admins also grant roles and read any namespace's audit log. Every
+moderator action is in the `moderation` audit namespace. The website's moderation page is
+`/admin`, shown only to moderators and admins.
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /v1/reports` | Report `{ target, reason, note? }` (signed in). `target` is a seed `owner/name[@version]`, a public peko `@owner/name`, a person `@handle`, or a group ID; `reason` is `spam` / `harassment` / `illegal` / `impersonation` / `malicious` / `other`. 404 for a seed, peko or person that isn't shown (a group ID is always taken: its existence isn't revealed). A repeat of your open report returns it (200, `duplicate: true`). 10 reports an hour per account (429). |
+| `GET /v1/admin/reports?status=open` | The queue, newest first (moderator). Each report names its target, the account answerable for it, the reporter, and whether the target is removed or the account suspended now. |
+| `PATCH /v1/admin/reports/:id` | `{ status: "actioned" \| "dismissed" \| "open", resolution? }` (moderator). |
+| `POST /v1/admin/seeds/:owner/:name/hide` | `{ hidden, reason?, reportId? }` (moderator). A hidden seed has no page or download, isn't listed or searched, and takes no new versions. |
+| `POST /v1/admin/seeds/:owner/:name/versions/:version/yank` | `{ yanked, reason?, reportId? }` (moderator). The version is no longer offered or served; its number stays taken. |
+| `POST /v1/admin/pekos/:hubId/takedown` | `{ takenDown, reason?, reportId? }` (moderator). Sets the peko `local_only` and pushes `exposure_update` down its tunnel; until restored, its runtime's announce is refused and the owner can't expose it again. Restoring leaves going back online to the owner. |
+| `POST /v1/admin/users/:user/suspend` | `{ suspended, reason?, reportId? }` (moderator; `:user` is an ID or handle). A suspended account fails every sign-in, token and API key, its refresh tokens are revoked, its runtimes are disconnected and refused at the tunnel handshake, and its person page and pekos resolve for no one. Its seeds stay up unless hidden. Only an admin suspends a moderator; no one suspends an admin or themselves. |
+| `PUT /v1/admin/users/:user/role` | `{ role }` (admin; not your own). |
+| `GET /v1/admin/audit?namespace=` | An audit log: your own namespace, `moderation` for moderators, any for admins. |
+
+Any action given a `reportId` closes that report as actioned. The first admin is made in the
+database: `UPDATE users SET role = 'admin' WHERE namespace = '<handle>';`.
+
 ### Health & metrics
 
 | Endpoint | Description |

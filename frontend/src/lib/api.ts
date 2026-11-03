@@ -433,7 +433,89 @@ export const api = {
   // ─────────────────────────────────────────────────────────────────────────
 
   person: (handle: string) => fetchJson<PersonProfile>(`/v1/people/${encodeURIComponent(handle)}`),
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Trust & safety (gap map B2/B3). Anyone signed in reports; moderators
+  // work the queue on `/admin`.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /** Report a seed `owner/name[@version]`, a peko `@owner/name`, a person `@handle`, or a group ID. */
+  fileReport: (body: { target: string; reason: ReportReason; note?: string }) =>
+    fetchJson<{ id: string; status: ReportStatus; duplicate: boolean }>('/v1/reports', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  listReports: (status: ReportStatus) =>
+    fetchJson<{ reports: ModerationReport[]; total: number }>(`/v1/admin/reports?status=${status}`),
+
+  resolveReport: (id: string, status: ReportStatus, resolution?: string) =>
+    fetchJson<{ id: string; status: ReportStatus }>(`/v1/admin/reports/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status, resolution }),
+    }),
+
+  hideSeed: (owner: string, name: string, hidden: boolean, action: ModerationAction = {}) =>
+    fetchJson<{ hidden: boolean }>(
+      `/v1/admin/seeds/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/hide`,
+      { method: 'POST', body: JSON.stringify({ hidden, ...action }) },
+    ),
+
+  yankSeedVersion: (owner: string, name: string, version: string, yanked: boolean, action: ModerationAction = {}) =>
+    fetchJson<{ version: string; yanked: boolean }>(
+      `/v1/admin/seeds/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/versions/${encodeURIComponent(version)}/yank`,
+      { method: 'POST', body: JSON.stringify({ yanked, ...action }) },
+    ),
+
+  takeDownPeko: (hubId: string, takenDown: boolean, action: ModerationAction = {}) =>
+    fetchJson<{ takenDown: boolean; tunnelNotified: boolean }>(
+      `/v1/admin/pekos/${encodeURIComponent(hubId)}/takedown`,
+      { method: 'POST', body: JSON.stringify({ takenDown, ...action }) },
+    ),
+
+  suspendAccount: (account: string, suspended: boolean, action: ModerationAction = {}) =>
+    fetchJson<{ suspended: boolean; runtimesClosed: number }>(
+      `/v1/admin/users/${encodeURIComponent(account)}/suspend`,
+      { method: 'POST', body: JSON.stringify({ suspended, ...action }) },
+    ),
 };
+
+export const REPORT_REASONS = [
+  { value: 'spam', label: 'Spam' },
+  { value: 'harassment', label: 'Harassment or hate' },
+  { value: 'illegal', label: 'Illegal content' },
+  { value: 'impersonation', label: 'Impersonation' },
+  { value: 'malicious', label: 'Malware or a scam' },
+  { value: 'other', label: 'Something else' },
+] as const;
+export type ReportReason = (typeof REPORT_REASONS)[number]['value'];
+export type ReportStatus = 'open' | 'actioned' | 'dismissed';
+
+/** Why a moderator acted, and the report it answers (closed as actioned). */
+export interface ModerationAction {
+  reason?: string;
+  reportId?: string;
+}
+
+/** One report in the moderation queue (`GET /v1/admin/reports`). */
+export interface ModerationReport {
+  id: string;
+  targetKind: 'seed' | 'peko' | 'person' | 'group';
+  /** `alice/ada@1.0.0`, `@alice/ada`, `@alice`, or a group ID. */
+  target: string;
+  /** A peko's Hub ID, a person's or group's ID; null for a seed. */
+  targetId: string | null;
+  reason: ReportReason;
+  note: string | null;
+  status: ReportStatus;
+  createdAt: string;
+  reporter: { handle: string } | null;
+  account: { id: string; handle: string; suspended: boolean } | null;
+  targetRemoved: boolean;
+  resolvedBy: { handle: string } | null;
+  resolvedAt: string | null;
+  resolution: string | null;
+}
 
 /** `GET /v1/people/:handle`: a person's page. */
 export interface PersonProfile {

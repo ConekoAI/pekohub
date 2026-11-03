@@ -10,6 +10,7 @@ import { useAuth } from '~/hooks/useAuth';
 import { useSeed } from '~/hooks/useSeed';
 import { compactNumber, formatDate, relativeTime } from '~/lib/format';
 import { PageShell } from '~/components/PageShell';
+import { ReportButton } from '~/components/ReportButton';
 import { Avatar, Badge, CopyField, Loading, Tile, Unavailable } from '~/components/ui';
 
 /**
@@ -216,6 +217,12 @@ function SeedBody({ data, version }: { data: SeedDetail; version: string }) {
               ))}
             </ul>
           </section>
+
+          {!isPublisher && (
+            <section className="border-t border-ink-700 pt-6">
+              <ReportButton target={`${owner}/${data.name}@${version}`} className="-ml-2.5" />
+            </section>
+          )}
 
           {isPublisher && (
             <section className="flex flex-col items-start gap-1 border-t border-ink-700 pt-6">

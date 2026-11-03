@@ -2,6 +2,15 @@
 
 ## 0.1.0 — pre-launch
 
+- Reports and moderation (gap map B2/B3). Signed-in people report a seed (or one version),
+  a public peko, a person or a group from a Report button on its page (`POST /v1/reports`,
+  10 an hour per account). Accounts have a role, `user` / `moderator` / `admin`; moderators
+  see the open reports on `/admin` and can hide a seed, yank a version, force a peko off the
+  Hub (pushed down its tunnel; its runtime can't re-announce it until a moderator restores
+  it), or suspend the account behind it (signed out everywhere, runtimes disconnected and
+  refused at the handshake). Every action is in the `moderation` audit log. Reading another
+  namespace's audit log now needs the admin role in every environment; before, any signed-in
+  account could outside production. Migration `0009_moderation`.
 - First sign-in no longer fails when the name is taken. A new account's handle comes from
   the GitHub login or the Google address before the `@`, made valid (lowercase letters,
   digits, `-`, `_`, at most 39 characters — what `@handle` IDs accept) and numbered when

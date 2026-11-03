@@ -6,6 +6,8 @@ import { formatDate } from '~/lib/format';
 import { useSeedList } from '~/hooks/useSeed';
 import { PageShell } from '~/components/PageShell';
 import { SeedCard } from '~/components/SeedCard';
+import { ReportButton } from '~/components/ReportButton';
+import { useAuth } from '~/hooks/useAuth';
 import { Avatar, CopyButton, Loading, SectionTitle, Unavailable } from '~/components/ui';
 
 /**
@@ -28,6 +30,7 @@ function PersonPage() {
     retry: false,
   });
   const seeds = useSeedList(1, 24, owner);
+  const { user } = useAuth();
 
   if (person.isLoading) {
     return (
@@ -62,6 +65,7 @@ function PersonPage() {
           </p>
         </div>
         <CopyButton value={pageUrl} label="Share" className="btn-secondary btn-sm flex-shrink-0" />
+        {user?.namespace !== profile.handle && <ReportButton target={id} className="flex-shrink-0" />}
       </header>
 
       {items.length > 0 && (

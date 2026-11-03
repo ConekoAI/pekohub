@@ -15,6 +15,7 @@ import { formatHubRef } from '@pekohub/shared';
 import { api, desktopLinkFor, isApiError } from '~/lib/api';
 import { PageShell } from '~/components/PageShell';
 import { ProfileHeader } from '~/components/peko/ProfileHeader';
+import { ReportButton } from '~/components/ReportButton';
 import { Loading, Unavailable } from '~/components/ui';
 
 export const Route = createFileRoute('/@{$owner}/$name')({
@@ -91,6 +92,7 @@ function PublicPekoPage() {
         <Link to="/download" className="btn-ghost">
           Get Peko
         </Link>
+        <ReportButton target={id} className="ml-auto" />
       </div>
     </PageShell>
   );
