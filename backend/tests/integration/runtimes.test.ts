@@ -141,6 +141,23 @@ describe("Runtime registration PoP (ADR-058 D4)", () => {
     const row = JSON.parse(response.payload);
     expect(row.runtimeDid).toBe(key.did);
     expect(row.ownerId).toBe(String(user.id));
+
+    // The account hears about a new computer once, not on re-registration.
+    const again = await getChallenge(app, headers);
+    await app.inject({
+      method: "POST",
+      url: "/v1/runtimes/register",
+      headers,
+      payload: {
+        runtime_did: key.did,
+        pop: { nonce: again.nonce, jws: await signPop(key, canonicalPopPayload(again.nonce, key.did, String(user.id))) },
+      },
+    });
+    const notices = await testDb.client.query(
+      "SELECT kind FROM notifications WHERE user_id = $1",
+      [user.id],
+    );
+    expect(notices.rows).toEqual([{ kind: "security.runtime_registered" }]);
   });
 
   it("rejects a pop signed with the wrong key", async () => {

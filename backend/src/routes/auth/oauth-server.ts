@@ -28,6 +28,7 @@ import {
   type OAuthClient,
 } from "../../services/oauth.js";
 import { webOrigin } from "../../services/origins.js";
+import { notify, PAGES } from "../../services/notifications.js";
 
 /**
  * OAuth 2.0 authorization server for Peko desktop and the Peko CLI.
@@ -91,6 +92,14 @@ async function issueTokens(
     { expiresIn: `${ACCESS_TOKEN_TTL_SECONDS}s` },
   );
   const deviceInfo = request.headers["user-agent"] ?? undefined;
+  if (!rotateFrom) {
+    await notify(
+      user.id,
+      "security.sign_in",
+      `${client.name} signed in to your account. If it wasn't you, sign it out.`,
+      PAGES.account,
+    );
+  }
   const refreshToken = rotateFrom
     ? await fastify.rotateRefreshToken(rotateFrom, user.id, deviceInfo, client.id)
     : await fastify.issueRefreshToken(user.id, deviceInfo, client.id);

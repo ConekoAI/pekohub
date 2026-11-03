@@ -235,6 +235,15 @@ const DDL_STATEMENTS = [
     expires_at TIMESTAMPTZ NOT NULL
   );`,
   `CREATE UNIQUE INDEX IF NOT EXISTS api_keys_prefix_unique ON api_keys(prefix);`,
+  `CREATE TABLE IF NOT EXISTS notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind VARCHAR(48) NOT NULL,
+    text TEXT NOT NULL,
+    path VARCHAR(512),
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    read_at TIMESTAMPTZ
+  );`,
   `CREATE INDEX IF NOT EXISTS idx_instances_exposure_status ON instances(exposure, status);`,
   `CREATE INDEX IF NOT EXISTS idx_instances_last_seen_at ON instances(last_seen_at);`,
   `CREATE INDEX IF NOT EXISTS idx_instances_published_at ON instances(published_at);`,
@@ -306,6 +315,7 @@ export async function createTestDb(): Promise<TestDb> {
  */
 export async function resetTables(client: PGlite) {
   const tables = [
+    "notifications",
     "reports",
     "audit_logs",
     "hub_group_members",

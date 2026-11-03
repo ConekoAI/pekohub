@@ -11,6 +11,7 @@ import { InMemoryQuotaStore } from "../../src/services/quotas.js";
 import instanceRoutes from "../../src/routes/api/instances.js";
 import publicPekoRoutes from "../../src/routes/api/public-pekos.js";
 import principalDirectoryRoutes from "../../src/routes/api/principals.js";
+import notificationRoutes from "../../src/routes/api/notifications.js";
 
 import type { TestDb } from "./db.js";
 
@@ -101,6 +102,7 @@ export async function buildTunnelTestApp(testDb: TestDb) {
   // Issue #14: directory API is what integration tests assert against
   // after an instance_announce.
   await app.register(principalDirectoryRoutes, { prefix: "/v1" });
+  await app.register(notificationRoutes, { prefix: "/v1" });
 
   app.get("/health", async () => ({ status: "ok" }));
 

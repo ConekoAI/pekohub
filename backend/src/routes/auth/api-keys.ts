@@ -3,6 +3,7 @@ import { db } from "../../db/index.js";
 import { apiKeys } from "../../db/schema.js";
 import { eq } from "drizzle-orm";
 import crypto from "node:crypto";
+import { notify, PAGES } from "../../services/notifications.js";
 import { apiKeyHash } from "../../plugins/auth.js";
 
 /**
@@ -43,6 +44,13 @@ export default async function apiKeyRoutes(fastify: FastifyInstance) {
         if (attempt >= 3) throw error;
       }
     }
+
+    await notify(
+      user.id,
+      "security.api_key_created",
+      `An API key "${record.name}" was created for your account. If it wasn't you, revoke it.`,
+      PAGES.account,
+    );
 
     return reply.status(201).send({
       id: record.id,

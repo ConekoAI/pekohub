@@ -2,6 +2,16 @@
 
 ## 0.1.0 — pre-launch
 
+- Notifications, without email. An account hears about a peko offered to it, its offer
+  accepted, declined or withdrawn, a new computer registered, a new API key, a new Peko
+  desktop or CLI sign-in, a moderator hiding or yanking its seed or taking its peko off
+  PekoHub, and the outcome of its reports. The website's header has a bell with the
+  unread count (checked every minute); opening it marks what it shows as read, and an
+  item opens the page that acts on it. Peko desktop reads the same list. API:
+  `GET /v1/me/notifications` (`{ unread, notifications }`, each with `path` and an
+  absolute `url`) and `POST /v1/me/notifications/read` (`{ ids? }`, all when omitted).
+  Kept 90 days and at most 200 per account. Sending never fails the action it reports.
+  Migration `0011_notifications`.
 - Reports and moderation (gap map B2/B3). Signed-in people report a seed (or one version),
   a public peko, a person or a group from a Report button on its page (`POST /v1/reports`,
   10 an hour per account). Accounts have a role, `user` / `moderator` / `admin`; moderators

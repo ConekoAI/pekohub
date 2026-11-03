@@ -18,6 +18,7 @@ import {
 import { hasRole, type AuthenticatedUser } from "../plugins/auth.js";
 import { auditService } from "./audit.js";
 import { findSeed, reindexSeed, unindexSeed } from "./seed-store.js";
+import { notify, PAGES } from "./notifications.js";
 import { instanceService } from "./instances.js";
 
 /**
@@ -276,6 +277,15 @@ export async function resolveReport(
     .where(eq(reports.id, reportId))
     .returning();
   if (!report) return fail(404, "No such report");
+  if (closing) {
+    await notify(
+      report.reporterId,
+      "moderation.report_resolved",
+      status === "actioned"
+        ? `A moderator acted on your report about ${report.target}. Thank you.`
+        : `A moderator reviewed your report about ${report.target} and found nothing to act on.`,
+    );
+  }
   await auditService.logModeration(`report.${status}`, moderator.id, `report:${report.id}`, {
     target: report.target,
     resolution,
@@ -290,6 +300,9 @@ async function closeReportFor(moderator: AuthenticatedUser, reportId: string | u
 }
 
 // ── Actions ─────────────────────────────────────────────────────────────────
+
+/** A moderator's reason, appended to a notification: `: spam`. */
+const because = (reason?: string) => (reason ? `: ${reason}` : "");
 
 export interface ActionInput {
   reason?: string;
@@ -321,6 +334,14 @@ export async function setSeedHidden(
     reason: input.reason ?? null,
     reportId: input.reportId ?? null,
   });
+  await notify(
+    bundle.publisherId,
+    hidden ? "moderation.seed_hidden" : "moderation.seed_shown",
+    hidden
+      ? `A moderator hid your seed ${resource}${because(input.reason)}. No one can find or download it.`
+      : `Your seed ${resource} is visible again.`,
+    PAGES.seeds,
+  );
   if (hidden) await closeReportFor(moderator, input.reportId, `Hid ${resource}`);
   return { ok: true, hidden };
 }
@@ -354,6 +375,14 @@ export async function setSeedVersionYanked(
     reason: input.reason ?? null,
     reportId: input.reportId ?? null,
   });
+  await notify(
+    bundle.publisherId,
+    yanked ? "moderation.seed_version_yanked" : "moderation.seed_version_restored",
+    yanked
+      ? `A moderator yanked ${resource}${because(input.reason)}. It can no longer be downloaded.`
+      : `${resource} can be downloaded again.`,
+    PAGES.seeds,
+  );
   if (yanked) await closeReportFor(moderator, input.reportId, `Yanked ${resource}`);
   return { ok: true, version, yanked };
 }
@@ -407,6 +436,14 @@ export async function setPekoTakenDown(
     reason: input.reason ?? null,
     reportId: input.reportId ?? null,
   });
+  await notify(
+    owner?.id,
+    takenDown ? "moderation.peko_taken_down" : "moderation.peko_restored",
+    takenDown
+      ? `A moderator took ${resource} off PekoHub${because(input.reason)}. It keeps running on your computer, but no one can reach it through PekoHub.`
+      : `${resource} may go online on PekoHub again; turn it back on from Peko.`,
+    PAGES.pekos,
+  );
   if (takenDown) await closeReportFor(moderator, input.reportId, `Took ${resource} off PekoHub`);
   return { ok: true, takenDown, tunnelNotified };
 }

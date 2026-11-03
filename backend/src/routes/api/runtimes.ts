@@ -4,6 +4,7 @@ import { db } from "../../db/index.js";
 import { instances, runtimes } from "../../db/schema.js";
 import { eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
+import { notify, PAGES } from "../../services/notifications.js";
 import { verifyDidKeyJws } from "../../services/tunnel-crypto.js";
 
 /**
@@ -230,6 +231,15 @@ export default async function runtimeRoutes(fastify: FastifyInstance) {
       // write.
       if (row.ownerId !== user.id) {
         return reply.status(403).send({ error: "Forbidden" });
+      }
+
+      if (existing.length === 0) {
+        await notify(
+          user.id,
+          "security.runtime_registered",
+          `A computer${row.displayName ? ` (${row.displayName})` : ""} was registered to your account. If it wasn't you, unregister it.`,
+          PAGES.runtimes,
+        );
       }
 
       return reply.status(200).send(row);

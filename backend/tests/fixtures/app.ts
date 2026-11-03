@@ -18,6 +18,7 @@ import adminRoutes from "../../src/routes/api/admin.js";
 import reportRoutes from "../../src/routes/api/reports.js";
 import metaRoutes from "../../src/routes/api/meta.js";
 import groupRoutes from "../../src/routes/api/groups.js";
+import notificationRoutes from "../../src/routes/api/notifications.js";
 import oauthRoutes from "../../src/routes/auth/oauth.js";
 import oauthServerRoutes from "../../src/routes/auth/oauth-server.js";
 import apiKeyRoutes from "../../src/routes/auth/api-keys.js";
@@ -121,6 +122,7 @@ export async function buildTestApp(options: TestAppOptions) {
   await app.register(reportRoutes, { prefix: "/v1" });
   await app.register(metaRoutes, { prefix: "/v1" });
   await app.register(groupRoutes, { prefix: "/v1" });
+  await app.register(notificationRoutes, { prefix: "/v1" });
   await app.register(oauthRoutes, { prefix: "/v1/auth" });
   await app.register(apiKeyRoutes, { prefix: "/v1/auth" });
   await app.register(oauthServerRoutes);

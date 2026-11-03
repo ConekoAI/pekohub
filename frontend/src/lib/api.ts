@@ -291,6 +291,16 @@ export const api = {
       body: JSON.stringify({ ownerHandle }),
     }),
 
+  /** The signed-in account's notifications, newest first. */
+  listNotifications: () => fetchJson<NotificationList>('/v1/me/notifications'),
+
+  /** Mark notifications read (`ids`), or all of them. */
+  markNotificationsRead: (ids?: string[]) =>
+    fetchJson<{ marked: number }>('/v1/me/notifications/read', {
+      method: 'POST',
+      body: JSON.stringify(ids ? { ids } : {}),
+    }),
+
   /** Open transfer offers to and from the signed-in account. */
   listTransfers: () => fetchJson<{ transfers: PekoTransfer[] }>('/v1/me/transfers'),
 
@@ -582,6 +592,23 @@ export interface RuntimeRecord {
 }
 
 /** An app signed in to the account (`GET /v1/auth/apps`). */
+/** Something the account should hear about (the Hub sends no email). */
+export interface HubNotification {
+  id: string;
+  kind: string;
+  text: string;
+  /** The website page that acts on it. */
+  path: string | null;
+  url: string | null;
+  createdAt: string;
+  readAt: string | null;
+}
+
+export interface NotificationList {
+  unread: number;
+  notifications: HubNotification[];
+}
+
 /** An open offer to hand a peko from one account to another. */
 export interface PekoTransfer {
   hubId: string;

@@ -177,6 +177,15 @@ Website pages are IDs (ADR-009): `/@alice` (a person), `/@alice/ada` (a peko), `
 
 Both endpoints return `PrincipalTargetResolution { status: "hit" | "miss" | "denied", target?: ... }`. Used by the runtime's directory client to dial peers (channel-native `ChannelSend` flows). These are machine-facing wire paths and keep the `principal` vocabulary per ADR-059.
 
+### Notifications
+
+The Hub sends no email; the website's bell and Peko desktop read these.
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /v1/me/notifications?limit=50` | `{ unread, notifications: [{ id, kind, text, path, url, createdAt, readAt }] }`, newest first. Kinds: `transfer.*`, `security.*` (new computer, API key, app sign-in), `moderation.*`. |
+| `POST /v1/me/notifications/read` | `{ ids? }`: mark those read, or all when omitted. |
+
 ### Owner changes (ADR-081 D4)
 
 | Endpoint | Description |
