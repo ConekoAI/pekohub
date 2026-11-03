@@ -60,20 +60,29 @@ export const users = pgTable("users", {
 export const USER_ROLES = ["user", "moderator", "admin"] as const;
 export type UserRole = (typeof USER_ROLES)[number];
 
-export const apiKeys = pgTable("api_keys", {
-  id: serial("id").primaryKey(),
-  // Post-H3: FK is uuid to match users.id (was integer).
-  userId: uuid("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  name: varchar("name", { length: 128 }).notNull(),
-  prefix: varchar("prefix", { length: 16 }).notNull(),
-  hash: varchar("hash", { length: 64 }).notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-  lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
-});
+export const apiKeys = pgTable(
+  "api_keys",
+  {
+    id: serial("id").primaryKey(),
+    // Post-H3: FK is uuid to match users.id (was integer).
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 128 }).notNull(),
+    // The key's first 16 characters (`pkr_` + 12 hex; 10 on older keys):
+    // finds the one row to check.
+    prefix: varchar("prefix", { length: 16 }).notNull(),
+    // SHA-256 hex of the whole key (bcrypt on keys made before it).
+    hash: varchar("hash", { length: 64 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  },
+  (table) => ({
+    prefixUnique: uniqueIndex("api_keys_prefix_unique").on(table.prefix),
+  }),
+);
 
 export const refreshTokens = pgTable(
   "refresh_tokens",
@@ -436,6 +445,24 @@ export const principalMoveApprovals = pgTable("principal_move_approvals", {
     .references(() => users.id, { onDelete: "cascade" }),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 });
+
+// ADR-081 D4: an owner's offer to transfer a principal to another account.
+// Nothing changes until that account accepts; one open offer per principal.
+export const principalTransferOffers = pgTable("principal_transfer_offers", {
+  hubId: uuid("hub_id")
+    .primaryKey()
+    .references(() => hubPrincipals.id, { onDelete: "cascade" }),
+  fromUserId: uuid("from_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  toUserId: uuid("to_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+}, (table) => ({
+  toUserIdx: index("principal_transfer_offers_to_user_idx").on(table.toUserId),
+}));
 
 export const instanceRelations = relations(instances, ({ one }) => ({
   // Owner lookup routes through `instances.owner_subject` (JSONB)

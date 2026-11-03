@@ -5,9 +5,9 @@
  *   one is refused and told the recorded owner.
  * - Registering a principal under another account's ownership needs that
  *   account's consent.
- * - Only the recorded owner transfers it — through the API, or over the
- *   tunnel when the linked runtime's account is the owner — and the linked
- *   runtime is told.
+ * - Only the recorded owner offers it to another account — through the API,
+ *   or over the tunnel when the linked runtime's account is the owner. It
+ *   moves when that account accepts, and the linked runtime is told.
  */
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import { createTestDb, resetTables } from "../fixtures/db.js";
@@ -139,7 +139,7 @@ describe("ADR-081 D4: the Hub records an online principal's owner", () => {
     expect(await recordedOwner(hubId!)).toBe(String(bob.id));
   });
 
-  it("lets only the recorded owner transfer through the API, and tells the runtime", async () => {
+  it("lets only the recorded owner offer it through the API; the runtime is told when it is accepted", async () => {
     const runtime = await connectedRuntime("api");
     const { payload, hubId } = await online(runtime);
     const carol = await createUser(testDb.client, { namespace: "carol" });
@@ -166,7 +166,16 @@ describe("ADR-081 D4: the Hub records an online principal's owner", () => {
       headers: await authHeaders(runtime.user),
       payload: { ownerId: String(carol.id) },
     });
-    expect(moved.statusCode).toBe(204);
+    expect(moved.statusCode).toBe(202);
+    expect(await recordedOwner(hubId)).toBe(String(runtime.user.id));
+    expect(runtime.socket.sent.some((m) => m.type === "principal_owner_changed")).toBe(false);
+
+    const accepted = await runtime.app.inject({
+      method: "POST",
+      url: `${url}/accept`,
+      headers: await authHeaders(carol),
+    });
+    expect(accepted.statusCode).toBe(204);
     expect(await recordedOwner(hubId)).toBe(String(carol.id));
     expect(runtime.socket.sent).toContainEqual(
       expect.objectContaining({
@@ -178,7 +187,7 @@ describe("ADR-081 D4: the Hub records an online principal's owner", () => {
     );
   });
 
-  it("transfers over the tunnel only when the runtime's account is the owner", async () => {
+  it("offers over the tunnel only when the runtime's account is the owner", async () => {
     const runtime = await connectedRuntime("tunnel");
     const { payload, hubId } = await online(runtime);
     const dave = await createUser(testDb.client, { namespace: "dave" });
@@ -191,23 +200,41 @@ describe("ADR-081 D4: the Hub records an online principal's owner", () => {
         ownerId,
       });
 
+    // The runtime hears it is offered, not moved: nothing changes yet.
     transfer("to-dave", String(dave.id));
     await settle();
+    const receipt = runtime.socket.sent.find(
+      (m) => m.type === "principal_transfer_rejected" && m.requestId === "to-dave",
+    );
+    expect(receipt).toMatchObject({ message: expect.stringContaining("Offered to @dave") });
+    expect(await recordedOwner(hubId)).toBe(String(runtime.user.id));
+
+    // Dave accepts on PekoHub; the runtime is told the new owner.
+    const accepted = await runtime.app.inject({
+      method: "POST",
+      url: `/v1/principals/by-hub-id/${hubId}/transfer/accept`,
+      headers: await authHeaders(dave),
+    });
+    expect(accepted.statusCode).toBe(204);
     expect(runtime.socket.sent).toContainEqual(
       expect.objectContaining({
         type: "principal_owner_changed",
-        requestId: "to-dave",
+        localId: payload.localId,
         hubId,
         ownerId: String(dave.id),
       }),
     );
     expect(await recordedOwner(hubId)).toBe(String(dave.id));
 
-    // Dave owns it now; the runtime's account can no longer transfer it.
+    // Dave owns it now; the runtime's account can no longer offer it.
     transfer("take-back", String(runtime.user.id));
     await settle();
     expect(runtime.socket.sent).toContainEqual(
-      expect.objectContaining({ type: "principal_transfer_rejected", requestId: "take-back" }),
+      expect.objectContaining({
+        type: "principal_transfer_rejected",
+        requestId: "take-back",
+        message: "Only the principal's owner on PekoHub can transfer it",
+      }),
     );
     expect(await recordedOwner(hubId)).toBe(String(dave.id));
   });

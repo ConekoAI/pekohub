@@ -1,6 +1,6 @@
 import { db } from "../db/index.js";
-import { instances, runtimes, users, hubPrincipals, principalMoveApprovals } from "../db/schema.js";
-import { eq, and, sql, desc, count, gte, lt, ne, inArray, isNull } from "drizzle-orm";
+import { instances, runtimes, users, hubPrincipals, principalMoveApprovals, principalTransferOffers } from "../db/schema.js";
+import { eq, and, or, sql, desc, count, gt, gte, lt, ne, inArray, isNull } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import {
   Subject,
@@ -399,6 +399,9 @@ export function parseSubjectArrayJsonb(raw: unknown): Subject[] {
  * Instance management service.
  * Handles CRUD operations and tunnel-mediated proxying.
  */
+/** How long an offer to transfer a principal waits for its recipient. */
+const TRANSFER_OFFER_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
 export class InstanceService {
   // ── CRUD ───────────────────────────────────────────────────────────────────
 
@@ -671,7 +674,110 @@ export class InstanceService {
       .set({ ownerSubject: { kind: "user", id: newOwner } })
       .where(eq(instances.id, current.id));
     await db.delete(principalMoveApprovals).where(eq(principalMoveApprovals.hubId, hubId));
+    await db.delete(principalTransferOffers).where(eq(principalTransferOffers.hubId, hubId));
     return { status: "transferred", runtimeId: current.runtimeId, localId: current.localId ?? null, previous };
+  }
+
+  /**
+   * ADR-081 D4: the recorded owner offers `hubId` to another account. Nothing
+   * changes until that account accepts (`acceptTransfer`): a peko owned by
+   * someone means its owner's conversations run on its host, so no one is
+   * made an owner without saying yes. A new offer replaces an open one.
+   */
+  async offerTransfer(
+    hubId: string,
+    newOwner: string,
+    approver: string,
+  ): Promise<{ status: "offered" | "miss" | "denied" | "unknown_user" | "same_owner" }> {
+    const current = await this.getByHubId(hubId);
+    if (!current) return { status: "miss" };
+    const owner = current.ownerSubject?.kind === "user" ? current.ownerSubject.id : null;
+    if (owner === null || owner !== approver) return { status: "denied" };
+    if (newOwner === approver) return { status: "same_owner" };
+    if (!(await db.query.users.findFirst({ where: eq(users.id, newOwner) }))) {
+      return { status: "unknown_user" };
+    }
+    const expiresAt = new Date(Date.now() + TRANSFER_OFFER_TTL_MS);
+    await db
+      .insert(principalTransferOffers)
+      .values({ hubId, fromUserId: approver, toUserId: newOwner, expiresAt })
+      .onConflictDoUpdate({
+        target: principalTransferOffers.hubId,
+        set: { fromUserId: approver, toUserId: newOwner, createdAt: new Date(), expiresAt },
+      });
+    return { status: "offered" };
+  }
+
+  /** `userId` accepts the open offer of `hubId`; the owner must not have changed since. */
+  async acceptTransfer(hubId: string, userId: string): ReturnType<InstanceService["transferOwner"]> {
+    const [offer] = await db
+      .delete(principalTransferOffers)
+      .where(
+        and(
+          eq(principalTransferOffers.hubId, hubId),
+          eq(principalTransferOffers.toUserId, userId),
+          gt(principalTransferOffers.expiresAt, new Date()),
+        ),
+      )
+      .returning();
+    if (!offer) return { status: "miss" };
+    return this.transferOwner(hubId, userId, offer.fromUserId);
+  }
+
+  /** The recipient declines, or the owner withdraws, an open offer. */
+  async withdrawTransfer(hubId: string, userId: string): Promise<boolean> {
+    const removed = await db
+      .delete(principalTransferOffers)
+      .where(
+        and(
+          eq(principalTransferOffers.hubId, hubId),
+          or(
+            eq(principalTransferOffers.toUserId, userId),
+            eq(principalTransferOffers.fromUserId, userId),
+          ),
+        ),
+      )
+      .returning({ hubId: principalTransferOffers.hubId });
+    return removed.length > 0;
+  }
+
+  /** Open offers to and from `userId`, for the owner console. */
+  async transferOffersOf(userId: string) {
+    const rows = await db
+      .select({
+        hubId: principalTransferOffers.hubId,
+        fromUserId: principalTransferOffers.fromUserId,
+        toUserId: principalTransferOffers.toUserId,
+        createdAt: principalTransferOffers.createdAt,
+        expiresAt: principalTransferOffers.expiresAt,
+      })
+      .from(principalTransferOffers)
+      .where(
+        and(
+          or(
+            eq(principalTransferOffers.toUserId, userId),
+            eq(principalTransferOffers.fromUserId, userId),
+          ),
+          gt(principalTransferOffers.expiresAt, new Date()),
+        ),
+      );
+    const offers = [];
+    for (const row of rows) {
+      const peko = await this.getByHubId(row.hubId);
+      if (!peko) continue;
+      const other = row.toUserId === userId ? row.fromUserId : row.toUserId;
+      const otherUser = await db.query.users.findFirst({ where: eq(users.id, other) });
+      offers.push({
+        hubId: row.hubId,
+        direction: row.toUserId === userId ? ("incoming" as const) : ("outgoing" as const),
+        pekoName: peko.name,
+        pekoAvatar: peko.avatar ?? null,
+        otherHandle: otherUser?.namespace ?? null,
+        createdAt: row.createdAt.toISOString(),
+        expiresAt: row.expiresAt.toISOString(),
+      });
+    }
+    return offers;
   }
 
   /** Use an unexpired approval by `approver` to move `hubId` to `runtimeId`. */

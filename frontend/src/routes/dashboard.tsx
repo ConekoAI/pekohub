@@ -3,7 +3,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { CircleDot, EyeOff, Globe, Lock, RefreshCw, X } from 'lucide-react';
 import { useAuth } from '~/hooks/useAuth';
-import { api, type OwnedInstanceRecord } from '~/lib/api';
+import { api, type OwnedInstanceRecord, type PekoTransfer } from '~/lib/api';
 import { AppShell } from '~/components/AppShell';
 import { PageHeader } from '~/components/PageShell';
 import { Badge, CopyButton, EmptyState, ErrorNote, Loading, Spinner, StatusDot, type BadgeTone } from '~/components/ui';
@@ -99,6 +99,8 @@ function DashboardPage() {
         }
       />
 
+      <TransfersSection />
+
       <section className="mt-8">
         {owned.isLoading ? (
           <Loading />
@@ -138,6 +140,84 @@ function DashboardPage() {
         />
       )}
     </AppShell>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Transfers (ADR-081 D4): a peko changes owner only when the new owner accepts
+   ───────────────────────────────────────────────────────────────────────── */
+
+function TransfersSection() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const transfers = useQuery({
+    queryKey: ['dashboard', 'transfers'],
+    queryFn: () => api.listTransfers(),
+    enabled: Boolean(user),
+  });
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const rows = transfers.data?.transfers ?? [];
+  if (rows.length === 0) return null;
+
+  const act = async (transfer: PekoTransfer, action: () => Promise<void>) => {
+    setBusy(transfer.hubId);
+    setError(null);
+    try {
+      await action();
+      await queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'That didn’t go through');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <section className="mt-8 space-y-2" aria-label="Transfers">
+      {rows.map((transfer) => (
+        <div
+          key={transfer.hubId}
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-ink-700 px-4 py-3"
+        >
+          <p className="text-sm text-slate-300">
+            {transfer.direction === 'incoming'
+              ? `@${transfer.otherHandle ?? 'someone'} offers you ${transfer.pekoName}. Accepting makes you its owner; it keeps running on their computer.`
+              : `${transfer.pekoName} is offered to @${transfer.otherHandle ?? 'someone'}. You own it until they accept.`}
+          </p>
+          <div className="flex items-center gap-2">
+            {busy === transfer.hubId && <Spinner className="h-3.5 w-3.5" />}
+            {transfer.direction === 'incoming' ? (
+              <>
+                <button
+                  className="btn-ghost btn-sm"
+                  disabled={busy !== null}
+                  onClick={() => void act(transfer, () => api.withdrawTransfer(transfer.hubId))}
+                >
+                  Decline
+                </button>
+                <button
+                  className="btn-primary btn-sm"
+                  disabled={busy !== null}
+                  onClick={() => void act(transfer, () => api.acceptTransfer(transfer.hubId))}
+                >
+                  Accept
+                </button>
+              </>
+            ) : (
+              <button
+                className="btn-ghost btn-sm"
+                disabled={busy !== null}
+                onClick={() => void act(transfer, () => api.withdrawTransfer(transfer.hubId))}
+              >
+                Withdraw
+              </button>
+            )}
+          </div>
+        </div>
+      ))}
+      {error && <p className="text-xs text-rose-300">{error}</p>}
+    </section>
   );
 }
 
@@ -488,7 +568,7 @@ function Choice({ selected, onClick, children }: { selected: boolean; onClick: (
   );
 }
 
-/** Hand the peko to another PekoHub account (ADR-081 D4). */
+/** Offer the peko to another PekoHub account (ADR-081 D4). */
 function TransferPanel({
   hubId,
   name,
@@ -504,14 +584,14 @@ function TransferPanel({
   const target = handle.trim().replace(/^@/, '');
 
   const transfer = async () => {
-    if (!window.confirm(`Give ${name} to @${target}? They become its owner, and you can't undo this yourself.`)) return;
+    if (!window.confirm(`Offer ${name} to @${target}? They become its owner when they accept, and you can't undo that yourself.`)) return;
     setBusy(true);
     setError(null);
     try {
       await api.transferPeko(hubId, target);
       onTransferred();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'The transfer didn’t go through');
+      setError(err instanceof Error ? err.message : 'The offer didn’t go through');
     } finally {
       setBusy(false);
     }
@@ -520,7 +600,7 @@ function TransferPanel({
   return (
     <div className="space-y-4">
       <p className="text-sm text-slate-400">
-        Give {name} to another PekoHub account. It keeps running on the same computer.
+        Offer {name} to another PekoHub account. It moves when they accept, and keeps running on the same computer.
       </p>
       <ModalField label="New owner's handle">
         <input
@@ -535,7 +615,7 @@ function TransferPanel({
       {error && <p className="text-xs text-rose-300">{error}</p>}
       <button type="button" disabled={busy || !target} onClick={() => void transfer()} className="btn-secondary btn-sm">
         {busy && <Spinner className="h-3.5 w-3.5" />}
-        Transfer {name}
+        Offer {name}
       </button>
     </div>
   );
