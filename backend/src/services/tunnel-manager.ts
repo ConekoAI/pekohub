@@ -30,6 +30,7 @@ import {
 import { groupUrl } from "./origins.js";
 import { auditService } from "./audit.js";
 import { metrics, CounterName } from "./metrics.js";
+import { reportError } from "./error-reporting.js";
 import { db } from "../db/index.js";
 import { runtimes, instances, hubPrincipals } from "../db/schema.js";
 import { eq, inArray, and } from "drizzle-orm";
@@ -283,6 +284,10 @@ export class TunnelManager {
           { err, runtimeId: pendingRuntimeId },
           "Tunnel handshake failed",
         );
+        // A refused runtime is expected; anything else is a hub fault.
+        if (!(err instanceof TunnelAuthError)) {
+          reportError(err, { where: "tunnel handshake", runtimeId: pendingRuntimeId });
+        }
         const reason =
           err instanceof TunnelAuthError
             ? err.message
@@ -630,6 +635,7 @@ export class TunnelManager {
           { err, runtimeId },
           "Error handling tunnel message",
         );
+        reportError(err, { where: "tunnel message", runtimeId });
       });
     };
     socket.on("message", messageHandler);
@@ -831,6 +837,7 @@ export class TunnelManager {
           const message = err instanceof GroupRegistrationError ? err.message : "registration failed";
           if (!(err instanceof GroupRegistrationError)) {
             this.fastify.log.error({ err, runtimeId: conn.runtimeId }, "group registration failed");
+            reportError(err, { where: "group registration", runtimeId: conn.runtimeId });
           }
           this.sendMessage(conn.socket, { type: "group_register_rejected", requestId: msg.requestId, message });
         }
@@ -1943,6 +1950,7 @@ export class TunnelManager {
         { err, runtimeId: conn.runtimeId },
         "Failed to propagate runtime offline status",
       );
+      reportError(err, { where: "runtime offline propagation", runtimeId: conn.runtimeId });
     }
 
     await this.markRuntimeOffline(conn.runtimeId);
@@ -1965,6 +1973,7 @@ export class TunnelManager {
         { err, runtimeId },
         "Failed to mark runtime instances offline",
       );
+      reportError(err, { where: "mark runtime offline", runtimeId });
     }
   }
 

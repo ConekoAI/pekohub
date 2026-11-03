@@ -1,0 +1,46 @@
+name: Uptime
+
+# Probes the production API from outside every 10 minutes: /health (API and
+# database) and a WebSocket upgrade on the runtime tunnel
+# (scripts/probe-uptime.mjs). The external monitor is the primary alert
+# (DEPLOYMENT.md § "Health and alerts"); this covers the tunnel, which an
+# HTTP monitor can't check. GitHub runs schedules late at times and pauses
+# them after 60 days without a commit.
+#
+# Off until the repository variable UPTIME_API_ORIGIN is set
+# (e.g. https://api.pekohub.ai). With the secret UPTIME_HEARTBEAT_URL set
+# (a heartbeat monitor's URL), every passing run pings it, so the monitor
+# alerts when the probe fails or stops running.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    if: vars.UPTIME_API_ORIGIN != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      UPTIME_HEARTBEAT_URL: ${{ secrets.UPTIME_HEARTBEAT_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Probe
+        run: node scripts/probe-uptime.mjs "${{ vars.UPTIME_API_ORIGIN }}"
+
+      - name: Heartbeat
+        if: env.UPTIME_HEARTBEAT_URL != ''
+        run: curl -fsS -m 10 -o /dev/null "$UPTIME_HEARTBEAT_URL"

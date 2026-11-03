@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { createRootRoute, Link, Outlet, useMatches, useRouter } from '@tanstack/react-router';
 import { Layout } from '~/components/Layout';
+import { reportError } from '~/lib/error-reporting';
 
 export const Route = createRootRoute({
   component: () => (
@@ -44,6 +45,9 @@ function NotFound() {
 
 function RouteError({ error, reset }: { error: Error; reset: () => void }) {
   const router = useRouter();
+  // The router catches render and loader errors, so the SDK's global
+  // handlers never see them.
+  useEffect(() => reportError(error), [error]);
 
   return (
     <div className="mx-auto max-w-md animate-fade-up px-5 py-32 text-center">

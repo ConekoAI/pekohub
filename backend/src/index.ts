@@ -3,8 +3,6 @@ import { bridgeJwks } from "./services/bridge-token.js";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
-import swagger from "@fastify/swagger";
-import swaggerUi from "@fastify/swagger-ui";
 import rateLimit from "@fastify/rate-limit";
 
 import configPlugin from "./plugins/config.js";
@@ -13,6 +11,7 @@ import storagePlugin from "./plugins/storage.js";
 import searchPlugin from "./plugins/search.js";
 import tunnelPlugin from "./plugins/tunnel.js";
 import quotaPlugin from "./plugins/quotas.js";
+import swaggerPlugin from "./plugins/swagger.js";
 
 import searchApiRoutes from "./routes/api/search.js";
 import seedRoutes from "./routes/api/seeds.js";
@@ -26,10 +25,15 @@ import groupRoutes from "./routes/api/groups.js";
 import oauthRoutes from "./routes/auth/oauth.js";
 import apiKeyRoutes from "./routes/auth/api-keys.js";
 import oauthServerRoutes from "./routes/auth/oauth-server.js";
+import opsRoutes from "./routes/ops.js";
 
 import { Scheduler } from "./services/scheduler.js";
-import { metrics } from "./services/metrics.js";
 import { instanceService } from "./services/instances.js";
+import {
+  initErrorReporting,
+  reportError,
+  flushErrorReports,
+} from "./services/error-reporting.js";
 
 async function main() {
   const app = Fastify({
@@ -57,6 +61,25 @@ async function main() {
 
   // Register plugins
   await app.register(configPlugin);
+
+  const errorReporting = await initErrorReporting({
+    dsn: app.config.SENTRY_DSN,
+    environment: app.config.SENTRY_ENVIRONMENT ?? app.config.NODE_ENV,
+    release: app.config.SENTRY_RELEASE,
+  });
+  if (errorReporting) app.log.info("Error reporting to Sentry is on");
+
+  // Node's own behavior (exit) is kept: a restart is safer than running on in
+  // an unknown state. The error is logged and reported first.
+  const fatal = (kind: string) => async (err: unknown) => {
+    app.log.fatal({ err }, kind);
+    reportError(err, { kind });
+    await flushErrorReports();
+    process.exit(1);
+  };
+  process.on("uncaughtException", fatal("uncaughtException"));
+  process.on("unhandledRejection", fatal("unhandledRejection"));
+
   await app.register(cors, {
     origin: [
       "http://localhost:5173",
@@ -76,32 +99,12 @@ async function main() {
   await app.register(tunnelPlugin);
   await app.register(quotaPlugin);
 
-  // Swagger / OpenAPI
-  await app.register(swagger, {
-    openapi: {
-      info: {
-        title: "PekoHub Registry API",
-        description: "OCI Distribution Spec v1.1 + PekoHub custom APIs",
-        version: "1.0.0",
-      },
-      servers: [{ url: "http://localhost:3000" }],
-    },
-  });
-  await app.register(swaggerUi, {
-    routePrefix: "/docs",
-  });
+  if (app.config.API_DOCS === "true") {
+    await app.register(swaggerPlugin);
+  }
 
-  // Health check
-  app.get("/health", async () => ({
-    status: "ok",
-    version: "0.1.0",
-    deployedVia: "github-actions",
-  }));
-
-  // Issue #16: in-process counter snapshot. Intentionally unauthenticated
-  // — the counters are diagnostic, not authoritative, and exposing them
-  // on a sidecar / metrics-scrape path is the typical deployment.
-  app.get("/metrics", async () => metrics.snapshot());
+  // GET /health (checks the database) and, with METRICS_TOKEN, GET /metrics.
+  await app.register(opsRoutes, { metricsToken: app.config.METRICS_TOKEN });
 
   // Custom API routes
   await app.register(searchApiRoutes, { prefix: "/v1" });
@@ -188,7 +191,16 @@ async function main() {
   // Error handler
   app.setErrorHandler((error, request, reply) => {
     app.log.error(error);
-    reply.status(error.statusCode ?? 500).send({
+    const status = error.statusCode ?? 500;
+    if (status >= 500) {
+      // The route pattern, not the URL: query strings carry OAuth codes.
+      reportError(error, {
+        method: request.method,
+        route: request.routeOptions.url,
+        status,
+      });
+    }
+    reply.status(status).send({
       error: error.message,
       ...(process.env.NODE_ENV === "development" ? { stack: error.stack } : {}),
     });
@@ -202,9 +214,13 @@ async function main() {
     app.log.info(
       `🚀 PekoHub registry server running at http://${host}:${port}`,
     );
-    app.log.info(`📚 API docs at http://${host}:${port}/docs`);
+    if (app.config.API_DOCS === "true") {
+      app.log.info(`📚 API docs at http://${host}:${port}/docs`);
+    }
   } catch (err) {
     app.log.error(err);
+    reportError(err, { kind: "listen" });
+    await flushErrorReports();
     process.exit(1);
   }
 
@@ -245,4 +261,9 @@ async function main() {
   process.on("SIGINT", () => shutdown("SIGINT"));
 }
 
-main();
+main().catch(async (err) => {
+  console.error(err);
+  reportError(err, { kind: "startup" });
+  await flushErrorReports();
+  process.exit(1);
+});

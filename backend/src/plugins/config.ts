@@ -1,6 +1,10 @@
 import fp from "fastify-plugin";
 import { z } from "zod";
 
+/** An optional setting; an empty value (`FOO=` in an env file) counts as unset. */
+const optional = <T extends z.ZodTypeAny>(type: T) =>
+  z.preprocess((v) => (v === "" ? undefined : v), type.optional());
+
 const schema = z.object({
   PORT: z.string().default("3000"),
   HOST: z.string().default("0.0.0.0"),
@@ -40,6 +44,15 @@ const schema = z.object({
   ALLOW_VISITOR_CHAT: z.enum(["true", "false"]).default("false"),
   RATE_LIMIT_MAX: z.coerce.number().default(100),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60_000),
+  // Error tracking (services/error-reporting.ts). Off unless SENTRY_DSN is set.
+  SENTRY_DSN: optional(z.string().url()),
+  SENTRY_ENVIRONMENT: optional(z.string()),
+  SENTRY_RELEASE: optional(z.string()),
+  // Bearer token for GET /metrics; unset, the route doesn't exist.
+  METRICS_TOKEN: optional(z.string().min(32)),
+  // The Swagger UI at /docs. Off by default: routes carry no schemas, so it
+  // lists paths and little else.
+  API_DOCS: z.enum(["true", "false"]).default("false"),
 });
 
 export type Config = z.infer<typeof schema>;

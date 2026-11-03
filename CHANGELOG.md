@@ -2,6 +2,18 @@
 
 ## 0.1.0 — pre-launch
 
+- Errors reach Sentry when a DSN is set: the API's 5xx answers, tunnel faults, scheduled-job
+  failures and crashes (`SENTRY_DSN`), and the website's uncaught errors and route errors
+  (`VITE_SENTRY_DSN`, whose host the CSP then allows). Neither sends URLs' query strings,
+  headers or cookies; without a DSN the SDK isn't loaded.
+- `/health` checks the database: 503 with `"database":"unreachable"` when `select 1` fails or
+  takes over 5 s. `/metrics` needs `Authorization: Bearer $METRICS_TOKEN` and doesn't exist
+  without one. `/docs` exists only with `API_DOCS=true` and no longer calls the API an OCI
+  registry.
+- `fly.production.toml`, a nightly encrypted backup to R2 (`backup-production.yml`), a tunnel
+  and health probe (`scripts/probe-uptime.mjs`, `uptime.yml`) and a restore drill
+  (`scripts/restore-drill.sh`), all described in DEPLOYMENT.md; the workflows stay off until
+  their secrets and variables are set.
 - First sign-in no longer fails when the name is taken. A new account's handle comes from
   the GitHub login or the Google address before the `@`, made valid (lowercase letters,
   digits, `-`, `_`, at most 39 characters — what `@handle` IDs accept) and numbered when

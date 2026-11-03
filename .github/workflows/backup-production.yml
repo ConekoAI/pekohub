@@ -1,0 +1,80 @@
+name: Backup Production Database
+
+# Nightly logical dump of the production database (Neon), encrypted to an
+# age public key and stored in a Cloudflare R2 bucket. It is the copy that
+# survives losing the Neon project or account; Neon's point-in-time restore
+# is the first line. Restore with scripts/restore-drill.sh
+# (DEPLOYMENT.md § "Backups and the restore drill").
+#
+# Off until configured (a run without them is skipped, not failed):
+#   secrets   BACKUP_DATABASE_URL          Neon's direct connection string for a read-only role
+#             BACKUP_R2_ACCESS_KEY_ID      R2 token scoped to the backup bucket (Object Read & Write)
+#             BACKUP_R2_SECRET_ACCESS_KEY
+#   variables BACKUP_R2_ENDPOINT           https://<account id>.r2.cloudflarestorage.com
+#             BACKUP_R2_BUCKET             e.g. pekohub-backups
+#             BACKUP_AGE_RECIPIENT         age public key (age1...); the private key stays offline
+#             BACKUP_PG_MAJOR              the database's Postgres major version (default 17)
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup-production
+  cancel-in-progress: false
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_R2_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      # R2 doesn't take the checksums newer AWS CLIs send by default.
+      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+      R2_ENDPOINT: ${{ vars.BACKUP_R2_ENDPOINT }}
+      R2_BUCKET: ${{ vars.BACKUP_R2_BUCKET }}
+      AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
+      PG_MAJOR: ${{ vars.BACKUP_PG_MAJOR || '17' }}
+    steps:
+      - name: Check configuration
+        id: config
+        run: |
+          for v in BACKUP_DATABASE_URL AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY R2_ENDPOINT R2_BUCKET AGE_RECIPIENT; do
+            if [ -z "${!v}" ]; then
+              echo "::notice::$v is not set; skipping the production backup."
+              echo "ready=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Install age
+        if: steps.config.outputs.ready == 'true'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq age
+
+      - name: Dump, encrypt, upload
+        if: steps.config.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          name="pekohub-$(date -u +%Y%m%dT%H%M%SZ).dump.age"
+          out="$RUNNER_TEMP/$name"
+          # pg_dump from the server's major version; the URL travels in the
+          # environment, not on a command line.
+          docker run --rm -e BACKUP_DATABASE_URL "postgres:${PG_MAJOR}-alpine" \
+            sh -c 'pg_dump --format=custom --no-owner --no-privileges --dbname="$BACKUP_DATABASE_URL"' \
+            | age --encrypt --recipient "$AGE_RECIPIENT" > "$out"
+          size=$(stat -c %s "$out")
+          if [ "$size" -lt 1024 ]; then
+            echo "::error::The dump is only $size bytes"
+            exit 1
+          fi
+          aws s3 cp "$out" "s3://$R2_BUCKET/postgres/$name" --endpoint-url "$R2_ENDPOINT" --no-progress
+          echo "::notice::Stored postgres/$name ($size bytes)"
