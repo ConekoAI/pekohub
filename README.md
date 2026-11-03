@@ -177,6 +177,15 @@ Website pages are IDs (ADR-009): `/@alice` (a person), `/@alice/ada` (a peko), `
 
 Both endpoints return `PrincipalTargetResolution { status: "hit" | "miss" | "denied", target?: ... }`. Used by the runtime's directory client to dial peers (channel-native `ChannelSend` flows). These are machine-facing wire paths and keep the `principal` vocabulary per ADR-059.
 
+### Owner changes (ADR-081 D4)
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /v1/principals/by-hub-id/:hubId/transfer` | The owner offers the peko to `{ ownerId }` or `{ ownerHandle }` (202). Nothing changes until they accept; a newer offer replaces an open one. |
+| `POST /v1/principals/by-hub-id/:hubId/transfer/accept` | The account it was offered to takes it; its runtime is told. |
+| `DELETE /v1/principals/by-hub-id/:hubId/transfer` | Decline (recipient) or withdraw (owner) an open offer. |
+| `GET /v1/me/transfers` | Open offers to and from the signed-in account. |
+
 ### OAuth & API keys
 
 | Endpoint | Description |

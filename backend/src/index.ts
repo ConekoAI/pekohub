@@ -13,6 +13,8 @@ import storagePlugin from "./plugins/storage.js";
 import searchPlugin from "./plugins/search.js";
 import tunnelPlugin from "./plugins/tunnel.js";
 import quotaPlugin from "./plugins/quotas.js";
+import { apiErrorHandler } from "./plugins/errors.js";
+import { WindowLimiter } from "./services/window-limiter.js";
 
 import searchApiRoutes from "./routes/api/search.js";
 import seedRoutes from "./routes/api/seeds.js";
@@ -140,59 +142,30 @@ async function main() {
 
   // OAuth protocol endpoints: device polling runs every few seconds, so
   // a looser per-IP cap than the sign-in endpoints below.
+  const oauthLimiter = new WindowLimiter(60, 60_000);
   app.addHook("onRequest", async (request, reply) => {
     if (!request.url.startsWith("/oauth/")) return;
-    const key = `ratelimit:oauth:${request.ip}`;
-    const now = Date.now();
-    const windowMs = 60_000;
-    const max = 60;
-    const store =
-      (app as any)._oauthRateLimitStore ?? new Map<string, number[]>();
-    (app as any)._oauthRateLimitStore = store;
-    const valid = (store.get(key) ?? []).filter((t: number) => now - t < windowMs);
-    if (valid.length >= max) {
-      reply.header("Retry-After", Math.ceil(windowMs / 1000));
+    if (!oauthLimiter.allow(request.ip)) {
+      reply.header("Retry-After", oauthLimiter.retryAfterSeconds);
       return reply.status(429).send({ error: "slow_down" });
     }
-    valid.push(now);
-    store.set(key, valid);
   });
 
-  // Stricter rate limits for auth endpoints
+  // A stricter per-IP cap on sign-in and account endpoints (@fastify/rate-limit
+  // has no prefix scoping). `/me` and `/refresh` run on every website load,
+  // and many people can share one IP, so they stay under the global cap.
+  const authLimiter = new WindowLimiter(20, 60_000);
   app.addHook("onRequest", async (request, reply) => {
-    if (
-      request.url.startsWith("/v1/auth/")
-    ) {
-      // Use a simple in-memory rate limiter for auth endpoints
-      // @fastify/rate-limit doesn't support prefix-based scoping,
-      // so we apply a custom hook here.
-      const key = `ratelimit:auth:${request.ip}`;
-      const now = Date.now();
-      const windowMs = 60_000;
-      const max = 10;
-      const store =
-        (app as any)._authRateLimitStore ?? new Map<string, number[]>();
-      (app as any)._authRateLimitStore = store;
-
-      const timestamps = store.get(key) ?? [];
-      const valid = timestamps.filter((t: number) => now - t < windowMs);
-      if (valid.length >= max) {
-        reply.header("Retry-After", Math.ceil(windowMs / 1000));
-        return reply.status(429).send({ error: "Too many requests" });
-      }
-      valid.push(now);
-      store.set(key, valid);
+    if (!request.url.startsWith("/v1/auth/")) return;
+    const path = request.url.split("?")[0];
+    if (path === "/v1/auth/me" || path === "/v1/auth/refresh") return;
+    if (!authLimiter.allow(request.ip)) {
+      reply.header("Retry-After", authLimiter.retryAfterSeconds);
+      return reply.status(429).send({ error: "Too many requests" });
     }
   });
 
-  // Error handler
-  app.setErrorHandler((error, request, reply) => {
-    app.log.error(error);
-    reply.status(error.statusCode ?? 500).send({
-      error: error.message,
-      ...(process.env.NODE_ENV === "development" ? { stack: error.stack } : {}),
-    });
-  });
+  app.setErrorHandler(apiErrorHandler);
 
   const port = Number(app.config.PORT);
   const host = app.config.HOST;

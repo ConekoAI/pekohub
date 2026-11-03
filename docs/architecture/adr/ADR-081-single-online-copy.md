@@ -52,13 +52,24 @@ hello, could knock the original offline.
      `POST /v1/principals/by-hub-id/:hubId/move { runtimeId }`; for a
      principal never online, any account may approve, and the approval
      admits only a registration naming the approver as owner.
-   - **Only the recorded owner transfers it**, to an existing Hub user:
-     through `POST /v1/principals/by-hub-id/:hubId/transfer { ownerId }`,
-     or over the tunnel (`principal_transfer`) when the linked runtime's
-     account is the recorded owner. Hub writes the new owner, withdraws
-     pending link approvals, audits `principal.owner_transfer`, and sends
-     the linked runtime `principal_owner_changed`; a refused tunnel request
-     gets `principal_transfer_rejected`.
+   - **Only the recorded owner transfers it**, to an existing Hub user,
+     **and only when that user accepts** (amended 2026-11-03): the owner's
+     conversations with a peko run on its host, so no account is made an
+     owner without saying yes. The owner offers it through
+     `POST /v1/principals/by-hub-id/:hubId/transfer { ownerId | ownerHandle }`
+     (202), or over the tunnel (`principal_transfer`) when the linked
+     runtime's account is the recorded owner; the tunnel request gets
+     `principal_transfer_rejected` with "Offered to @…" as its message,
+     since the runtime has no pending receipt. One open offer per
+     principal, for 7 days (`principal_transfer_offers`); a newer one
+     replaces it, and `DELETE …/transfer` declines or withdraws it. The
+     recipient accepts with `POST …/transfer/accept`, valid only while the
+     offering account is still the owner. Hub then writes the new owner,
+     withdraws pending link approvals and offers, audits
+     `principal.owner_transfer` (offers: `principal.owner_transfer_offered`),
+     and sends the linked runtime `principal_owner_changed`, which syncs
+     its owner and re-announces. `GET /v1/me/transfers` lists open offers
+     to and from an account.
 6. Retired: replace-on-reconnect, and the terminal-login `local_<UUID>`
    derivation described in ADR-073 (the runtime no longer has a separate
    terminal login).

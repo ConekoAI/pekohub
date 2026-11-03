@@ -162,6 +162,29 @@ describe("Seed registry", () => {
     expect((await app.inject({ method: "GET", url: "/v1/seeds/alice/ada" })).statusCode).toBe(404);
   });
 
+  it("a removed version is never published again with other text", async () => {
+    const alice = await createUser(testDb.client, { namespace: "alice" });
+    const headers = await authHeaders(alice);
+    await publish(headers, "1.0.0");
+    await publish(headers, "1.1.0");
+    await app.inject({ method: "DELETE", url: "/v1/seeds/alice/ada/versions/1.1.0", headers });
+
+    const reused = await publish(headers, "1.1.0", SEED.replace("Reads papers", "Does something else"));
+    expect(reused.statusCode).toBe(409);
+    expect(reused.json().error).toContain("never reused");
+    expect(
+      (await app.inject({ method: "GET", url: "/v1/seeds/alice/ada/versions/1.1.0/seed.toml" })).statusCode,
+    ).toBe(404);
+
+    // Removing the whole seed keeps the numbers too; new ones still publish.
+    expect((await app.inject({ method: "DELETE", url: "/v1/seeds/alice/ada", headers })).statusCode).toBe(204);
+    expect((await app.inject({ method: "GET", url: "/v1/seeds?owner=alice" })).json().items ?? []).toHaveLength(0);
+    expect((await publish(headers, "1.0.0")).statusCode).toBe(409);
+    expect((await publish(headers, "2.0.0")).statusCode).toBe(201);
+    const detail = (await app.inject({ method: "GET", url: "/v1/seeds/alice/ada" })).json();
+    expect(detail.versions.map((v: { version: string }) => v.version)).toEqual(["2.0.0"]);
+  });
+
   it("the public OCI surface is gone", async () => {
     for (const url of ["/v2/", "/v2/_catalog", "/v1/bundles/alice/ada", "/api/v1/search?q=a"]) {
       expect((await app.inject({ method: "GET", url })).statusCode, url).toBe(404);

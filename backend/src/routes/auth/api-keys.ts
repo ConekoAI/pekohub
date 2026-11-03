@@ -3,7 +3,7 @@ import { db } from "../../db/index.js";
 import { apiKeys } from "../../db/schema.js";
 import { eq } from "drizzle-orm";
 import crypto from "node:crypto";
-import bcrypt from "bcryptjs";
+import { apiKeyHash } from "../../plugins/auth.js";
 
 /**
  * API Key management
@@ -23,27 +23,26 @@ export default async function apiKeyRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ error: "Name is required" });
     }
 
-    // Generate key: pkr_<6-char prefix><24-char secret>
-    //   prefix = "pkr_" (4 chars) + 6 hex chars = 10 chars total
-    //   full   = 10 + 24 = 34 chars total
-    // The api_keys.prefix column is varchar(16) — plenty of headroom.
-    // Aligns with peko-runtime's `pkr_` format (peko-rs/auth/src/api_key.rs)
-    // so a single key universe is recognized across both sides.
-    const prefix = "pkr_" + crypto.randomBytes(3).toString("hex");
-    const secret = crypto.randomBytes(18).toString("base64url"); // 24 chars
-    const fullKey = prefix + secret;
-
-    const hash = await bcrypt.hash(fullKey, 12);
-
-    const [record] = await db
-      .insert(apiKeys)
-      .values({
-        userId: user.id,
-        name: name.trim(),
-        prefix,
-        hash,
-      })
-      .returning();
+    // Key: `pkr_` + 12 hex (the looked-up prefix, unique) + 24 base64url
+    // secret characters — 192 random bits in all, `pkr_` like
+    // peko-runtime's own keys (peko-rs/auth/src/api_key.rs). Stored as
+    // SHA-256: a random key needs no slow hash, and every authenticated
+    // request checks one.
+    let record: typeof apiKeys.$inferSelect | undefined;
+    let fullKey = "";
+    for (let attempt = 1; !record; attempt++) {
+      const prefix = "pkr_" + crypto.randomBytes(6).toString("hex");
+      fullKey = prefix + crypto.randomBytes(18).toString("base64url");
+      try {
+        [record] = await db
+          .insert(apiKeys)
+          .values({ userId: user.id, name: name.trim(), prefix, hash: apiKeyHash(fullKey) })
+          .returning();
+      } catch (error) {
+        // A prefix collision (48 bits) is vanishingly rare; draw again.
+        if (attempt >= 3) throw error;
+      }
+    }
 
     return reply.status(201).send({
       id: record.id,

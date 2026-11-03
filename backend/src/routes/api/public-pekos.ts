@@ -4,6 +4,7 @@ import { instances, users } from "../../db/schema.js";
 import { eq, and, sql, desc, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { instanceService, type InstanceStatus } from "../../services/instances.js";
+import { WindowLimiter } from "../../services/window-limiter.js";
 import { readOrSetVisitor } from "../../services/visitor-cookie.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -28,6 +29,7 @@ const ChatBodySchema = z.object({
 });
 
 export default async function publicPekoRoutes(fastify: FastifyInstance) {
+  const publicChatLimiter = new WindowLimiter(20, 60_000);
   // ── Public peko page data ──────────────────────────────────────────────────
   fastify.get("/public/pekos/:owner/:pekoName", async (request, reply) => {
     const { owner, pekoName } = request.params as {
@@ -103,24 +105,11 @@ export default async function publicPekoRoutes(fastify: FastifyInstance) {
           .send({ error: "Sign in to message this peko", code: "sign_in_required" });
       }
 
-      // IP-based rate limiting for anonymous public access
-      const rateLimitKey = `public_chat:${request.ip}`;
-      const now = Date.now();
-      const windowMs = 60_000;
-      const max = 20; // stricter than authenticated
-      const store =
-        (fastify as any)._publicChatRateLimitStore ??
-        new Map<string, number[]>();
-      (fastify as any)._publicChatRateLimitStore = store;
-
-      const timestamps = store.get(rateLimitKey) ?? [];
-      const valid = timestamps.filter((t: number) => now - t < windowMs);
-      if (valid.length >= max) {
-        reply.header("Retry-After", Math.ceil(windowMs / 1000));
+      // Per-IP cap, stricter than the global one.
+      if (!publicChatLimiter.allow(request.ip)) {
+        reply.header("Retry-After", publicChatLimiter.retryAfterSeconds);
         return reply.status(429).send({ error: "Too many requests" });
       }
-      valid.push(now);
-      store.set(rateLimitKey, valid);
 
       const ownerRow = await db.query.users.findFirst({
         where: eq(users.namespace, owner),

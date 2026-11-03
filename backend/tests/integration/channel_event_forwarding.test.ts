@@ -922,4 +922,45 @@ describe("Registering groups over the tunnel", () => {
     const relayed = reply(socketHome, "tunnel_group_join_request") as Array<{ requestId: string }>;
     expect(relayed.map((m) => m.requestId)).toEqual(["j1"]);
   });
+  it("relays at most 600 channel events a minute per runtime and drops the rest", async () => {
+    const { tunnelManager } = await buildForwardingTestApp(testDb);
+    const ownerA = await createUser(testDb.client, { namespace: "alice" });
+    const ownerB = await createUser(testDb.client, { namespace: "bob" });
+    const idA = makeRuntimeIdentity();
+    const idB = makeRuntimeIdentity();
+    await seedRuntime(testDb, idA.did, ownerA.id);
+    await seedRuntime(testDb, idB.did, ownerB.id);
+    const socketA = new MockWebSocket();
+    const socketB = new MockWebSocket();
+    tunnelManager.handleSocket(socketA.asWebSocket());
+    tunnelManager.handleSocket(socketB.asWebSocket());
+    await completeHandshake(socketA, idA.did, idA.privateKey);
+    await completeHandshake(socketB, idB.did, idB.privateKey);
+
+    for (let n = 0; n < 605; n++) {
+      socketA.triggerMessage({
+        type: "tunnel_channel_event",
+        requestId: `flood-${n}`,
+        sourceRuntimeId: idA.did,
+        recipientRuntimeId: idB.did,
+        sourcePrincipalDid: "prin_alice",
+        channelId: "chan_abcdefgh",
+        event: {
+          kind: "posted",
+          channel: "chan_abcdefgh",
+          author: "prin_alice",
+          parent: null,
+          text: `spam ${n}`,
+          at: "2026-08-06T12:00:00Z",
+        },
+        signature: "sig",
+      });
+    }
+    await new Promise((r) => setTimeout(r, 300));
+
+    expect(socketB.sent.filter((m) => m.type === "tunnel_channel_event")).toHaveLength(600);
+    expect(metrics.snapshot()[CounterName.HubChannelEventRateLimited]).toBe(5);
+    // The sender stays connected: its outbox resends what was dropped.
+    expect(tunnelManager.isRuntimeConnected(idA.did)).toBe(true);
+  });
 });

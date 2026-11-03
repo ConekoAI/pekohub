@@ -42,13 +42,15 @@ export class AuditService {
   async logPrincipalOwnerTransfer(
     hubId: string,
     userId: string,
-    details: { from: string; to: string; via: "api" | "tunnel" },
+    details:
+      | { from: string; to: string; via: "api" | "tunnel" }
+      | { offeredTo: string; via: "api" | "tunnel" },
   ): Promise<void> {
     try {
       await db.insert(auditLogs).values({
         namespace: "principals",
         userId,
-        action: "principal.owner_transfer",
+        action: "offeredTo" in details ? "principal.owner_transfer_offered" : "principal.owner_transfer",
         resource: hubId,
         details,
       });
