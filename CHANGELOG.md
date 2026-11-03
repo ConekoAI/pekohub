@@ -2,6 +2,12 @@
 
 ## 0.1.0 — pre-launch
 
+- The website shows "Sign in" at once. Without a saved token it no longer asks the API who
+  is signed in (it could only answer 401) and waited on that round trip — a CORS preflight
+  and a request to a cold or stopped API — with a spinner. GET requests drop their
+  `Content-Type` header, so reads cross-origin no longer pay a preflight. An expired access
+  token is now refreshed from the refresh cookie instead of showing a returning visitor as
+  signed out, and sign-in loads the user before leaving `/auth/callback`.
 - The website is redesigned: navy surfaces, one brand-blue accent, flat cards and hairline
   borders in place of the cyan/violet gradients, glows and graph paper. Pages say less — no
   mono eyebrow labels or explanatory subtitles. The home page is a hero, four short
