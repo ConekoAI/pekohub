@@ -5,7 +5,6 @@ export const API_BASE = typeof __API_BASE__ !== 'undefined' ? __API_BASE__ : '';
 
 const TOKEN_KEY = 'pekohub_token';
 
-let isRefreshing = false;
 let refreshPromise: Promise<string> | null = null;
 
 export function getAuthToken(): string | null {
@@ -60,39 +59,43 @@ async function doRefresh(): Promise<string> {
   return data.token;
 }
 
+/** One refresh at a time: concurrent 401s share it. */
+function refreshAccessToken(): Promise<string> {
+  refreshPromise ??= doRefresh().finally(() => {
+    refreshPromise = null;
+  });
+  return refreshPromise;
+}
+
+/**
+ * Request headers. `Content-Type` only rides a request with a body: on a
+ * cross-origin GET it would force a CORS preflight, a second round trip
+ * before every read.
+ */
+function requestHeaders(token: string | null, options?: RequestInit): HeadersInit {
+  return {
+    ...(options?.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...options?.headers,
+  };
+}
+
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   const token = getAuthToken();
   const response = await fetch(`${API_BASE}${url}`, {
     ...options,
     credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options?.headers,
-    },
+    headers: requestHeaders(token, options),
   });
 
   if (response.status === 401 && !url.includes('/auth/refresh') && !url.includes('/auth/me')) {
-    // Attempt to refresh the access token
-    if (!isRefreshing) {
-      isRefreshing = true;
-      refreshPromise = doRefresh().finally(() => {
-        isRefreshing = false;
-        refreshPromise = null;
-      });
-    }
-
     try {
-      const newToken = await refreshPromise!;
+      const newToken = await refreshAccessToken();
       // Retry original request with new token
       const retryResponse = await fetch(`${API_BASE}${url}`, {
         ...options,
         credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${newToken}`,
-          ...options?.headers,
-        },
+        headers: requestHeaders(newToken, options),
       });
 
       if (!retryResponse.ok) {
@@ -239,8 +242,27 @@ export const api = {
       body: JSON.stringify({ user_code: userCode, approve }),
     }),
 
-  getMe: () =>
-    fetchJson<UserProfile>('/v1/auth/me'),
+  /**
+   * Who is signed in, or `null`. With no saved token no one is, and no
+   * request is made — the header shows "Sign in" at once. An expired token
+   * is refreshed from the refresh cookie once; if that fails, the visitor
+   * is signed out (not sent home, as other calls are).
+   */
+  getMe: async (): Promise<UserProfile | null> => {
+    if (!getAuthToken()) return null;
+    try {
+      return await fetchJson<UserProfile>('/v1/auth/me');
+    } catch (error) {
+      if (!isApiError(error) || error.status !== 401) throw error;
+    }
+    try {
+      await refreshAccessToken();
+      return await fetchJson<UserProfile>('/v1/auth/me');
+    } catch {
+      clearAuthToken();
+      return null;
+    }
+  },
 
   /**
    * Runtimes owned by the caller (ADR-032/058). Every peko is hosted by

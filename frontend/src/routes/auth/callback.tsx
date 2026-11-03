@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router';
-import { useEffect, useState } from 'react';
-import { setAuthToken } from '~/lib/api';
+import { useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { api, setAuthToken } from '~/lib/api';
 import { takeSignInReturnTo } from '~/components/SignInModal';
 import { Spinner } from '~/components/ui';
 
@@ -10,10 +11,16 @@ export const Route = createFileRoute('/auth/callback')({
 
 function AuthCallbackPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const search = useSearch({ from: '/auth/callback' });
   const [error, setError] = useState<string | null>(null);
+  // Once per visit: the return-to path is consumed on read, and StrictMode
+  // runs effects twice in development.
+  const started = useRef(false);
 
   useEffect(() => {
+    if (started.current) return;
+    started.current = true;
     const params = search as Record<string, unknown>;
     const token = params.token;
     const errorMsg = params.error;
@@ -26,15 +33,20 @@ function AuthCallbackPage() {
     if (typeof token === 'string' && token) {
       setAuthToken(token);
       const returnTo = takeSignInReturnTo();
-      if (returnTo) {
-        void navigate({ href: returnTo, replace: true });
-      } else {
-        void navigate({ to: '/dashboard', replace: true });
-      }
+      // Load the user before leaving, so the next page opens signed in
+      // rather than flashing "Sign in".
+      void queryClient
+        .fetchQuery({ queryKey: ['auth', 'me'], queryFn: () => api.getMe() })
+        .catch(() => null)
+        .then(() =>
+          returnTo
+            ? navigate({ href: returnTo, replace: true })
+            : navigate({ to: '/dashboard', replace: true }),
+        );
     } else {
       setError('Authentication failed: no token received');
     }
-  }, [search, navigate]);
+  }, [search, navigate, queryClient]);
 
   return (
     <div className="mx-auto flex min-h-[70vh] max-w-sm flex-col items-center justify-center px-5 text-center">
