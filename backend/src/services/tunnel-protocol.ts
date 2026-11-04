@@ -534,6 +534,18 @@ export interface DmRoute {
   person: string;
 }
 
+/**
+ * Runtime ADR-095 D6: one block or unblock, with when; a person's runtimes
+ * keep the latest per person.
+ */
+export interface DmBlock {
+  /** `user:hub:<account>`. */
+  person: string;
+  blocked: boolean;
+  /** RFC 3339. */
+  at: string;
+}
+
 /** Runtime ADR-095 D6: one of a person's DMs with another person. */
 export interface AccountPersonDm {
   channelId: string;
@@ -549,9 +561,9 @@ export interface TunnelAccountDmsPayload {
   sourceRuntimeId: string;
   recipientRuntimeId: string;
   dms: AccountDm[];
-  /** Runtime ADR-095 D6: the person's DMs with people, and whom they blocked. */
+  /** Runtime ADR-095 D6: the person's DMs with people, and their block decisions. */
   people: AccountPersonDm[];
-  blocked: string[];
+  blocks: DmBlock[];
   signature: string;
 }
 
