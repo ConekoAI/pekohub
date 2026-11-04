@@ -59,8 +59,8 @@ hello, could knock the original offline.
      `POST /v1/principals/by-hub-id/:hubId/transfer { ownerId | ownerHandle }`
      (202), or over the tunnel (`principal_transfer`) when the linked
      runtime's account is the recorded owner; the tunnel request gets
-     `principal_transfer_rejected` with "Offered to @…" as its message,
-     since the runtime has no pending receipt. One open offer per
+     `principal_transfer_offered` (its message: "Offered to @…"), and a
+     refused one `principal_transfer_rejected`. One open offer per
      principal, for 7 days (`principal_transfer_offers`); a newer one
      replaces it, and `DELETE …/transfer` declines or withdraws it. The
      recipient accepts with `POST …/transfer/accept`, valid only while the

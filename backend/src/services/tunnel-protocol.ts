@@ -365,6 +365,8 @@ export type TunnelMessage =
   // or when an announce named a different one.
   | { type: "principal_transfer"; requestId: string; localId: string; hubId: string; ownerId: string }
   | { type: "principal_transfer_rejected"; requestId: string; message: string }
+  // The transfer became an offer the new owner accepts on PekoHub.
+  | { type: "principal_transfer_offered"; requestId: string; message: string }
   | { type: "principal_owner_changed"; requestId?: string; localId: string; hubId: string; ownerId: string }
   | { type: "instance_heartbeat"; payload: InstanceHeartbeatPayload }
   | { type: "instance_deregister"; payload: InstanceDeregisterPayload }

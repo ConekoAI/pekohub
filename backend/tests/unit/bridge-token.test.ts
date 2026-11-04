@@ -82,6 +82,9 @@ function fakeReply() {
     status() {
       return { send() {} };
     },
+    getHeaders() {
+      return {};
+    },
     raw: {
       getHeader() {
         return undefined;

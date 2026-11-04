@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { randomBytes } from "node:crypto";
 import { db } from "../../db/index.js";
-import { instances, runtimes } from "../../db/schema.js";
+import { hubGroups, instances, runtimes } from "../../db/schema.js";
 import { eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { notify, PAGES } from "../../services/notifications.js";
@@ -299,6 +299,9 @@ export default async function runtimeRoutes(fastify: FastifyInstance) {
       }
       await db.transaction(async (tx) => {
         await tx.delete(instances).where(eq(instances.runtimeId, did));
+        // The groups this computer was home to (runtime ADR-092 D5) live
+        // only there: their Hub IDs, pages and invite links go with it.
+        await tx.delete(hubGroups).where(eq(hubGroups.homeRuntime, did));
         await tx.delete(runtimes).where(eq(runtimes.runtimeDid, did));
       });
       fastify.tunnelManager?.disconnectRuntime(did, "runtime unregistered");

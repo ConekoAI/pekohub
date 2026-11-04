@@ -95,7 +95,8 @@ describe("Tunnel Proxy Integration", () => {
       const chatPromise = app.inject({
         method: "POST",
         url: `/v1/instances/${instance.id}/chat`,
-        headers,
+        // From a website origin: the stream must carry its CORS headers.
+        headers: { ...headers, origin: "https://pekohub.ai" },
         payload: { message: "hello" },
       });
 
@@ -141,6 +142,8 @@ describe("Tunnel Proxy Integration", () => {
 
       expect(response.statusCode).toBe(200);
       expect(response.headers["content-type"]).toContain("text/event-stream");
+      expect(response.headers["access-control-allow-origin"]).toBe("https://pekohub.ai");
+      expect(response.headers["access-control-allow-credentials"]).toBe("true");
 
       const lines = response.payload.split("\n").filter((l) => l.trim() !== "");
       expect(lines.length).toBeGreaterThanOrEqual(2);
