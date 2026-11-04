@@ -949,6 +949,8 @@ describe("Relaying a person's DM list between their runtimes", () => {
     sourceRuntimeId: from,
     recipientRuntimeId: to,
     dms: [],
+    people: [],
+    blocked: [],
     signature: "x",
   });
 
@@ -993,6 +995,51 @@ describe("Relaying a person's DM list between their runtimes", () => {
     socketDesktop.triggerMessage(request(laptop.did, person.id));
     await flush();
     expect(socketDesktop.closed).toBe(true);
+  });
+
+  const invite = (from: string, asker: string, asked: string) => ({
+    type: "tunnel_person_dm_invite" as const,
+    requestId: "pdm-1",
+    sourceRuntimeId: from,
+    recipientAccount: `user:hub:${asked}`,
+    sourcePrincipalDid: `user:hub:${asker}`,
+    channelId: "dm_abc",
+    signature: "x",
+  });
+
+  const route = (from: string, to: string, person: string) => ({
+    type: "tunnel_dm_route" as const,
+    requestId: "route-1",
+    sourceRuntimeId: from,
+    recipientRuntimeId: to,
+    sourcePrincipalDid: `user:hub:${person}`,
+    channelId: "dm_abc",
+    routes: [],
+    signature: "x",
+  });
+
+  it("delivers a person's DM invite to every runtime of the person asked, from the asker's own runtime only", async () => {
+    const { tunnelManager, person, stranger, other, phone, socketLaptop, socketDesktop, socketOther } =
+      await setup();
+    socketOther.triggerMessage(invite(other.did, stranger.id, person.id));
+    socketOther.triggerMessage({ ...invite(other.did, person.id, stranger.id), requestId: "pdm-2" });
+    await flush();
+    expect(of(socketLaptop, "tunnel_person_dm_invite")).toHaveLength(1);
+    expect(of(socketDesktop, "tunnel_person_dm_invite")).toHaveLength(1);
+    expect(tunnelManager.waitingOn(other.did)).toEqual([phone.did]);
+    expect(metrics.snapshot()[CounterName.HubPersonDmInviteForwarded]).toBe(2);
+    expect(metrics.snapshot()[CounterName.HubPersonDmRejectedPerson]).toBe(1);
+  });
+
+  it("relays a DM route only from a runtime of the person it names", async () => {
+    const { person, stranger, laptop, other, socketLaptop, socketOther } = await setup();
+    socketOther.triggerMessage(route(other.did, laptop.did, stranger.id));
+    socketOther.triggerMessage({ ...route(other.did, laptop.did, person.id), requestId: "route-2" });
+    await flush();
+    const got = of(socketLaptop, "tunnel_dm_route");
+    expect(got).toHaveLength(1);
+    expect(got[0]).toMatchObject({ requestId: "route-1" });
+    expect(metrics.snapshot()[CounterName.HubPersonDmRejectedPerson]).toBe(1);
   });
 });
 

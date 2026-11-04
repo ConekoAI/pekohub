@@ -702,6 +702,80 @@ export class TunnelManager {
     this.sendMessage(target.socket, msg);
   }
 
+  /**
+   * Runtime ADR-095 D6: a person asks another person to DM. Only from a
+   * runtime registered to the asker's account; delivered to each connected
+   * runtime of the asked account, and an offline one wakes the asker when
+   * it connects. Rate-limited like group invitations. Never stored.
+   */
+  private async handlePersonDmInvite(
+    conn: RuntimeConnection,
+    msg: Extract<TunnelMessage, { type: "tunnel_person_dm_invite" }>,
+  ): Promise<void> {
+    if (conn.runtimeId !== msg.sourceRuntimeId) {
+      this.fastify.log.warn(
+        { connRuntime: conn.runtimeId, claim: msg.sourceRuntimeId },
+        "person DM invite source allowlist mismatch — closing tunnel (impersonation)",
+      );
+      this.closeConnection(conn, "source allowlist mismatch");
+      this.handleDisconnect(conn);
+      return;
+    }
+    if (
+      !msg.sourcePrincipalDid.startsWith("user:hub:") ||
+      !msg.recipientAccount.startsWith("user:hub:") ||
+      msg.sourcePrincipalDid === msg.recipientAccount ||
+      !(await this.speaksForItsOwnPerson(conn, msg.sourcePrincipalDid))
+    ) {
+      metrics.inc(CounterName.HubPersonDmRejectedPerson);
+      return;
+    }
+    if (!this.allowInvitation(conn.runtimeId)) return;
+    const account = msg.recipientAccount.slice("user:hub:".length);
+    for (const runtimeId of await this.runtimesOfAccount(account)) {
+      const target = this.getConnection(runtimeId);
+      if (target) {
+        metrics.inc(CounterName.HubPersonDmInviteForwarded);
+        this.sendMessage(target.socket, msg);
+      } else {
+        this.noteWaiting(runtimeId, conn.runtimeId);
+      }
+    }
+  }
+
+  /**
+   * Runtime ADR-095 D6: a route announcement, relayed only from a runtime
+   * registered to the person it speaks for.
+   */
+  private async handleDmRoute(
+    conn: RuntimeConnection,
+    msg: Extract<TunnelMessage, { type: "tunnel_dm_route" }>,
+  ): Promise<void> {
+    if (conn.runtimeId !== msg.sourceRuntimeId) {
+      this.fastify.log.warn(
+        { connRuntime: conn.runtimeId, claim: msg.sourceRuntimeId },
+        "DM route source allowlist mismatch — closing tunnel (impersonation)",
+      );
+      this.closeConnection(conn, "source allowlist mismatch");
+      this.handleDisconnect(conn);
+      return;
+    }
+    if (
+      !msg.sourcePrincipalDid.startsWith("user:hub:") ||
+      !(await this.speaksForItsOwnPerson(conn, msg.sourcePrincipalDid))
+    ) {
+      metrics.inc(CounterName.HubPersonDmRejectedPerson);
+      return;
+    }
+    const target = this.getConnection(msg.recipientRuntimeId);
+    if (!target) {
+      this.noteWaiting(msg.recipientRuntimeId, conn.runtimeId);
+      return;
+    }
+    metrics.inc(CounterName.HubDmRouteForwarded);
+    this.sendMessage(target.socket, msg);
+  }
+
   /** The runtimes registered to `account` (runtime ADR-081 D3). */
   protected async runtimesOfAccount(account: string): Promise<string[]> {
     const rows = await db
@@ -996,6 +1070,18 @@ export class TunnelManager {
       case "tunnel_account_dms": {
         // Runtime ADR-095 D5: between two runtimes of one account.
         await this.handleAccountDms(conn, msg);
+        break;
+      }
+
+      case "tunnel_person_dm_invite": {
+        // Runtime ADR-095 D6: to every runtime of the asked account.
+        await this.handlePersonDmInvite(conn, msg);
+        break;
+      }
+
+      case "tunnel_dm_route": {
+        // Runtime ADR-095 D6: only from the person's own runtime.
+        await this.handleDmRoute(conn, msg);
         break;
       }
 

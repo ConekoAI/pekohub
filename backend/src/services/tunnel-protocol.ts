@@ -442,6 +442,11 @@ export type TunnelMessage =
   // person's DMs; one of them answers it. The Hub keeps no list.
   | ({ type: "tunnel_account_dms_request" } & TunnelAccountDmsRequestPayload)
   | ({ type: "tunnel_account_dms" } & TunnelAccountDmsPayload)
+  // Runtime ADR-095 D6: a person asks another person to DM (to every
+  // runtime of their account); runtimes in a DM between people tell each
+  // other where its two people are.
+  | ({ type: "tunnel_person_dm_invite" } & TunnelPersonDmInvitePayload)
+  | ({ type: "tunnel_dm_route" } & TunnelDmRoutePayload)
   // Runtime ADR-092 D5/D6: a home registers its group (the Hub assigns the
   // ID) and reports the accounts in it; a runtime asks for its account's
   // groups (D4).
@@ -522,12 +527,64 @@ export interface AccountDm {
   peerExposure: string;
 }
 
+/** Runtime ADR-095 D6: a runtime that carries one person's side of a DM between people. */
+export interface DmRoute {
+  runtimeId: string;
+  /** `user:hub:<account>`. */
+  person: string;
+}
+
+/** Runtime ADR-095 D6: one of a person's DMs with another person. */
+export interface AccountPersonDm {
+  channelId: string;
+  /** `user:hub:<account>`. */
+  peer: string;
+  peerName?: string;
+  routes: DmRoute[];
+}
+
 /** Runtime ADR-095 D5: the answer, relayed only between runtimes of one account. */
 export interface TunnelAccountDmsPayload {
   requestId: string;
   sourceRuntimeId: string;
   recipientRuntimeId: string;
   dms: AccountDm[];
+  /** Runtime ADR-095 D6: the person's DMs with people, and whom they blocked. */
+  people: AccountPersonDm[];
+  blocked: string[];
+  signature: string;
+}
+
+/**
+ * Runtime ADR-095 D6: a person asks another to DM. Delivered to every
+ * runtime registered to `recipientAccount`, and only from a runtime
+ * registered to `sourcePrincipalDid`'s account.
+ */
+export interface TunnelPersonDmInvitePayload {
+  requestId: string;
+  sourceRuntimeId: string;
+  /** `user:hub:<account>`: the person asked. */
+  recipientAccount: string;
+  /** `user:hub:<account>`: the person asking. */
+  sourcePrincipalDid: string;
+  channelId: string;
+  name?: string;
+  signature: string;
+}
+
+/**
+ * Runtime ADR-095 D6: a runtime tells another that it is a route for its
+ * person in a DM between people. Relayed only from a runtime registered to
+ * `sourcePrincipalDid`'s account.
+ */
+export interface TunnelDmRoutePayload {
+  requestId: string;
+  sourceRuntimeId: string;
+  recipientRuntimeId: string;
+  /** `user:hub:<account>`. */
+  sourcePrincipalDid: string;
+  channelId: string;
+  routes: DmRoute[];
   signature: string;
 }
 
