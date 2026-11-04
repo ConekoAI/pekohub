@@ -950,7 +950,7 @@ describe("Relaying a person's DM list between their runtimes", () => {
     recipientRuntimeId: to,
     dms: [],
     people: [],
-    blocked: [],
+    blocks: [],
     signature: "x",
   });
 
