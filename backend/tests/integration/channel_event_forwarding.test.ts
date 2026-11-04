@@ -889,6 +889,161 @@ describe("Relaying group invitations and answers", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Runtime ADR-095 D5: a runtime asks its account's other runtimes for the
+// person's DMs; only runtimes of one account talk this way.
+// ---------------------------------------------------------------------------
+
+describe("Relaying a person's DM list between their runtimes", () => {
+  let testDb: TestDb;
+
+  beforeAll(async () => {
+    testDb = await createTestDb();
+  });
+
+  beforeEach(async () => {
+    await resetTables(testDb.client);
+    metrics.reset();
+  });
+
+  afterAll(async () => {
+    await testDb.client.close();
+  });
+
+  async function connect(tunnelManager: TunnelManager, id: { did: string; privateKey: Uint8Array }) {
+    const socket = new MockWebSocket();
+    tunnelManager.handleSocket(socket.asWebSocket());
+    await completeHandshake(socket, id.did, id.privateKey);
+    return socket;
+  }
+
+  async function setup() {
+    const { tunnelManager } = await buildForwardingTestApp(testDb);
+    const person = await createUser(testDb.client, { namespace: "alice" });
+    const stranger = await createUser(testDb.client, { namespace: "eve" });
+    const laptop = makeRuntimeIdentity();
+    const desktop = makeRuntimeIdentity();
+    const phone = makeRuntimeIdentity();
+    const other = makeRuntimeIdentity();
+    for (const id of [laptop, desktop, phone]) await seedRuntime(testDb, id.did, person.id);
+    await seedRuntime(testDb, other.did, stranger.id);
+    const socketLaptop = await connect(tunnelManager, laptop);
+    const socketDesktop = await connect(tunnelManager, desktop);
+    const socketOther = await connect(tunnelManager, other);
+    return {
+      tunnelManager, person, stranger, laptop, desktop, phone, other,
+      socketLaptop, socketDesktop, socketOther,
+    };
+  }
+
+  const request = (from: string, account: string) => ({
+    type: "tunnel_account_dms_request" as const,
+    requestId: "adms-1",
+    sourceRuntimeId: from,
+    recipientAccount: `user:hub:${account}`,
+    signature: "x",
+  });
+
+  const answer = (from: string, to: string) => ({
+    type: "tunnel_account_dms" as const,
+    requestId: "adms-1",
+    sourceRuntimeId: from,
+    recipientRuntimeId: to,
+    dms: [],
+    people: [],
+    blocked: [],
+    signature: "x",
+  });
+
+  const of = (socket: MockWebSocket, type: string) => socket.sent.filter((m) => m.type === type);
+
+  it("delivers a request to the account's other runtimes, and wakes the asker for the offline one", async () => {
+    const { tunnelManager, person, desktop, laptop, phone, socketDesktop, socketLaptop, socketOther } =
+      await setup();
+    socketDesktop.triggerMessage(request(desktop.did, person.id));
+    await flush();
+    expect(of(socketLaptop, "tunnel_account_dms_request")).toHaveLength(1);
+    expect(of(socketDesktop, "tunnel_account_dms_request")).toHaveLength(0);
+    expect(of(socketOther, "tunnel_account_dms_request")).toHaveLength(0);
+    expect(tunnelManager.waitingOn(desktop.did)).toEqual([phone.did]);
+    expect(metrics.snapshot()[CounterName.HubAccountDmsRequestForwarded]).toBe(1);
+    void laptop;
+  });
+
+  it("refuses a request for another account's DMs", async () => {
+    const { person, other, socketLaptop, socketOther } = await setup();
+    socketOther.triggerMessage(request(other.did, person.id));
+    await flush();
+    expect(of(socketLaptop, "tunnel_account_dms_request")).toHaveLength(0);
+    expect(metrics.snapshot()[CounterName.HubAccountDmsRejectedAccount]).toBe(1);
+  });
+
+  it("relays the answer only between runtimes of one account", async () => {
+    const { laptop, desktop, other, socketLaptop, socketDesktop, socketOther } = await setup();
+    socketLaptop.triggerMessage(answer(laptop.did, desktop.did));
+    socketOther.triggerMessage({ ...answer(other.did, desktop.did), requestId: "adms-2" });
+    socketLaptop.triggerMessage({ ...answer(laptop.did, other.did), requestId: "adms-3" });
+    await flush();
+    const got = of(socketDesktop, "tunnel_account_dms");
+    expect(got).toHaveLength(1);
+    expect(got[0]).toMatchObject({ requestId: "adms-1" });
+    expect(of(socketOther, "tunnel_account_dms")).toHaveLength(0);
+    expect(metrics.snapshot()[CounterName.HubAccountDmsRejectedAccount]).toBe(2);
+  });
+
+  it("closes a runtime that claims another runtime's id", async () => {
+    const { person, laptop, socketDesktop } = await setup();
+    socketDesktop.triggerMessage(request(laptop.did, person.id));
+    await flush();
+    expect(socketDesktop.closed).toBe(true);
+  });
+
+  const invite = (from: string, asker: string, asked: string) => ({
+    type: "tunnel_person_dm_invite" as const,
+    requestId: "pdm-1",
+    sourceRuntimeId: from,
+    recipientAccount: `user:hub:${asked}`,
+    sourcePrincipalDid: `user:hub:${asker}`,
+    channelId: "dm_abc",
+    signature: "x",
+  });
+
+  const route = (from: string, to: string, person: string) => ({
+    type: "tunnel_dm_route" as const,
+    requestId: "route-1",
+    sourceRuntimeId: from,
+    recipientRuntimeId: to,
+    sourcePrincipalDid: `user:hub:${person}`,
+    channelId: "dm_abc",
+    routes: [],
+    signature: "x",
+  });
+
+  it("delivers a person's DM invite to every runtime of the person asked, from the asker's own runtime only", async () => {
+    const { tunnelManager, person, stranger, other, phone, socketLaptop, socketDesktop, socketOther } =
+      await setup();
+    socketOther.triggerMessage(invite(other.did, stranger.id, person.id));
+    socketOther.triggerMessage({ ...invite(other.did, person.id, stranger.id), requestId: "pdm-2" });
+    await flush();
+    expect(of(socketLaptop, "tunnel_person_dm_invite")).toHaveLength(1);
+    expect(of(socketDesktop, "tunnel_person_dm_invite")).toHaveLength(1);
+    expect(tunnelManager.waitingOn(other.did)).toEqual([phone.did]);
+    expect(metrics.snapshot()[CounterName.HubPersonDmInviteForwarded]).toBe(2);
+    expect(metrics.snapshot()[CounterName.HubPersonDmRejectedPerson]).toBe(1);
+  });
+
+  it("relays a DM route only from a runtime of the person it names", async () => {
+    const { person, stranger, laptop, other, socketLaptop, socketOther } = await setup();
+    socketOther.triggerMessage(route(other.did, laptop.did, stranger.id));
+    socketOther.triggerMessage({ ...route(other.did, laptop.did, person.id), requestId: "route-2" });
+    await flush();
+    const got = of(socketLaptop, "tunnel_dm_route");
+    expect(got).toHaveLength(1);
+    expect(got[0]).toMatchObject({ requestId: "route-1" });
+    expect(metrics.snapshot()[CounterName.HubPersonDmRejectedPerson]).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Runtime ADR-092 D4-D6: a home registers its group and reports its
 // accounts; a runtime asks for its account's groups.
 // ---------------------------------------------------------------------------

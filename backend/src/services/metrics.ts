@@ -73,6 +73,18 @@ export const CounterName = {
   HubGroupInvitationRateLimited: "hub.group_invitation.rate_limited",
   HubGroupJoinForwarded: "hub.group_join.forwarded",
   HubGroupJoinRejectedPerson: "hub.group_join.rejected_person",
+  // Runtime ADR-095 D5: a runtime's request for its person's DMs, delivered
+  // to the account's other runtimes, and their answers; refused when the
+  // runtimes are not the same account's.
+  HubAccountDmsRequestForwarded: "hub.account_dms_request.forwarded",
+  HubAccountDmsForwarded: "hub.account_dms.forwarded",
+  HubAccountDmsRejectedAccount: "hub.account_dms.rejected_account",
+  // Runtime ADR-095 D6: a person's DM invite delivered to another person's
+  // runtimes, route announcements between runtimes in a DM between people,
+  // and those refused for speaking for someone else's account.
+  HubPersonDmInviteForwarded: "hub.person_dm_invite.forwarded",
+  HubDmRouteForwarded: "hub.dm_route.forwarded",
+  HubPersonDmRejectedPerson: "hub.person_dm.rejected_person",
   // Runtime ADR-090 D3: an envelope speaking for a person
   // (`user:hub:<account>`) from a runtime registered to another account.
   HubChannelEventRejectedPersonAccount: "hub.channel_event.rejected_person_account",
