@@ -49,7 +49,24 @@ function writeStreamHeaders(reply: FastifyReply): void {
   if (setCookie !== undefined) {
     headers["Set-Cookie"] = setCookie;
   }
-  reply.raw.writeHead(200, headers);
+  reply.raw.writeHead(200, { ...corsHeaders(reply), ...headers });
+}
+
+/**
+ * The CORS headers `@fastify/cors` queued for this request. Like the
+ * cookie above, they live in Fastify's header store and never reach a
+ * response written to `reply.raw`, so a browser on an allowed origin
+ * couldn't read the stream.
+ */
+function corsHeaders(reply: FastifyReply): Record<string, string | string[]> {
+  const out: Record<string, string | string[]> = {};
+  for (const [name, value] of Object.entries(reply.getHeaders())) {
+    if (value === undefined) continue;
+    if (name.toLowerCase().startsWith("access-control-") || name.toLowerCase() === "vary") {
+      out[name] = typeof value === "number" ? String(value) : value;
+    }
+  }
+  return out;
 }
 
 /**
@@ -140,6 +157,7 @@ export class TunnelRouter {
     const result = await this.quotaStore.consume(instanceId, daily, weekly);
     if (result.allowed) return true;
     reply.raw.writeHead(429, {
+      ...corsHeaders(reply),
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
     });

@@ -46,6 +46,37 @@ describe("Owner console API", () => {
     ]);
   });
 
+  it("unregistering a runtime takes its pekos and the groups it was home to off the Hub", async () => {
+    const alice = await createUser(testDb.client, { namespace: "alice" });
+    await seedRuntime(testDb, "did:key:zHome", alice.id);
+    await seedRuntime(testDb, "did:key:zOther", alice.id);
+    await createInstance(testDb.client, {
+      ownerSubject: { kind: "user", id: String(alice.id) },
+      name: "ada",
+      runtimeId: "did:key:zHome",
+    });
+    for (const [id, home] of [["1001", "did:key:zHome"], ["1002", "did:key:zOther"]]) {
+      await testDb.client.query(
+        `INSERT INTO hub_groups (id, name, home_runtime, channel_id, owner_id, owner_address)
+         VALUES ($1, 'g', $2, 'chan_x', $3, 'user:hub:x')`,
+        [id, home, alice.id],
+      );
+      await testDb.client.query(`INSERT INTO hub_group_members (group_id, user_id) VALUES ($1, $2)`, [id, alice.id]);
+    }
+
+    const res = await app.inject({
+      method: "DELETE",
+      url: `/v1/runtimes/${encodeURIComponent("did:key:zHome")}`,
+      headers: await authHeaders(alice),
+    });
+    expect(res.statusCode).toBe(204);
+    const groups = await testDb.client.query("SELECT id::text FROM hub_groups ORDER BY id");
+    expect(groups.rows).toEqual([{ id: "1002" }]);
+    const members = await testDb.client.query("SELECT group_id::text FROM hub_group_members");
+    expect(members.rows).toEqual([{ group_id: "1002" }]);
+    expect((await testDb.client.query("SELECT 1 FROM instances")).rows).toHaveLength(0);
+  });
+
   it("filters seeds to one publisher", async () => {
     const alice = await createUser(testDb.client, { namespace: "alice" });
     const bob = await createUser(testDb.client, { namespace: "bob" });

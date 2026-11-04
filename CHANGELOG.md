@@ -2,6 +2,18 @@
 
 ## 0.1.0 — pre-launch
 
+- Fixes from the staging end-to-end run (2026-11-03):
+  - The header shows the account as soon as sign-in finishes. The callback's user fetch
+    returned the header's cached "signed out" (the app keeps data fresh 5 minutes), so
+    the header said "Sign in" until a reload.
+  - The chat proxy's stream carries its CORS headers. It writes the response itself, so
+    `@fastify/cors`'s headers never reached it and browsers on an allowed origin
+    couldn't read it.
+  - Unregistering a computer removes the groups it was home to (their IDs, pages and
+    invite links); before, a group outlived its home with no way to remove it.
+  - A transfer started on a runtime is answered `principal_transfer_offered`, a new
+    tunnel message (peko-runtime prints "Offered to @…" instead of an error), not
+    `principal_transfer_rejected`. Needs peko-runtime with the matching change.
 - Notifications, without email. An account hears about a peko offered to it, its offer
   accepted, declined or withdrawn, a new computer registered, a new API key, a new Peko
   desktop or CLI sign-in, a moderator hiding or yanking its seed or taking its peko off

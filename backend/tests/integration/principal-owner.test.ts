@@ -204,7 +204,7 @@ describe("ADR-081 D4: the Hub records an online principal's owner", () => {
     transfer("to-dave", String(dave.id));
     await settle();
     const receipt = runtime.socket.sent.find(
-      (m) => m.type === "principal_transfer_rejected" && m.requestId === "to-dave",
+      (m) => m.type === "principal_transfer_offered" && m.requestId === "to-dave",
     );
     expect(receipt).toMatchObject({ message: expect.stringContaining("Offered to @dave") });
     expect(await recordedOwner(hubId)).toBe(String(runtime.user.id));

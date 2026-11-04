@@ -39,9 +39,11 @@ function AuthCallbackPage() {
       setAuthToken(token);
       const returnTo = takeSignInReturnTo();
       // Load the user before leaving, so the next page opens signed in
-      // rather than flashing "Sign in".
+      // rather than flashing "Sign in". `staleTime: 0`: the header already
+      // cached "signed out" (no token when the page loaded), and the app's
+      // 5-minute freshness would otherwise return that without asking.
       void queryClient
-        .fetchQuery({ queryKey: ['auth', 'me'], queryFn: () => api.getMe() })
+        .fetchQuery({ queryKey: ['auth', 'me'], queryFn: () => api.getMe(), staleTime: 0 })
         .catch(() => null)
         .then(() =>
           returnTo

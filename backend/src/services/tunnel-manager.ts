@@ -959,6 +959,7 @@ export class TunnelManager {
       case "account_groups":
       case "group_lookup":
       case "principal_transfer_rejected":
+      case "principal_transfer_offered":
       case "principal_owner_changed":
       case "principal_registered": return; // Hub-to-runtime receipts; never accepted from a runtime.
       default: {
@@ -1776,10 +1777,15 @@ export class TunnelManager {
           via: "tunnel",
         });
         const recipient = await db.query.users.findFirst({ where: eq(users.id, msg.ownerId) });
-        refuse(
-          `Offered to @${recipient?.namespace ?? msg.ownerId}. It moves when they accept on PekoHub ` +
-            "(signed in, under Pekos); until then you still own it.",
-        );
+        if (connection) {
+          this.sendMessage(connection.socket, {
+            type: "principal_transfer_offered",
+            requestId: msg.requestId,
+            message:
+              `Offered to @${recipient?.namespace ?? msg.ownerId}. It moves when they accept on PekoHub ` +
+              "(signed in, under Pekos); until then you still own it.",
+          });
+        }
         return;
       }
       case "denied":
