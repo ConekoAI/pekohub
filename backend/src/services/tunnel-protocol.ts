@@ -183,6 +183,8 @@ export interface ChannelEvent {
   /** The message this one answers. */
   reply_to?: string;
   attachments?: { name: string; path: string; mime: string; size: number }[];
+  /** Suggested replies (runtime ADR-093): text a reader may send with a tap; no authority. */
+  options?: string[];
   // `member_joined` / `member_left`
   member?: string;
   // `received`: delivery receipts for these envelopes.

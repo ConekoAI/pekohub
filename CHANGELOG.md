@@ -2,6 +2,9 @@
 
 ## 0.1.0 — pre-launch
 
+- Channel events in the tunnel types take `options?: string[]` — suggested replies a peko
+  offers with a post (peko-runtime ADR-093). The Hub only relays them. Needed for the
+  tunnel contract check against peko-runtime with the matching change.
 - Fixes from the staging end-to-end run (2026-11-03):
   - The header shows the account as soon as sign-in finishes. The callback's user fetch
     returned the header's cached "signed out" (the app keeps data fresh 5 minutes), so
