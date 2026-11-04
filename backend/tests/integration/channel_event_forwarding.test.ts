@@ -665,6 +665,130 @@ describe("Relaying a person's history requests", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Runtime ADR-094: attachments are pulled chunk by chunk through the Hub,
+// within size and rate caps, and never stored.
+// ---------------------------------------------------------------------------
+
+describe("Relaying attachment chunks", () => {
+  let testDb: TestDb;
+
+  beforeAll(async () => {
+    testDb = await createTestDb();
+  });
+
+  beforeEach(async () => {
+    await resetTables(testDb.client);
+    metrics.reset();
+  });
+
+  afterAll(async () => {
+    await testDb.client.close();
+  });
+
+  async function setup() {
+    const { tunnelManager } = await buildForwardingTestApp(testDb);
+    const ownerA = await createUser(testDb.client, { namespace: "alice" });
+    const ownerB = await createUser(testDb.client, { namespace: "bob" });
+    const idA = makeRuntimeIdentity();
+    const idB = makeRuntimeIdentity();
+    await seedRuntime(testDb, idA.did, ownerA.id);
+    await seedRuntime(testDb, idB.did, ownerB.id);
+    const socketA = new MockWebSocket();
+    tunnelManager.handleSocket(socketA.asWebSocket());
+    await completeHandshake(socketA, idA.did, idA.privateKey);
+    return { tunnelManager, idA, idB, socketA };
+  }
+
+  async function connect(tunnelManager: TunnelManager, id: { did: string; privateKey: Uint8Array }) {
+    const socket = new MockWebSocket();
+    tunnelManager.handleSocket(socket.asWebSocket());
+    await completeHandshake(socket, id.did, id.privateKey);
+    return socket;
+  }
+
+  const SHA = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
+  const CHUNK = 256 * 1024;
+
+  const request = (from: string, to: string, requestId = "att-1") => ({
+    type: "tunnel_attachment_request" as const,
+    requestId,
+    sourceRuntimeId: from,
+    recipientRuntimeId: to,
+    channelId: "dm_abc",
+    sha256: SHA,
+    offset: 0,
+    signature: "x",
+  });
+
+  const chunk = (from: string, to: string, bytes: number, size = 5 * 1024 * 1024, requestId = "att-1") => ({
+    type: "tunnel_attachment_chunk" as const,
+    requestId,
+    sourceRuntimeId: from,
+    recipientRuntimeId: to,
+    channelId: "dm_abc",
+    sha256: SHA,
+    offset: 0,
+    size,
+    data: Buffer.alloc(bytes, 7).toString("base64"),
+  });
+
+  const ofType = (socket: MockWebSocket, type: string) => socket.sent.filter((m) => m.type === type);
+
+  it("relays a request and the chunk that answers it, verbatim", async () => {
+    const { tunnelManager, idA, idB, socketA } = await setup();
+    const socketB = await connect(tunnelManager, idB);
+    socketA.triggerMessage(request(idA.did, idB.did));
+    await flush();
+    expect(ofType(socketB, "tunnel_attachment_request")).toEqual([request(idA.did, idB.did)]);
+
+    const answer = chunk(idB.did, idA.did, CHUNK);
+    socketB.triggerMessage(answer);
+    await flush();
+    expect(ofType(socketA, "tunnel_attachment_chunk")).toEqual([answer]);
+    expect(metrics.snapshot()[CounterName.HubAttachmentForwarded]).toBe(2);
+  });
+
+  it("drops a chunk over 256 KiB, or of a file over 10 MB", async () => {
+    const { tunnelManager, idA, idB, socketA } = await setup();
+    const socketB = await connect(tunnelManager, idB);
+    socketB.triggerMessage(chunk(idB.did, idA.did, CHUNK + 1));
+    socketB.triggerMessage(chunk(idB.did, idA.did, 1024, 10 * 1024 * 1024 + 1));
+    await flush();
+    expect(ofType(socketA, "tunnel_attachment_chunk")).toHaveLength(0);
+    expect(metrics.snapshot()[CounterName.HubAttachmentChunkRejected]).toBe(2);
+    expect(socketB.closed).toBe(false);
+  });
+
+  it("relays at most 50 MB of chunks a minute per runtime", async () => {
+    const { tunnelManager, idA, idB, socketA } = await setup();
+    const socketB = await connect(tunnelManager, idB);
+    for (let n = 0; n < 201; n++) {
+      socketB.triggerMessage(chunk(idB.did, idA.did, CHUNK, 10 * 1024 * 1024, `c${n}`));
+    }
+    await new Promise((r) => setTimeout(r, 300));
+    expect(ofType(socketA, "tunnel_attachment_chunk")).toHaveLength(200);
+    expect(metrics.snapshot()[CounterName.HubAttachmentRateLimited]).toBe(1);
+    expect(tunnelManager.isRuntimeConnected(idB.did)).toBe(true);
+  });
+
+  it("closes a runtime that claims another runtime's id", async () => {
+    const { idB, socketA } = await setup();
+    socketA.triggerMessage(request(idB.did, idB.did));
+    await flush();
+    expect(socketA.closed).toBe(true);
+  });
+
+  it("wakes the receiver when an offline sender comes back", async () => {
+    const { tunnelManager, idA, idB, socketA } = await setup();
+    socketA.triggerMessage(request(idA.did, idB.did));
+    await flush();
+    expect(tunnelManager.waitingOn(idA.did)).toEqual([idB.did]);
+    await connect(tunnelManager, idB);
+    expect(ofType(socketA, "peer_runtime_online")).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Runtime ADR-092 D2: a group's invitation reaches every runtime of the
 // invited account; the person's answer comes only from one of theirs.
 // ---------------------------------------------------------------------------

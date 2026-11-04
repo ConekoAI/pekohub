@@ -58,6 +58,15 @@ const INVITATIONS_PER_MINUTE = 60;
 // over the cap is dropped; the sender's outbox keeps it and resends.
 const CHANNEL_EVENTS_PER_MINUTE = 600;
 const CHANNEL_INVITES_PER_MINUTE = 120;
+// Runtime ADR-094: attachments cross the Hub in chunks a receiver pulls one
+// at a time. A chunk carries at most 256 KiB (base64 below), of a file of at
+// most 10 MB; a runtime may relay at most this many chunk bytes and requests
+// a minute. A dropped chunk is asked for again by its receiver.
+const ATTACHMENT_CHUNK_BYTES = 256 * 1024;
+const ATTACHMENT_CHUNK_BASE64 = 4 * Math.ceil(ATTACHMENT_CHUNK_BYTES / 3);
+const ATTACHMENT_MAX_FILE_BYTES = 10 * 1024 * 1024;
+const ATTACHMENT_BYTES_PER_MINUTE = 50 * 1024 * 1024;
+const ATTACHMENT_REQUESTS_PER_MINUTE = 400;
 const REAPER_INTERVAL_MS = 30_000;
 const CHALLENGE_NONCE_BYTES = 32;
 /** ADR-058 D4: freshness leeways for the announce `principalPop`
@@ -170,6 +179,9 @@ export class TunnelManager {
   /** Recent relayed channel events and invites per runtime. */
   private channelEventsSent = new Map<string, number[]>();
   private channelInvitesSent = new Map<string, number[]>();
+  /** Runtime ADR-094: recent attachment requests, and chunk bytes relayed. */
+  private attachmentRequests = new Map<string, number[]>();
+  private attachmentBytes = new Map<string, { at: number; bytes: number }[]>();
   private static readonly MAX_TRACKED_CHALLENGES = 4_096;
 
   constructor(private fastify: FastifyInstance) {}
@@ -483,6 +495,70 @@ export class TunnelManager {
   }
 
   /**
+   * Runtime ADR-094: relay a request for a piece of a channel file, or the
+   * chunk that answers it. The source must be the authenticated runtime. A
+   * chunk larger than `ATTACHMENT_CHUNK_BYTES`, of a file over
+   * `ATTACHMENT_MAX_FILE_BYTES`, or past its runtime's
+   * `ATTACHMENT_BYTES_PER_MINUTE` is dropped (the receiver asks again);
+   * requests are capped at `ATTACHMENT_REQUESTS_PER_MINUTE`. A request to an
+   * offline runtime notes the waiter, so the receiver retries when the
+   * sender is back. Who may have a file is the sending runtime's decision:
+   * it serves only runtimes that host a member of the channel.
+   */
+  private handleAttachmentForward(
+    conn: RuntimeConnection,
+    msg: Extract<TunnelMessage, { type: "tunnel_attachment_request" | "tunnel_attachment_chunk" }>,
+  ): void {
+    if (conn.runtimeId !== msg.sourceRuntimeId) {
+      this.fastify.log.warn(
+        { connRuntime: conn.runtimeId, claim: msg.sourceRuntimeId, type: msg.type },
+        "attachment envelope source allowlist mismatch — closing tunnel (impersonation)",
+      );
+      this.closeConnection(conn, "source allowlist mismatch");
+      this.handleDisconnect(conn);
+      return;
+    }
+    if (msg.type === "tunnel_attachment_request") {
+      if (!this.allowInWindow(this.attachmentRequests, conn.runtimeId, ATTACHMENT_REQUESTS_PER_MINUTE)) {
+        metrics.inc(CounterName.HubAttachmentRateLimited);
+        return;
+      }
+    } else {
+      const data = typeof msg.data === "string" ? msg.data : "";
+      const padding = data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0;
+      const bytes = Math.floor((data.length * 3) / 4) - padding;
+      if (
+        typeof msg.data !== "string" ||
+        data.length > ATTACHMENT_CHUNK_BASE64 ||
+        bytes > ATTACHMENT_CHUNK_BYTES ||
+        typeof msg.size !== "number" ||
+        msg.size > ATTACHMENT_MAX_FILE_BYTES
+      ) {
+        metrics.inc(CounterName.HubAttachmentChunkRejected);
+        this.fastify.log.warn(
+          { runtimeId: conn.runtimeId, chars: data.length, size: msg.size },
+          "attachment chunk over the size limits; dropped",
+        );
+        return;
+      }
+      if (!this.allowBytesInWindow(conn.runtimeId, bytes, ATTACHMENT_BYTES_PER_MINUTE)) {
+        metrics.inc(CounterName.HubAttachmentRateLimited);
+        this.fastify.log.debug({ runtimeId: conn.runtimeId }, "attachment bytes rate-limited; dropped");
+        return;
+      }
+    }
+    const target = this.getConnection(msg.recipientRuntimeId);
+    if (!target) {
+      if (msg.type === "tunnel_attachment_request") {
+        this.noteWaiting(msg.recipientRuntimeId, conn.runtimeId);
+      }
+      return;
+    }
+    metrics.inc(CounterName.HubAttachmentForwarded);
+    this.sendMessage(target.socket, msg);
+  }
+
+  /**
    * Runtime ADR-092 D2: a group's home invites a person by account. The
    * source must be the authenticated runtime; the invitation goes to every
    * runtime registered to that account that is connected, and an offline
@@ -570,6 +646,17 @@ export class TunnelManager {
     const allowed = recent.length < max;
     if (allowed) recent.push(now);
     window.set(runtimeId, recent);
+    return allowed;
+  }
+
+  /** A sliding one-minute byte budget per runtime: false once `bytes` would pass `max`. */
+  private allowBytesInWindow(runtimeId: string, bytes: number, max: number): boolean {
+    const now = Date.now();
+    const recent = (this.attachmentBytes.get(runtimeId) ?? []).filter((e) => now - e.at < 60_000);
+    const used = recent.reduce((sum, e) => sum + e.bytes, 0);
+    const allowed = used + bytes <= max;
+    if (allowed) recent.push({ at: now, bytes });
+    this.attachmentBytes.set(runtimeId, recent);
     return allowed;
   }
 
@@ -901,6 +988,15 @@ export class TunnelManager {
               }
             : {}),
         });
+        break;
+      }
+
+      case "tunnel_attachment_request":
+      case "tunnel_attachment_chunk": {
+        // Runtime ADR-094: a post's file, pulled chunk by chunk from the
+        // runtime that sent the post. Relayed within size and rate caps;
+        // never stored or logged.
+        this.handleAttachmentForward(conn, msg);
         break;
       }
 
@@ -1699,6 +1795,8 @@ export class TunnelManager {
       this.invitationsSent.delete(conn.runtimeId);
       this.channelEventsSent.delete(conn.runtimeId);
       this.channelInvitesSent.delete(conn.runtimeId);
+      this.attachmentRequests.delete(conn.runtimeId);
+      this.attachmentBytes.delete(conn.runtimeId);
     }
 
     // Mark hosted instances offline and propagate via tunnel if still connected

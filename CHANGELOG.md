@@ -2,6 +2,13 @@
 
 ## 0.1.0 — pre-launch
 
+- Attachments cross runtimes through the tunnel (peko-runtime ADR-094). A runtime pulls a
+  post's file from the runtime that sent it, one chunk at a time:
+  `tunnel_attachment_request` / `tunnel_attachment_chunk`, relayed like history
+  envelopes (source allowlist, waiters noted for an offline sender) and never stored.
+  The Hub drops a chunk over 256 KiB or of a file over 10 MB, and caps each runtime at
+  50 MB of chunk data and 400 requests a minute (`hub.attachment.*` counters). Channel
+  event attachments take `sha256?: string`. Needs peko-runtime with the matching change.
 - Channel events in the tunnel types take `options?: string[]` — suggested replies a peko
   offers with a post (peko-runtime ADR-093). The Hub only relays them. Needed for the
   tunnel contract check against peko-runtime with the matching change.
