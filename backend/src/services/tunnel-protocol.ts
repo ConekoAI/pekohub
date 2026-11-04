@@ -182,7 +182,10 @@ export interface ChannelEvent {
   msg_id?: string;
   /** The message this one answers. */
   reply_to?: string;
-  attachments?: { name: string; path: string; mime: string; size: number }[];
+  /** Files sent with the post. One that crosses runtimes carries its
+   * `sha256` and an empty `path`; the receiving runtime pulls the bytes
+   * from the sender with `tunnel_attachment_request` (runtime ADR-094). */
+  attachments?: { name: string; path: string; mime: string; size: number; sha256?: string }[];
   /** Suggested replies (runtime ADR-093): text a reader may send with a tap; no authority. */
   options?: string[];
   // `member_joined` / `member_left`
@@ -422,6 +425,11 @@ export type TunnelMessage =
   // request only from the runtime registered to the person's account.
   | ({ type: "tunnel_channel_history_request" } & TunnelChannelHistoryRequestPayload)
   | ({ type: "tunnel_channel_history" } & TunnelChannelHistoryPayload)
+  // Runtime ADR-094: a runtime pulls a post's file from the runtime that
+  // sent the post, one chunk per request. Relayed, never stored; chunks
+  // are capped in size and per-runtime bytes a minute.
+  | ({ type: "tunnel_attachment_request" } & TunnelAttachmentRequestPayload)
+  | ({ type: "tunnel_attachment_chunk" } & TunnelAttachmentChunkPayload)
   // Runtime ADR-092 D2: a group's home invites a person by account (the
   // Hub delivers it to each runtime registered to that account), and the
   // person answers from one of them.
@@ -523,6 +531,33 @@ export interface TunnelChannelHistoryPayload {
   events: ChannelEvent[];
   hasMore: boolean;
   signature: string;
+}
+
+/** Runtime ADR-094: ask for the piece of a channel file at `offset`. */
+export interface TunnelAttachmentRequestPayload {
+  requestId: string;
+  sourceRuntimeId: string;
+  recipientRuntimeId: string;
+  channelId: string;
+  /** The file's SHA-256, as the post named it. */
+  sha256: string;
+  offset: number;
+  /** The source runtime's compact JWS over every other field. */
+  signature: string;
+}
+
+/** Runtime ADR-094: one piece of a file. The Hub never decodes `data`. */
+export interface TunnelAttachmentChunkPayload {
+  requestId: string;
+  sourceRuntimeId: string;
+  recipientRuntimeId: string;
+  channelId: string;
+  sha256: string;
+  offset: number;
+  /** The whole file's size; 0 with empty `data` when the file is not there. */
+  size: number;
+  /** Standard base64 of at most 256 KiB. */
+  data: string;
 }
 
 export function encodeTunnelMessage(msg: TunnelMessage): Buffer {

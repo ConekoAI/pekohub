@@ -77,4 +77,9 @@ export const CounterName = {
   // (`user:hub:<account>`) from a runtime registered to another account.
   HubChannelEventRejectedPersonAccount: "hub.channel_event.rejected_person_account",
   HubChannelInviteRejectedPersonAccount: "hub.channel_invite.rejected_person_account",
+  // Runtime ADR-094: attachment chunks relayed between runtimes, and those
+  // dropped for size or rate.
+  HubAttachmentForwarded: "hub.attachment.forwarded",
+  HubAttachmentChunkRejected: "hub.attachment.chunk_rejected",
+  HubAttachmentRateLimited: "hub.attachment.rate_limited",
 } as const;
