@@ -621,6 +621,37 @@ describe("Instance API", () => {
       expect(body.pekos[0].status).toBe("online");
     });
 
+    // Another computer of the owner lists every peko of theirs, public
+    // ones too, and opens each by its Hub ID.
+    it("should list the viewer's own public pekos with their Hub IDs", async () => {
+      const app = await buildTestApp({ testDb });
+      const owner = await createUser(testDb.client, { namespace: "alice" });
+      const headers = await authHeaders(owner);
+
+      const mine = await createInstance(testDb.client, {
+        ownerSubject: { kind: "user", id: String(owner.id) },
+        name: "my-public-peko",
+        exposure: "public",
+        status: "online",
+      });
+
+      const response = await app.inject({
+        method: "GET",
+        url: "/v1/me/accessible-pekos",
+        headers,
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.payload);
+      expect(body.pekos).toHaveLength(1);
+      expect(body.pekos[0]).toMatchObject({
+        pekoName: "my-public-peko",
+        owner: "alice",
+        exposure: "public",
+        hubId: mine.hubId,
+      });
+    });
+
     it("should not list principals owned by a different user", async () => {
       const app = await buildTestApp({ testDb });
       const owner = await createUser(testDb.client, { namespace: "alice" });
