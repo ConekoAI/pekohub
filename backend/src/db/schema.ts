@@ -48,6 +48,12 @@ export const users = pgTable("users", {
   /** A suspended account signs in to nothing, and its runtimes stay off the tunnel. */
   suspendedAt: timestamp("suspended_at", { withTimezone: true }),
   suspendedReason: text("suspended_reason"),
+  /**
+   * When the person confirmed their handle. Null until then: first
+   * sign-in suggests one from the provider, and the website asks them to
+   * keep it or pick another before anything is published under it.
+   */
+  handleChosenAt: timestamp("handle_chosen_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),

@@ -24,6 +24,7 @@ const DDL_STATEMENTS = [
     role VARCHAR(16) DEFAULT 'user' NOT NULL,
     suspended_at TIMESTAMPTZ,
     suspended_reason TEXT,
+    handle_chosen_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
   );`,

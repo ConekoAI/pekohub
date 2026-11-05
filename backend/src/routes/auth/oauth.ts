@@ -4,7 +4,13 @@ import { db } from "../../db/index.js";
 import { users, refreshTokens } from "../../db/schema.js";
 import { eq, and, isNull, gt } from "drizzle-orm";
 import bcrypt from "bcryptjs";
-import { findOrCreateUser, type ProviderProfile } from "../../services/accounts.js";
+import {
+  chooseHandle,
+  findOrCreateUser,
+  handleAvailability,
+  handleLock,
+  type ProviderProfile,
+} from "../../services/accounts.js";
 import { AccountSuspendedError } from "../../plugins/auth.js";
 
 /**
@@ -13,12 +19,41 @@ import { AccountSuspendedError } from "../../plugins/auth.js";
  * GET /api/v1/auth/:provider/callback
  * POST /api/v1/auth/refresh
  * GET /api/v1/auth/me
+ * GET /api/v1/auth/handle/:handle  (can I take this handle?)
+ * PUT /api/v1/auth/handle          (keep or change my handle)
  * POST /api/v1/auth/logout
  *
  * Stateless refresh-token model: POST /auth/refresh exchanges a
  * refresh-token cookie for a new access token. No server-side
  * session store.
  */
+const HANDLE_REFUSALS = {
+  invalid: {
+    status: 400,
+    error:
+      "2 to 39 lowercase letters, digits, - or _, starting and ending with a letter or digit",
+  },
+  reserved: { status: 400, error: "That handle is kept for PekoHub itself" },
+  taken: { status: 409, error: "Someone already has that handle" },
+  locked: {
+    status: 409,
+    error: "Your handle is fixed: something is published under it",
+  },
+} as const;
+
+/** Whether the person confirmed their handle, and whether it can still change. */
+async function handleState(userId: string, namespace: string) {
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, userId),
+    columns: { handleChosenAt: true, createdAt: true },
+  });
+  return {
+    handleChosen: user?.handleChosenAt != null,
+    handleLocked: (await handleLock(userId, namespace)) !== null,
+    createdAt: user?.createdAt.toISOString(),
+  };
+}
+
 export default async function oauthRoutes(fastify: FastifyInstance) {
   const github = fastify.config.GITHUB_CLIENT_ID
     ? new GitHub(
@@ -128,7 +163,8 @@ export default async function oauthRoutes(fastify: FastifyInstance) {
       profile = {
         externalId: `google:${data.sub}`,
         provider,
-        suggestedHandle: data.email?.split("@")[0] ?? data.name ?? "user",
+        // The name, not the address: a handle is public.
+        suggestedHandle: data.name || "user",
         displayName: data.name,
         email: data.email,
         avatarUrl: data.picture,
@@ -238,6 +274,7 @@ export default async function oauthRoutes(fastify: FastifyInstance) {
         email: user.email,
         avatarUrl: user.avatarUrl,
         role: user.role,
+        ...(await handleState(user.id, user.namespace)),
       };
     } catch (err) {
       if (err instanceof AccountSuspendedError) {
@@ -245,6 +282,41 @@ export default async function oauthRoutes(fastify: FastifyInstance) {
       }
       return reply.status(401).send({ error: "Unauthorized" });
     }
+  });
+
+  // GET /api/v1/auth/handle/:handle — whether the signed-in person could
+  // take this handle. Their own counts as available.
+  fastify.get("/handle/:handle", async (request) => {
+    const user = await fastify.authenticate(request);
+    const { handle } = request.params as { handle: string };
+    const wanted = handle.trim().replace(/^@/, "").toLowerCase();
+    return { handle: wanted, ...(await handleAvailability(user.id, wanted)) };
+  });
+
+  // PUT /api/v1/auth/handle — keep the handle (confirms it) or change it
+  // while nothing is published under it.
+  fastify.put("/handle", async (request, reply) => {
+    const user = await fastify.authenticate(request);
+    const { handle } = (request.body ?? {}) as { handle?: unknown };
+    if (typeof handle !== "string") {
+      return reply.status(400).send({ code: "invalid", error: "Give a handle" });
+    }
+    const result = await chooseHandle(user.id, handle);
+    if (!result.ok) {
+      const { status, error } = HANDLE_REFUSALS[result.reason];
+      return reply.status(status).send({ code: result.reason, error });
+    }
+    const chosen = result.user;
+    // A fresh token, so the website's copy of the handle is the new one.
+    const token = await reply.jwtSign(
+      { sub: String(chosen.id), namespace: chosen.namespace },
+      { expiresIn: "15m" },
+    );
+    return {
+      namespace: chosen.namespace,
+      token,
+      ...(await handleState(chosen.id, chosen.namespace)),
+    };
   });
 
   // POST /api/v1/auth/logout

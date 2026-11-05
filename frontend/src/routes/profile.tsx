@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, Link } from '@tanstack/react-router';
 import { useCallback, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { KeyRound, Laptop, X } from 'lucide-react';
@@ -40,6 +40,14 @@ function ProfilePage() {
             <p className="truncate text-base font-medium text-slate-100">{user?.displayName}</p>
             <p className="mt-0.5 truncate text-sm text-slate-500">
               @{user?.namespace}
+              {user && !user.handleLocked && (
+                <>
+                  {' '}
+                  <Link to="/welcome" search={{ next: '/profile' }} className="link text-xs">
+                    Change
+                  </Link>
+                </>
+              )}
               {user?.email && <> · {user.email}</>}
               {user?.createdAt && <> · joined {formatDate(user.createdAt)}</>}
             </p>

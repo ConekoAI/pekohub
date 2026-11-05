@@ -2,6 +2,17 @@
 
 ## 0.1.0 — pre-launch
 
+- People choose their handle. First sign-in still suggests one (the GitHub login, or the
+  Google name — no longer the part of the Google address before the `@`, which a public
+  handle gave away), then `/welcome` asks the person to keep it or pick another before
+  going on, including on the way to the desktop's consent page. A handle can change (Account
+  → Change) until a seed or a public peko carries it, since seed IDs and share links name
+  it. `GET /v1/auth/handle/:handle` says whether one is free; `PUT /v1/auth/handle` keeps or
+  changes it and returns a fresh token; `/v1/auth/me` adds `handleChosen`, `handleLocked`
+  and `createdAt`. Handles are 2–39 characters, and the site's own words (`auth`, `seeds`,
+  `admin`, `pekohub`, …) are reserved — a seed page is `/:owner/:name`, so a handle `auth`
+  would have shadowed `/auth/callback`. Migration `0012_handle_chosen` adds
+  `users.handle_chosen_at`; accounts made before it are asked once at their next sign-in.
 - Production runs on Fly.io + Neon in staging's minimal shape (`fly.production.toml`): one
   256 MB machine that stops when idle, Neon free tier on Postgres 18, no Fly health check
   (it would keep free-tier Neon awake). `api.pekohub.ai` is a Cloudflare-proxied CNAME to
