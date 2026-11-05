@@ -2,6 +2,11 @@
 
 ## 0.1.0 — pre-launch
 
+- `GET /v1/me/accessible-pekos` lists every peko of the caller's on PekoHub, public ones too
+  (it listed only private ones), and each row adds `hubId`, `localId`, `owner` (the handle),
+  `description`, and `exposure`. The desktop on another computer of the owner opens the DM by
+  `hubId` — a private peko has no public page to look it up on, so "Connect" failed with "peko
+  not found" — and lists the peko with its avatar and status like a peko of that computer.
 - People choose their handle. First sign-in still suggests one (the GitHub login, or the
   Google name — no longer the part of the Google address before the `@`, which a public
   handle gave away), then `/welcome` asks the person to keep it or pick another before

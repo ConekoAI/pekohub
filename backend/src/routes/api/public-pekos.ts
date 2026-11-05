@@ -240,6 +240,12 @@ export default async function publicPekoRoutes(fastify: FastifyInstance) {
   // owner; remote-runtime ACLs (`PrincipalConfig.permissions`) live on
   // the runtime side and aren't visible here. The hub-side view is
   // owner-only + public-exposure.
+  //
+  // The caller's own pekos on PekoHub, private and public, wherever they
+  // run. Each carries its Hub ID, so an app opens the DM with it directly
+  // (a private peko has no public page to resolve), plus the owner's
+  // handle and the peko's id on its runtime, so another computer of the
+  // owner lists it like a peko of its own.
   fastify.get(
     "/me/accessible-pekos",
     { preHandler: [authenticateOrDevBypass] },
@@ -254,11 +260,16 @@ export default async function publicPekoRoutes(fastify: FastifyInstance) {
       const rows = await db
         .select({
           id: instances.id,
+          hubId: instances.hubId,
+          localId: instances.localId,
+          owner: users.namespace,
           ownerName: users.displayName,
           pekoName: instances.name,
           publicName: instances.publicName,
+          description: instances.description,
           avatar: instances.avatar,
           status: instances.status,
+          exposure: instances.exposure,
         })
         .from(instances)
         // Post-H1: instances are joined to users via the typed
@@ -270,7 +281,7 @@ export default async function publicPekoRoutes(fastify: FastifyInstance) {
         )
         .where(
           and(
-            eq(instances.exposure, "private"),
+            inArray(instances.exposure, ["private", "public"]),
             sql`${instances.ownerSubject} = ${ownerSubjectLiteral}::jsonb`,
           ),
         )
@@ -279,11 +290,16 @@ export default async function publicPekoRoutes(fastify: FastifyInstance) {
       return {
         pekos: rows.map((r) => ({
           id: r.id,
+          hubId: r.hubId,
+          localId: r.localId,
+          owner: r.owner,
           ownerName: r.ownerName,
           pekoName: r.pekoName,
           publicName: r.publicName,
+          description: r.description,
           avatar: r.avatar,
           status: r.status as InstanceStatus,
+          exposure: r.exposure,
         })),
       };
     },

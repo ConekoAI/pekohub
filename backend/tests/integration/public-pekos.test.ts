@@ -168,11 +168,16 @@ describe("ADR-059 public peko rename", () => {
       pekos: [
         {
           id: instance.id,
+          hubId: instance.hubId,
+          localId: instance.localId,
+          owner: "alice",
           ownerName: "Alice",
           pekoName: "my-private-peko",
           publicName: "Mine",
+          description: null,
           avatar: null,
           status: "online",
+          exposure: "private",
         },
       ],
     });
