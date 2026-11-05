@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as WelcomeRouteImport } from './routes/welcome'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as StatusRouteImport } from './routes/status'
 import { Route as SearchRouteImport } from './routes/search'
@@ -37,6 +38,11 @@ import { Route as OwnerNameRouteImport } from './routes/$owner/$name'
 import { Route as PekoOwnerPekoNameRouteImport } from './routes/peko.$owner.$pekoName'
 import { Route as POwnerPrincipalNameRouteImport } from './routes/p.$owner.$principalName'
 
+const WelcomeRoute = WelcomeRouteImport.update({
+  id: '/welcome',
+  path: '/welcome',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
   path: '/terms',
@@ -189,6 +195,7 @@ export interface FileRoutesByFullPath {
   '/search': typeof SearchRoute
   '/status': typeof StatusRoute
   '/terms': typeof TermsRoute
+  '/welcome': typeof WelcomeRoute
   '/$owner/$name': typeof OwnerNameRoute
   '/@{$owner}/$name': typeof AtChar123ownerChar125NameRoute
   '/auth/callback': typeof AuthCallbackRoute
@@ -218,6 +225,7 @@ export interface FileRoutesByTo {
   '/search': typeof SearchRoute
   '/status': typeof StatusRoute
   '/terms': typeof TermsRoute
+  '/welcome': typeof WelcomeRoute
   '/$owner/$name': typeof OwnerNameRoute
   '/@{$owner}/$name': typeof AtChar123ownerChar125NameRoute
   '/auth/callback': typeof AuthCallbackRoute
@@ -248,6 +256,7 @@ export interface FileRoutesById {
   '/search': typeof SearchRoute
   '/status': typeof StatusRoute
   '/terms': typeof TermsRoute
+  '/welcome': typeof WelcomeRoute
   '/$owner/$name': typeof OwnerNameRoute
   '/@{$owner}/$name': typeof AtChar123ownerChar125NameRoute
   '/auth/callback': typeof AuthCallbackRoute
@@ -279,6 +288,7 @@ export interface FileRouteTypes {
     | '/search'
     | '/status'
     | '/terms'
+    | '/welcome'
     | '/$owner/$name'
     | '/@{$owner}/$name'
     | '/auth/callback'
@@ -308,6 +318,7 @@ export interface FileRouteTypes {
     | '/search'
     | '/status'
     | '/terms'
+    | '/welcome'
     | '/$owner/$name'
     | '/@{$owner}/$name'
     | '/auth/callback'
@@ -337,6 +348,7 @@ export interface FileRouteTypes {
     | '/search'
     | '/status'
     | '/terms'
+    | '/welcome'
     | '/$owner/$name'
     | '/@{$owner}/$name'
     | '/auth/callback'
@@ -367,6 +379,7 @@ export interface RootRouteChildren {
   SearchRoute: typeof SearchRoute
   StatusRoute: typeof StatusRoute
   TermsRoute: typeof TermsRoute
+  WelcomeRoute: typeof WelcomeRoute
   OwnerNameRoute: typeof OwnerNameRoute
   AtChar123ownerChar125NameRoute: typeof AtChar123ownerChar125NameRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
@@ -385,6 +398,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/welcome': {
+      id: '/welcome'
+      path: '/welcome'
+      fullPath: '/welcome'
+      preLoaderRoute: typeof WelcomeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/terms': {
       id: '/terms'
       path: '/terms'
@@ -591,6 +611,7 @@ const rootRouteChildren: RootRouteChildren = {
   SearchRoute: SearchRoute,
   StatusRoute: StatusRoute,
   TermsRoute: TermsRoute,
+  WelcomeRoute: WelcomeRoute,
   OwnerNameRoute: OwnerNameRoute,
   AtChar123ownerChar125NameRoute: AtChar123ownerChar125NameRoute,
   AuthCallbackRoute: AuthCallbackRoute,

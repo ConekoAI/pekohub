@@ -285,6 +285,17 @@ export const api = {
   signOutApp: (clientId: string) => fetchNoContent(`/v1/auth/apps/${encodeURIComponent(clientId)}`),
 
   /** Offer a peko to another PekoHub account; it moves when they accept (ADR-081 D4). */
+  /** Whether the signed-in person could take `handle` (their own counts as free). */
+  checkHandle: (handle: string) =>
+    fetchJson<HandleCheck>(`/v1/auth/handle/${encodeURIComponent(handle)}`),
+
+  /** Keep the handle (confirms it) or change it; returns a fresh access token. */
+  chooseHandle: (handle: string) =>
+    fetchJson<{ namespace: string; token: string; handleChosen: boolean; handleLocked: boolean }>(
+      '/v1/auth/handle',
+      { method: 'PUT', body: JSON.stringify({ handle }) },
+    ),
+
   transferPeko: (hubId: string, ownerHandle: string) =>
     fetchJson<{ status: 'offered' }>(`/v1/principals/by-hub-id/${encodeURIComponent(hubId)}/transfer`, {
       method: 'POST',
@@ -538,6 +549,14 @@ export interface ModerationReport {
   resolvedAt: string | null;
   resolution: string | null;
 }
+
+/** Why a handle can't be taken. */
+export type HandleRefusal = 'invalid' | 'reserved' | 'taken' | 'locked';
+
+/** `GET /v1/auth/handle/:handle`. */
+export type HandleCheck =
+  | { handle: string; available: true }
+  | { handle: string; available: false; reason: Exclude<HandleRefusal, 'locked'> };
 
 /** `GET /v1/people/:handle`: a person's page. */
 export interface PersonProfile {

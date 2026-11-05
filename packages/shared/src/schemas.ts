@@ -190,6 +190,10 @@ export const UserProfile = z.object({
   avatarUrl: z.string().url().optional(),
   /** `moderator` and `admin` see the moderation page (gap map B3). */
   role: z.enum(['user', 'moderator', 'admin']).optional(),
+  /** False until the person keeps or changes the handle first sign-in suggested. */
+  handleChosen: z.boolean().optional(),
+  /** True once a seed or a public peko carries the handle: it can't change. */
+  handleLocked: z.boolean().optional(),
   createdAt: z.string().datetime(),
 });
 export type UserProfile = z.infer<typeof UserProfile>;
