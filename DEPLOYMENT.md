@@ -63,7 +63,7 @@ PekoHub has two origins:
 | Hostname | Serves | Hosted on |
 |----------|--------|-----------|
 | `pekohub.ai` | The website: directory, peko and seed pages, sign-in consent (`/authorize`, `/device`) | Cloudflare Pages |
-| `api.pekohub.ai` | The backend: REST (`/v1/*`), OAuth (`/oauth/*`), the runtime tunnel (`wss://api.pekohub.ai/v1/tunnel`), JWKS, `/health`; `/metrics` with `METRICS_TOKEN`, `/docs` with `API_DOCS=true` | Lightsail (nginx → Fastify); Fly.io after the move |
+| `api.pekohub.ai` | The backend: REST (`/v1/*`), OAuth (`/oauth/*`), the runtime tunnel (`wss://api.pekohub.ai/v1/tunnel`), JWKS, `/health`; `/metrics` with `METRICS_TOKEN`, `/docs` with `API_DOCS=true` | Fly.io app `pekohub` (Cloudflare-proxied CNAME to `pekohub.fly.dev`) |
 | `pekohub.org` | 301 redirect to `pekohub.ai` (legacy) | Cloudflare redirect rule |
 
 Clients discover both from `GET https://api.pekohub.ai/v1/meta`
@@ -143,83 +143,79 @@ for the machine, and Neon's first query after its own idle spell adds about half
 
 ---
 
-## Production: Fly.io + Neon (proposed)
+## Production: Fly.io + Neon
 
-Production today is one Lightsail box: Postgres runs in Docker next to the API, and the daily
-`pg_dump` lands in `~/backups` on the same disk, so losing the box loses the backups too.
-Nothing restores to a point in time, and no restore has been tried. The proposal is to give
-production the shape staging already runs (`fly.staging.toml`), with production settings
-(`fly.production.toml`):
+Production runs staging's minimal shape with production hostnames (`fly.production.toml`).
+Traffic is small, so it is sized to cost close to nothing while idle:
 
 | Piece | Where | Notes |
 |-------|-------|-------|
-| API + tunnel relay | Fly.io app `pekohub`: one `shared-cpu-1x` / 512 MB machine that never stops | `min_machines_running = 1`; Fly checks `/health` every 30 s and holds a deploy until it passes |
-| Postgres | Neon, paid plan, `aws-us-east-1` (next to Fly's `iad`) | Point-in-time restore over the plan's history window (choose 7 days or more); scale-to-zero off |
-| Second copy | Cloudflare R2 bucket `pekohub-backups`, nightly, age-encrypted | `.github/workflows/backup-production.yml`; survives losing the Neon project or account |
-| Search, quotas, blobs | As staging: Postgres search, in-memory quotas, no blob storage | Meilisearch and R2 blobs drop out with the box |
-| Website | Unchanged (Cloudflare Pages) | |
+| API + tunnel relay | Fly.io app `pekohub`: one `shared-cpu-1x` / 256 MB machine that stops when nothing is connected | A connected runtime's tunnel keeps it running; the first request after an idle spell waits a second or two |
+| Postgres | Neon free tier, project `pekohub-production`, `aws-us-east-1` (next to Fly's `iad`) | Scales to zero after 5 idle minutes; restore only within the free plan's short history window |
+| Search, quotas, blobs | As staging: Postgres search, in-memory quotas, no blob storage | |
+| Website | Cloudflare Pages `pekohub.ai` (Git integration) | Unchanged |
+
+There is no Fly health check: `/health` queries the database, and a check every 30 s would
+keep free-tier Neon awake around the clock and spend its monthly compute. For the same reason
+the uptime probe (`uptime.yml`) and the nightly backup (`backup-production.yml`) stay off; both
+skip until their variables or secrets are set.
 
 Keep exactly one machine: the relay holds runtime connections in process, so a second
 machine would split them (multi-node relay is gap map B1). `--ha=false` on every deploy stops
 Fly from adding a standby. A deploy replaces the machine; connected runtimes reconnect within
 seconds.
 
-Neon's free plan keeps only hours of history and suspends after five idle minutes. Pick a paid
-plan whose restore window is at least 7 days, set the window in the project settings, and turn
-off scale-to-zero for the production branch (the 30-second health check would keep it awake
-anyway).
+### Setup (manual; each step creates or changes cloud resources)
 
-### The move (manual; each step creates or changes cloud resources)
-
-The production API is off during the dev stage, so there is no live traffic to drain. Run
-these when launching:
-
-1. **Neon** — create the project `pekohub-production` (Postgres 17, `aws-us-east-1`) on a paid
-   plan; set the restore window; turn off scale-to-zero. Note the pooled and the direct
-   connection strings. For backups, add a read-only role:
-   ```sql
-   CREATE ROLE backup LOGIN PASSWORD '…';
-   GRANT pg_read_all_data TO backup;
-   ```
-2. **Data from Lightsail** (only if the old database holds anything worth keeping) — on the box,
-   `docker exec pekohub-db pg_dump -U pekohub --format=custom --no-owner --no-privileges pekohub > pekohub.dump`,
-   copy it off, and `pg_restore --no-owner --no-privileges --dbname="<Neon direct URL>" pekohub.dump`
-   into the empty database. The dump carries `drizzle.__drizzle_migrations`, so the first
-   deploy applies only newer migrations.
-3. **Fly** —
+1. **Neon** — create the project `pekohub-production` (Postgres 18, `aws-us-east-1`) on the
+   free plan. Note the pooled and the direct connection strings.
+2. **Fly** —
    ```bash
    fly apps create pekohub
-   fly secrets set -c fly.production.toml \
+   fly secrets set -c fly.production.toml --stage \
      DATABASE_URL='<Neon pooled connection string>' \
      MIGRATION_DATABASE_URL='<Neon direct connection string>' \
-     JWT_SECRET='<the Lightsail value, or a new one: openssl rand -hex 32>' \
-     GITHUB_CLIENT_ID=… GITHUB_CLIENT_SECRET=… \
-     SENTRY_DSN='<backend DSN>' METRICS_TOKEN="$(openssl rand -hex 32)"
+     JWT_SECRET="$(openssl rand -hex 32)" \
+     GITHUB_CLIENT_ID=… GITHUB_CLIENT_SECRET=…
    fly deploy -c fly.production.toml --ha=false --env SENTRY_RELEASE="$(git rev-parse HEAD)"
-   node scripts/probe-uptime.mjs https://pekohub.fly.dev
+   curl https://pekohub.fly.dev/health
    ```
-   A new `JWT_SECRET` signs everyone out and changes the bridge-token key runtimes fetch from
-   `/v1/jwks.json`; keeping the old one avoids both.
-4. **Hostname** — `fly certs add api.pekohub.ai -c fly.production.toml` and add the records it
-   prints in Cloudflare DNS. With the orange-cloud proxy on, the `_acme-challenge` CNAME is what
-   validates the certificate. Then replace the `api` A record with a proxied CNAME to
-   `pekohub.fly.dev`; SSL/TLS stays **Full (strict)**. Runtimes keep
-   `wss://api.pekohub.ai/v1/tunnel`; the GitHub/Google OAuth callbacks don't change.
-5. **Check** — `node scripts/probe-uptime.mjs https://api.pekohub.ai`, sign in on the website,
+   The GitHub OAuth app's callback is `https://api.pekohub.ai/v1/auth/github/callback`
+   (Google, optional: `…/v1/auth/google/callback`). Changing `JWT_SECRET` later signs everyone
+   out and changes the bridge-token key runtimes fetch from `/v1/jwks.json`.
+3. **Hostname** — `fly certs add api.pekohub.ai -c fly.production.toml`; `fly certs setup
+   api.pekohub.ai -c fly.production.toml` prints the records. In Cloudflare DNS add, both
+   **DNS only** (grey cloud): the `_acme-challenge.api` CNAME (with the orange-cloud proxy on
+   the `api` record, it is what validates the certificate) and the `_fly-ownership.api` TXT
+   (Fly needs it when traffic arrives through a proxy). Then replace the `api` A record (the old
+   Lightsail IP) with a proxied CNAME to `pekohub.fly.dev`; SSL/TLS stays **Full (strict)**.
+   Check with `fly certs show api.pekohub.ai -c fly.production.toml`.
+4. **Check** — `node scripts/probe-uptime.mjs https://api.pekohub.ai`, sign in on the website,
    connect a runtime.
-6. **Retire Lightsail** — `docker compose -f docker-compose.lightsail.yml down` on the box and
-   stop the instance (a stopped instance is the rollback: start it and point the A record
-   back). After a week, take a final snapshot, delete the instance and release the static IP.
-   `deploy-lightsail.yml` then has nothing to deploy to; delete it, or leave it (it deploys
-   only on `[lightsail]` or a manual run).
-7. **Backups and monitoring** — the sections below.
+
+`pekohub.fly.dev` reaches the app without Cloudflare, so a Cloudflare WAF rule (an IP
+allowlist, say) covers only `api.pekohub.ai`.
 
 Later deploys: `fly deploy -c fly.production.toml --ha=false --env SENTRY_RELEASE="$(git rev-parse HEAD)"`
 (a workflow like `deploy-staging.yml` can run it once launch settles).
 
 **Rollback:** `fly releases -c fly.production.toml` lists releases; redeploy an earlier image
-with `fly deploy -c fly.production.toml --ha=false --image <image ref from the list>`. A
-migration that must be undone is a Neon point-in-time restore (below).
+with `fly deploy -c fly.production.toml --ha=false --image <image ref from the list>`.
+
+### When traffic grows
+
+- **No cold starts:** in `fly.production.toml`, `auto_stop_machines = "off"`,
+  `min_machines_running = 1`, and 512 MB.
+- **Paid Neon** with a restore window of 7 days or more and scale-to-zero off; then add a Fly
+  check on `/health` (every 30 s), the external monitor and `uptime.yml` (§ Health and alerts),
+  and the nightly backup (§ Backups) with a read-only role:
+  ```sql
+  CREATE ROLE backup LOGIN PASSWORD '…';
+  GRANT pg_read_all_data TO backup;
+  ```
+- **Lightsail:** the old box is off. Once Fly serves `api.pekohub.ai`, take a final snapshot,
+  delete the instance and release the static IP; `deploy-lightsail.yml` then has nothing to
+  deploy to (it runs only on `[lightsail]` or a manual run).
 
 ---
 
@@ -276,8 +272,9 @@ example more than 20 events in 5 minutes), sent to email or Slack.
 
 Three checks cover the API:
 
-1. **Fly health check** (`fly.production.toml`): `/health` every 30 s. It gates deploys and
-   shows in `fly checks list -c fly.production.toml`, but Fly sends no alert.
+1. **Fly health check** — off while production is on Neon's free tier (§ Production); once on
+   a paid plan, add `[[http_service.checks]]` on `/health` every 30 s to `fly.production.toml`.
+   It gates deploys and shows in `fly checks list -c fly.production.toml`, but Fly sends no alert.
 2. **External HTTP monitor** — the alert. Any uptime service works (Better Stack, UptimeRobot,
    Checkly): `GET https://api.pekohub.ai/health` every 1–3 minutes, expect status 200 and the
    text `"database":"ok"`, alert after two failures, by email and phone or Slack. Don't point
@@ -314,7 +311,7 @@ Two independent copies once production is on Neon:
      public key it prints in the repository variable `BACKUP_AGE_RECIPIENT`.
    - Secrets `BACKUP_DATABASE_URL` (the direct connection string for the read-only `backup`
      role), `BACKUP_R2_ACCESS_KEY_ID`, `BACKUP_R2_SECRET_ACCESS_KEY`; variables
-     `BACKUP_R2_ENDPOINT`, `BACKUP_R2_BUCKET`, `BACKUP_PG_MAJOR` (17).
+     `BACKUP_R2_ENDPOINT`, `BACKUP_R2_BUCKET`, `BACKUP_PG_MAJOR` (18).
    - Run it once by hand (`gh workflow run backup-production.yml`) and check the object.
 
 Until the move, the Lightsail box keeps 7 daily dumps in `~/backups` on its own disk. To get
@@ -336,7 +333,7 @@ long each part took, and anything that went wrong.
 2. **From the dump** — download the newest dump
    (`aws s3 cp s3://pekohub-backups/postgres/<name> . --endpoint-url …`) and make an empty
    database — a new Neon project, or
-   `docker run -d --name drill -e POSTGRES_PASSWORD=drill -p 5440:5432 postgres:17-alpine` — then:
+   `docker run -d --name drill -e POSTGRES_PASSWORD=drill -p 5440:5432 postgres:18-alpine` — then:
    ```bash
    scripts/restore-drill.sh pekohub-<timestamp>.dump.age \
      postgres://postgres:drill@localhost:5440/postgres pekohub-backup.key

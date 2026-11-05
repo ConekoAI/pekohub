@@ -2,6 +2,12 @@
 
 ## 0.1.0 — pre-launch
 
+- Production runs on Fly.io + Neon in staging's minimal shape (`fly.production.toml`): one
+  256 MB machine that stops when idle, Neon free tier on Postgres 18, no Fly health check
+  (it would keep free-tier Neon awake). `api.pekohub.ai` is a Cloudflare-proxied CNAME to
+  `pekohub.fly.dev` with SSL/TLS Full (strict). The backup workflow and restore drill default
+  to Postgres 18. DEPLOYMENT.md § "Production: Fly.io + Neon" has the setup and what to turn
+  on as traffic grows.
 - Attachments cross runtimes through the tunnel (peko-runtime ADR-094). A runtime pulls a
   post's file from the runtime that sent it, one chunk at a time:
   `tunnel_attachment_request` / `tunnel_attachment_chunk`, relayed like history
