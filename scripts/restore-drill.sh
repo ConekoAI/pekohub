@@ -6,9 +6,9 @@
 #   scripts/restore-drill.sh <backup.dump.age | backup.dump> <target database URL> [age identity file]
 #
 # The target must be an empty scratch database (a fresh Neon branch, or
-# `docker run -e POSTGRES_PASSWORD=x -p 5440:5432 postgres:17-alpine`); the
+# `docker run -e POSTGRES_PASSWORD=x -p 5440:5432 postgres:18-alpine`); the
 # script refuses one that already has tables. An `.age` backup needs the
-# identity (private key) file. Needs Docker; PG_MAJOR (default 17) picks
+# identity (private key) file. Needs Docker; PG_MAJOR (default 18) picks
 # the pg_restore version, which must be at least the dump's (PG_IMAGE
 # overrides the whole image name).
 #
@@ -20,7 +20,7 @@ set -euo pipefail
 backup=${1:?usage: restore-drill.sh <backup> <target database URL> [age identity file]}
 target=${2:?usage: restore-drill.sh <backup> <target database URL> [age identity file]}
 identity=${3:-}
-image=${PG_IMAGE:-postgres:${PG_MAJOR:-17}-alpine}
+image=${PG_IMAGE:-postgres:${PG_MAJOR:-18}-alpine}
 
 # Inside the container `localhost` is the container; reach the host instead.
 target_in_docker=$(printf '%s' "$target" | sed -E 's#@(localhost|127\.0\.0\.1)([:/])#@host.docker.internal\2#')

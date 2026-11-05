@@ -13,7 +13,7 @@ name: Backup Production Database
 #   variables BACKUP_R2_ENDPOINT           https://<account id>.r2.cloudflarestorage.com
 #             BACKUP_R2_BUCKET             e.g. pekohub-backups
 #             BACKUP_AGE_RECIPIENT         age public key (age1...); the private key stays offline
-#             BACKUP_PG_MAJOR              the database's Postgres major version (default 17)
+#             BACKUP_PG_MAJOR              the database's Postgres major version (default 18)
 
 on:
   schedule:
@@ -42,7 +42,7 @@ jobs:
       R2_ENDPOINT: ${{ vars.BACKUP_R2_ENDPOINT }}
       R2_BUCKET: ${{ vars.BACKUP_R2_BUCKET }}
       AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
-      PG_MAJOR: ${{ vars.BACKUP_PG_MAJOR || '17' }}
+      PG_MAJOR: ${{ vars.BACKUP_PG_MAJOR || '18' }}
     steps:
       - name: Check configuration
         id: config

@@ -1,10 +1,12 @@
 # PekoHub API production on Fly.io — `fly deploy -c fly.production.toml --ha=false`
 #
-# The same shape as staging (fly.staging.toml) with production settings:
-# the machine never stops, Neon runs on a paid plan with point-in-time
-# restore, and Fly checks /health (which queries the database).
-# DEPLOYMENT.md § "Production: Fly.io + Neon" has the move from Lightsail,
-# the backups, and the restore drill.
+# The same minimal shape as staging (fly.staging.toml), with production
+# hostnames: one small machine that stops when no request or tunnel is
+# open and starts on the next one (a second or two), on Neon's free tier.
+# No Fly health check: /health queries the database, so a check every 30 s
+# would keep free-tier Neon awake around the clock and spend its monthly
+# compute. DEPLOYMENT.md § "Production: Fly.io + Neon" has the setup and
+# what to turn on when traffic grows (always-on, paid Neon, backups).
 #
 # Exactly one machine: the tunnel relay keeps runtime connections in
 # process (services/tunnel-manager.ts), so a second machine would split
@@ -46,10 +48,12 @@ primary_region = "iad" # next to Neon's aws-us-east-1
 [http_service]
   internal_port = 3000
   force_https = true
-  # Production stays up: no cold start for the first request or tunnel.
-  auto_stop_machines = "off"
+  # Stops when idle, like staging; a connected runtime's tunnel keeps it
+  # running. For no cold starts: auto_stop_machines = "off",
+  # min_machines_running = 1 (and a paid Neon plan before adding a check).
+  auto_stop_machines = "stop"
   auto_start_machines = true
-  min_machines_running = 1
+  min_machines_running = 0
 
   # Every connected runtime holds one connection for as long as it is
   # online, so the limit is the number of runtimes plus live requests.
@@ -58,16 +62,6 @@ primary_region = "iad" # next to Neon's aws-us-east-1
     soft_limit = 800
     hard_limit = 1000
 
-  # /health answers 503 when the database doesn't (within 5 s). Fly holds
-  # a deploy until the new machine passes and shows failures in
-  # `fly checks list`; alerting is the external monitor's job (DEPLOYMENT.md).
-  [[http_service.checks]]
-    grace_period = "15s"
-    interval = "30s"
-    timeout = "8s"
-    method = "GET"
-    path = "/health"
-
 [[vm]]
   size = "shared-cpu-1x"
-  memory = "512mb"
+  memory = "256mb"
