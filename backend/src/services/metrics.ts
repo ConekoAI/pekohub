@@ -85,6 +85,10 @@ export const CounterName = {
   HubPersonDmInviteForwarded: "hub.person_dm_invite.forwarded",
   HubDmRouteForwarded: "hub.dm_route.forwarded",
   HubPersonDmRejectedPerson: "hub.person_dm.rejected_person",
+  // Runtime ADR-097 D1: a peko's model list, asked for and answered between
+  // two runtimes of one account; refused otherwise.
+  HubPekoModelsForwarded: "hub.peko_models.forwarded",
+  HubPekoModelsRejectedAccount: "hub.peko_models.rejected_account",
   // Runtime ADR-090 D3: an envelope speaking for a person
   // (`user:hub:<account>`) from a runtime registered to another account.
   HubChannelEventRejectedPersonAccount: "hub.channel_event.rejected_person_account",

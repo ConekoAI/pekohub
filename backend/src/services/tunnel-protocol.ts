@@ -188,6 +188,9 @@ export interface ChannelEvent {
   attachments?: { name: string; path: string; mime: string; size: number; sha256?: string }[];
   /** Suggested replies (runtime ADR-093): text a reader may send with a tap; no authority. */
   options?: string[];
+  /** Runtime ADR-097: a model of the peko's host the author asks it to answer
+   * this post with; the host honours it only for the peko's owner. */
+  model?: string;
   // `member_joined` / `member_left`
   member?: string;
   // `received`: delivery receipts for these envelopes.
@@ -447,6 +450,10 @@ export type TunnelMessage =
   // other where its two people are.
   | ({ type: "tunnel_person_dm_invite" } & TunnelPersonDmInvitePayload)
   | ({ type: "tunnel_dm_route" } & TunnelDmRoutePayload)
+  // Runtime ADR-097 D1: the owner's other computer asks a peko's host which
+  // models it can answer with; relayed only between runtimes of one account.
+  | ({ type: "tunnel_peko_models_request" } & TunnelPekoModelsRequestPayload)
+  | ({ type: "tunnel_peko_models" } & TunnelPekoModelsPayload)
   // Runtime ADR-092 D5/D6: a home registers its group (the Hub assigns the
   // ID) and reports the accounts in it; a runtime asks for its account's
   // groups (D4).
@@ -597,6 +604,38 @@ export interface TunnelDmRoutePayload {
   sourcePrincipalDid: string;
   channelId: string;
   routes: DmRoute[];
+  signature: string;
+}
+
+/**
+ * Runtime ADR-097 D1: a person (`user:hub:<account>`) asks the runtime
+ * hosting the peko whose signing DID is `principalDid` which models it may
+ * answer them with. Relayed only from a runtime registered to that account,
+ * to another runtime registered to it.
+ */
+export interface TunnelPekoModelsRequestPayload {
+  requestId: string;
+  sourceRuntimeId: string;
+  recipientRuntimeId: string;
+  /** `user:hub:<account>`. */
+  sourcePrincipalDid: string;
+  principalDid: string;
+  signature: string;
+}
+
+/** Runtime ADR-097 D1: a model a peko's host can answer with — id and name only. */
+export interface PekoModel {
+  id: string;
+  displayName: string;
+}
+
+/** Runtime ADR-097 D1: the host's answer, relayed only between runtimes of one account. */
+export interface TunnelPekoModelsPayload {
+  requestId: string;
+  sourceRuntimeId: string;
+  recipientRuntimeId: string;
+  principalDid: string;
+  models: PekoModel[];
   signature: string;
 }
 

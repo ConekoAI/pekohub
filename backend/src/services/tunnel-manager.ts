@@ -776,6 +776,48 @@ export class TunnelManager {
     this.sendMessage(target.socket, msg);
   }
 
+  /**
+   * Runtime ADR-097 D1: a peko's model list, asked for by the person's
+   * runtime (`sourcePrincipalDid` must be its own account) and answered by
+   * the peko's host; both relayed only between two runtimes registered to
+   * the same account. Requests share the history rate limit. Never stored.
+   */
+  private async handlePekoModels(
+    conn: RuntimeConnection,
+    msg: Extract<TunnelMessage, { type: "tunnel_peko_models_request" | "tunnel_peko_models" }>,
+  ): Promise<void> {
+    if (conn.runtimeId !== msg.sourceRuntimeId) {
+      this.fastify.log.warn(
+        { connRuntime: conn.runtimeId, claim: msg.sourceRuntimeId, type: msg.type },
+        "peko models source allowlist mismatch — closing tunnel (impersonation)",
+      );
+      this.closeConnection(conn, "source allowlist mismatch");
+      this.handleDisconnect(conn);
+      return;
+    }
+    const [from, to] = await Promise.all([
+      this.resolveRuntimeOwner(conn.runtimeId),
+      this.resolveRuntimeOwner(msg.recipientRuntimeId),
+    ]);
+    const person = msg.type === "tunnel_peko_models_request" ? msg.sourcePrincipalDid : null;
+    if (
+      from === null ||
+      from !== to ||
+      (person !== null && person !== `user:hub:${from}`)
+    ) {
+      metrics.inc(CounterName.HubPekoModelsRejectedAccount);
+      return;
+    }
+    if (msg.type === "tunnel_peko_models_request" && !this.allowHistoryRequest(conn.runtimeId)) {
+      metrics.inc(CounterName.HubHistoryRequestRateLimited);
+      return;
+    }
+    const target = this.getConnection(msg.recipientRuntimeId);
+    if (!target) return;
+    metrics.inc(CounterName.HubPekoModelsForwarded);
+    this.sendMessage(target.socket, msg);
+  }
+
   /** The runtimes registered to `account` (runtime ADR-081 D3). */
   protected async runtimesOfAccount(account: string): Promise<string[]> {
     const rows = await db
@@ -1082,6 +1124,13 @@ export class TunnelManager {
       case "tunnel_dm_route": {
         // Runtime ADR-095 D6: only from the person's own runtime.
         await this.handleDmRoute(conn, msg);
+        break;
+      }
+
+      case "tunnel_peko_models_request":
+      case "tunnel_peko_models": {
+        // Runtime ADR-097 D1: between two runtimes of one account.
+        await this.handlePekoModels(conn, msg);
         break;
       }
 
