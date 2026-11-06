@@ -298,6 +298,14 @@ export interface PrincipalTargetResolution {
    */
   ownerHandle: string | null;
   exposure: InstanceExposure;
+  /**
+   * Its face and liveness as its runtime last announced them, so an app
+   * lists a peko it knows by Hub ID — a contact's private one has no
+   * public page — like one of its own.
+   */
+  status: string;
+  avatar: string | null;
+  description: string | null;
 }
 
 /**
@@ -989,6 +997,9 @@ export class InstanceService {
           ownerSubject: owner,
           ownerHandle: await this.ownerHandle(owner),
           exposure: instance.exposure,
+          status: instance.status,
+          avatar: instance.avatar ?? null,
+          description: instance.description ?? null,
         },
       };
     }

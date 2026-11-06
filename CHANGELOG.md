@@ -2,6 +2,13 @@
 
 ## 0.1.0 — pre-launch
 
+- The tunnel relays a peko's model list between two runtimes of the same account (runtime
+  ADR-097): `tunnel_peko_models_request` (only for the runtime's own person, rate-limited with
+  history requests) and its answer `tunnel_peko_models`; neither is stored. Relayed posts may
+  carry `model`, the model a peko's owner picked for that message on their other computer.
+- `GET /v1/principals/by-hub-id/:hubId` adds `status`, `avatar`, and `description`, so the
+  desktop lists a peko it knows by Hub ID (one you have a DM with, a contact's private one
+  included) with its face and liveness. Additive; the runtime's resolver ignores them.
 - A private peko's handle resolves only for its owner (ADR-010). `GET
   /v1/principals/by-handle/:owner/:name` answered any signed-in account or registered peko
   with a private peko's runtime, identity key and status; handles are guessable, so anyone
