@@ -26,6 +26,8 @@ describe("actor addressing contract", () => {
       const response = await app.inject({ method: "GET", url });
       expect(response.statusCode).toBe(200);
       expect(response.json().instanceId).toBe(current.id);
+      // Its face and liveness, so an app lists it like one of its own.
+      expect(response.json()).toMatchObject({ status: "online", avatar: null, description: null });
     }
     const profile = await app.inject({ method: "GET", url: "/v1/public/pekos/alice/helper" });
     expect(profile.json().liveInstance.id).toBe(current.id);

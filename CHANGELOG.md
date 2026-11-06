@@ -2,6 +2,9 @@
 
 ## 0.1.0 — pre-launch
 
+- `GET /v1/principals/by-hub-id/:hubId` adds `status`, `avatar`, and `description`, so the
+  desktop lists a peko it knows by Hub ID (one you have a DM with, a contact's private one
+  included) with its face and liveness. Additive; the runtime's resolver ignores them.
 - `GET /v1/me/accessible-pekos` lists every peko of the caller's on PekoHub, public ones too
   (it listed only private ones), and each row adds `hubId`, `localId`, `owner` (the handle),
   `description`, and `exposure`. The desktop on another computer of the owner opens the DM by
