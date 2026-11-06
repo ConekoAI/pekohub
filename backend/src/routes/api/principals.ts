@@ -30,7 +30,9 @@ import { pekoShareUrl } from "../../services/origins.js";
 //   - 404 on a miss (row missing, DID not set, or wrong owner/name).
 //   - 403 on a denied (caller fails the gate). Distinct from 404 so
 //     legitimate callers can tell "doesn't exist" from "you can't see
-//     it" without an oracle.
+//     it" without an oracle. By handle a private peko is its owner's
+//     alone and anyone else gets 404: handles are guessable, so 403
+//     would confirm the peko exists (hub ADR-010).
 //   - 400 on a malformed target spec (DID/owner/name that fails the
 //     shared Zod schema). 401 on a missing/invalid JWT.
 //
