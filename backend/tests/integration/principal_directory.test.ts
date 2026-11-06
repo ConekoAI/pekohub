@@ -15,7 +15,9 @@ import type { TestDb } from "../fixtures/db.js";
 //                          owner_subject, exposure }`
 //   - miss → 404
 //   - denied → 403 (NOT 404, so the existence-vs-permission
-//     distinction is preserved for legitimate callers)
+//     distinction is preserved for legitimate callers) — by Hub ID only.
+//     A private peko's handle is its owner's alone: anyone else gets
+//     404, since handles are guessable (hub ADR-010).
 //
 // Both endpoints are tested with: hit, miss, denied, public exposure
 // (anonymous-OK). The by-handle endpoint is the v1 user-namespace-only
@@ -250,7 +252,7 @@ describe("Agent directory API", () => {
       expect(response.statusCode).toBe(404);
     });
 
-    it("routes private handles for authenticated accounts with runtime grants", async () => {
+    it("keeps a private peko's handle from other accounts: 404, not 403 (hub ADR-010)", async () => {
       const app = await buildTestApp({ testDb });
       const owner = await createUser(testDb.client, { namespace: "alice" });
       const other = await createUser(testDb.client, { namespace: "bob" });
@@ -268,7 +270,30 @@ describe("Agent directory API", () => {
         headers: otherHeaders,
       });
 
+      // A handle is guessable, so the answer doesn't confirm the peko
+      // exists. Its Hub ID still resolves for bob (by-hub-id tests).
+      expect(response.statusCode).toBe(404);
+      expect(instance.hubId).toBeTruthy();
+    });
+
+    it("resolves a private peko's handle for its owner", async () => {
+      const app = await buildTestApp({ testDb });
+      const owner = await createUser(testDb.client, { namespace: "alice" });
+
+      const instance = await createInstance(testDb.client, {
+        ownerSubject: { kind: "user", id: String(owner.id) },
+        name: "secret",
+        exposure: "private",
+      });
+
+      const response = await app.inject({
+        method: "GET",
+        url: "/v1/principals/by-handle/alice/secret",
+        headers: await authHeaders(owner),
+      });
+
       expect(response.statusCode).toBe(200);
+      expect(JSON.parse(response.payload).instanceId).toBe(instance.id);
     });
   });
 });

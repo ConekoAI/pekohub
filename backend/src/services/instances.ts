@@ -979,7 +979,7 @@ export class InstanceService {
     }
 
     if (instance.exposure === "local_only") return { status: "denied" };
-    if (instance.exposure === "public" || (caller?.kind === "principal" || caller?.kind === "user") || (await subjectCanAccess(owner, caller))) {
+    if (instance.exposure === "public" || (await this.mayResolvePrivate(spec.kind, owner, caller))) {
       return {
         status: "hit",
         resolution: {
@@ -1004,7 +1004,43 @@ export class InstanceService {
       };
     }
 
-    return { status: "denied" };
+    // A handle is a guessable name (`@alice/ada`): to anyone but its
+    // owner a private peko has none, so the answer is "not found" rather
+    // than "forbidden" and doesn't confirm it exists (hub ADR-010 D1).
+    return { status: spec.kind === "by-handle" ? "miss" : "denied" };
+  }
+
+  /**
+   * Who may resolve a registered private peko (hub ADR-010).
+   *
+   * By handle: only its owner — the person, or one of their own pekos
+   * (a peko on another of their computers). No runtime or app looks up
+   * someone else's private peko by handle.
+   *
+   * By Hub ID: also any other signed-in account or registered peko. A
+   * Hub ID is the address its owner hands out (hub ADR-073): first
+   * contact, group invitations, a person's DMs, and the desktop's DM
+   * list all resolve pekos their caller has no Hub-visible tie to,
+   * because chat grants live on the recipient's runtime, which refuses
+   * anyone without one. Narrowing this needs the runtimes' help; ADR-010
+   * proposes how.
+   */
+  private async mayResolvePrivate(
+    by: "by-hub-id" | "by-handle",
+    owner: Subject,
+    caller: CallerSubject,
+  ): Promise<boolean> {
+    if (await this.speaksForOwner(owner, caller)) return true;
+    return by === "by-hub-id" && (caller?.kind === "user" || caller?.kind === "principal");
+  }
+
+  /** The caller is `owner`, or a registered peko `owner` owns. */
+  private async speaksForOwner(owner: Subject, caller: CallerSubject): Promise<boolean> {
+    if (await subjectCanAccess(owner, caller)) return true;
+    if (caller?.kind !== "principal") return false;
+    const own = await this.getByHubId(caller.id);
+    const callerOwner = own ? resolveOwnerSubject(own) : null;
+    return callerOwner !== null && (await subjectCanAccess(owner, callerOwner));
   }
 
   /** A user owner's handle (`users.namespace`); null for any other owner. */

@@ -5,6 +5,15 @@
 - `GET /v1/principals/by-hub-id/:hubId` adds `status`, `avatar`, and `description`, so the
   desktop lists a peko it knows by Hub ID (one you have a DM with, a contact's private one
   included) with its face and liveness. Additive; the runtime's resolver ignores them.
+- A private peko's handle resolves only for its owner (ADR-010). `GET
+  /v1/principals/by-handle/:owner/:name` answered any signed-in account or registered peko
+  with a private peko's runtime, identity key and status; handles are guessable, so anyone
+  could probe `@alice/<name>` for her private pekos. Now only Alice and her own pekos get it,
+  and everyone else gets 404 — not 403, which confirmed it existed. By Hub ID nothing
+  changes: it is the address an owner hands out, used for first contact, group invitations,
+  people's DMs and the desktop's DM list, and the peko's runtime enforces its chat grants.
+  ADR-010 D3 proposes how runtimes and the desktop let the Hub show strangers only what a
+  first message needs.
 - `GET /v1/me/accessible-pekos` lists every peko of the caller's on PekoHub, public ones too
   (it listed only private ones), and each row adds `hubId`, `localId`, `owner` (the handle),
   `description`, and `exposure`. The desktop on another computer of the owner opens the DM by
