@@ -37,9 +37,9 @@ describe("actor addressing contract", () => {
     const user = await createUser(testDb.client, { namespace: "alice" });
     const instance = await createInstance(testDb.client, { ownerSubject: { kind: "user", id: user.id }, principalDid: "did:key:zPrivate", name: "helper", exposure: "private" });
     const headers = await authHeaders(user);
-    for (const url of [`/v1/principals/by-hub-id/${instance.hubId}`, "/v1/principals/by-handle/alice/helper"]) {
+    for (const [url, anonymous] of [[`/v1/principals/by-hub-id/${instance.hubId}`, 403], ["/v1/principals/by-handle/alice/helper", 404]] as const) {
       expect((await app.inject({ method: "GET", url, headers })).statusCode).toBe(200);
-      expect((await app.inject({ method: "GET", url })).statusCode).toBe(403);
+      expect((await app.inject({ method: "GET", url })).statusCode).toBe(anonymous);
     }
     expect((await app.inject({method: "GET", url: "/v1/public/pekos/alice/helper"})).statusCode).toBe(404);
     await app.close();
@@ -94,6 +94,59 @@ describe("actor addressing contract", () => {
     for (const authorization of [proof("/wrong/path").authorization, proof(url, { exp: 1 }).authorization, proof(url, { aud: "wrong" }).authorization, "PekoPrincipal invalid"]) {
       expect((await app.inject({ method: "GET", url, headers: { authorization } })).statusCode).toBe(401);
     }
+    await app.close();
+  });
+
+  /** A registered peko's signing key: a directory proof per request path. */
+  function signer() {
+    const { secretKey, publicKey } = ed25519.keygen();
+    const sub = `did:key:z${base58.encode(new Uint8Array([0xed, 0x01, ...publicKey]))}`;
+    return {
+      sub,
+      headers(path: string) {
+        const now = Math.floor(Date.now() / 1000);
+        const header = Buffer.from(JSON.stringify({ alg: "EdDSA", typ: "JWT" })).toString("base64url");
+        const payload = Buffer.from(JSON.stringify({ sub, aud: "peko-directory-v1", path, iat: now, exp: now + 60 })).toString("base64url");
+        const input = `${header}.${payload}`;
+        const signature = Buffer.from(ed25519.sign(new TextEncoder().encode(input), secretKey)).toString("base64url");
+        return { authorization: `PekoPrincipal ${input}.${signature}` };
+      },
+    };
+  }
+
+  it("a private peko's handle resolves only for its owner; its Hub ID for anyone signed in (hub ADR-010)", async () => {
+    const app = await buildTestApp({ testDb });
+    const alice = await createUser(testDb.client, { namespace: "alice" });
+    const bob = await createUser(testDb.client, { namespace: "bob" });
+    const target = await createInstance(testDb.client, { ownerSubject: { kind: "user", id: alice.id }, principalDid: "did:key:zTarget", name: "helper", exposure: "private" });
+    // Alice's peko on her other computer, and a peko of Bob's.
+    const alicesPeko = signer();
+    await createInstance(testDb.client, { ownerSubject: { kind: "user", id: alice.id }, principalDid: alicesPeko.sub, name: "scout", exposure: "private" });
+    const bobsPeko = signer();
+    await createInstance(testDb.client, { ownerSubject: { kind: "user", id: bob.id }, principalDid: bobsPeko.sub, name: "pal", exposure: "private" });
+    const aliceHeaders = await authHeaders(alice);
+    const bobHeaders = await authHeaders(bob);
+
+    const byHubId = `/v1/principals/by-hub-id/${target.hubId}`;
+    const byHandle = "/v1/principals/by-handle/alice/helper";
+    const status = async (url: string, headers?: Record<string, string>) =>
+      (await app.inject({ method: "GET", url, headers })).statusCode;
+
+    // Its owner, as the person or as one of her pekos.
+    for (const url of [byHubId, byHandle]) {
+      expect(await status(url, aliceHeaders)).toBe(200);
+      expect(await status(url, alicesPeko.headers(url))).toBe(200);
+    }
+    // By handle, everyone else learns nothing — not even that it exists.
+    expect(await status(byHandle)).toBe(404);
+    expect(await status(byHandle, bobHeaders)).toBe(404);
+    expect(await status(byHandle, bobsPeko.headers(byHandle))).toBe(404);
+    // By Hub ID — the address its owner hands out — other accounts and
+    // pekos still reach it (first contact, group invitations, person
+    // DMs, the desktop's DM list); its runtime enforces chat grants.
+    expect(await status(byHubId)).toBe(403);
+    expect(await status(byHubId, bobHeaders)).toBe(200);
+    expect(await status(byHubId, bobsPeko.headers(byHubId))).toBe(200);
     await app.close();
   });
 
