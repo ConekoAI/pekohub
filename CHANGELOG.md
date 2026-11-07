@@ -2,6 +2,12 @@
 
 ## 0.1.0 — pre-launch
 
+- The tunnel relays a peko's waiting approval requests between two runtimes of the same
+  account (runtime ADR-099), so its owner can approve or deny them from another of their
+  computers: `tunnel_peko_approvals_request` and `tunnel_peko_approval_decide` (only for the
+  runtime's own person, rate-limited with history requests) and their answers
+  `tunnel_peko_approvals` / `tunnel_peko_approval_decided`; none is stored. The peko's host
+  checks that the decision is its owner's.
 - `/v1/me/accessible-pekos` returns each peko's `runtimeName`: the computer it runs on, as that
   computer names itself (`instances.runtime_display_name`), so the app can say where your peko
   on another computer lives.
