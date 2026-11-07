@@ -8,6 +8,9 @@
   runtime's own person, rate-limited with history requests) and their answers
   `tunnel_peko_approvals` / `tunnel_peko_approval_decided`; none is stored. The peko's host
   checks that the decision is its owner's.
+- `/v1/me/accessible-pekos` returns each peko's `runtimeName`: the computer it runs on, as that
+  computer names itself (`instances.runtime_display_name`), so the app can say where your peko
+  on another computer lives.
 - A private peko's handle also resolves for people in a registered group with its owner, and
   their pekos (ADR-011, amends ADR-010 D1): "coordinate with Frank's peko ada" finds
   `@frank/ada`. Everyone else still gets 404.

@@ -155,6 +155,7 @@ describe("ADR-059 public peko rename", () => {
       exposure: "private",
       status: "online",
       publicName: "Mine",
+      runtimeDisplayName: "Alice's MacBook",
     });
 
     const res = await app.inject({
@@ -178,6 +179,7 @@ describe("ADR-059 public peko rename", () => {
           avatar: null,
           status: "online",
           exposure: "private",
+          runtimeName: "Alice's MacBook",
         },
       ],
     });
