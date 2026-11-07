@@ -1,8 +1,11 @@
 import { db } from "../db/index.js";
-import { instances, runtimes, users, hubPrincipals, principalMoveApprovals, principalTransferOffers } from "../db/schema.js";
+import { instances, runtimes, users, hubPrincipals, hubGroupMembers, principalMoveApprovals, principalTransferOffers } from "../db/schema.js";
+import { alias } from "drizzle-orm/pg-core";
 import { notify, PAGES } from "./notifications.js";
 import { eq, and, or, sql, desc, count, gt, gte, lt, ne, inArray, isNull } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 import {
   Subject,
   isEmptyOwnerSubject,
@@ -1013,9 +1016,9 @@ export class InstanceService {
   /**
    * Who may resolve a registered private peko (hub ADR-010).
    *
-   * By handle: only its owner — the person, or one of their own pekos
-   * (a peko on another of their computers). No runtime or app looks up
-   * someone else's private peko by handle.
+   * By handle: its owner — the person, or one of their own pekos (a peko
+   * on another of their computers) — and people in a registered group
+   * with the owner, with their pekos (ADR-011: "Frank's peko ada").
    *
    * By Hub ID: also any other signed-in account or registered peko. A
    * Hub ID is the address its owner hands out (hub ADR-073): first
@@ -1031,7 +1034,36 @@ export class InstanceService {
     caller: CallerSubject,
   ): Promise<boolean> {
     if (await this.speaksForOwner(owner, caller)) return true;
-    return by === "by-hub-id" && (caller?.kind === "user" || caller?.kind === "principal");
+    if (by === "by-hub-id") return caller?.kind === "user" || caller?.kind === "principal";
+    // Hub ADR-011: by handle also for people in a registered group with
+    // the owner, and their pekos — "coordinate with Frank's peko ada".
+    return this.sharesAGroupWithOwner(owner, caller);
+  }
+
+  /**
+   * Whether the caller's person (the account, or a peko's owner) and
+   * `owner` are members of one registered group (`hub_group_members`).
+   */
+  private async sharesAGroupWithOwner(owner: Subject, caller: CallerSubject): Promise<boolean> {
+    if (owner.kind !== "user" || !caller) return false;
+    let account: string | null = null;
+    if (caller.kind === "user") {
+      account = caller.id;
+    } else if (caller.kind === "principal") {
+      const own = await this.getByHubId(caller.id);
+      const callerOwner = own ? resolveOwnerSubject(own) : null;
+      account = callerOwner?.kind === "user" ? callerOwner.id : null;
+    }
+    if (!account || !UUID_RE.test(account) || !UUID_RE.test(owner.id)) return false;
+    const mine = alias(hubGroupMembers, "mine");
+    const theirs = alias(hubGroupMembers, "theirs");
+    const rows = await db
+      .select({ groupId: mine.groupId })
+      .from(mine)
+      .innerJoin(theirs, eq(mine.groupId, theirs.groupId))
+      .where(and(eq(mine.userId, account), eq(theirs.userId, owner.id)))
+      .limit(1);
+    return rows.length > 0;
   }
 
   /** The caller is `owner`, or a registered peko `owner` owns. */

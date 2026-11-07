@@ -2,6 +2,13 @@
 
 ## 0.1.0 — pre-launch
 
+- A private peko's handle also resolves for people in a registered group with its owner, and
+  their pekos (ADR-011, amends ADR-010 D1): "coordinate with Frank's peko ada" finds
+  `@frank/ada`. Everyone else still gets 404.
+- `tunnel_group_join_request` may come from a peko asking for itself (runtime ADR-098 D2): a
+  `did:key` source with `sourceHubId`, relayed only when that Hub ID's signing DID matches and
+  the peko's online link points at the sending runtime.
+
 - The tunnel relays a peko's model list between two runtimes of the same account (runtime
   ADR-097): `tunnel_peko_models_request` (only for the runtime's own person, rate-limited with
   history requests) and its answer `tunnel_peko_models`; neither is stored. Relayed posts may

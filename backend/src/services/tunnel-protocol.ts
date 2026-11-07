@@ -484,16 +484,21 @@ export interface AccountGroup {
   channelId: string;
 }
 
-/** Runtime ADR-092 D5: a person asks a group's home to let them in. */
+/**
+ * Runtime ADR-092 D5: a person asks a group's home to let them in.
+ * Runtime ADR-098 D2: so does a peko, for itself.
+ */
 export interface TunnelGroupJoinRequestPayload {
   requestId: string;
   sourceRuntimeId: string;
   recipientRuntimeId: string;
-  /** The person, `user:hub:<account>`. */
+  /** The person, `user:hub:<account>`; or a peko's signing DID (`did:key:…`). */
   sourcePrincipalDid: string;
   channelId: string;
   /** The invite link's token; absent for a public group. */
   invite?: string;
+  /** A peko's Hub ID, when a peko asks (runtime ADR-098 D2). */
+  sourceHubId?: string;
   signature: string;
 }
 
