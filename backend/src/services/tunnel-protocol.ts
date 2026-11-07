@@ -454,6 +454,13 @@ export type TunnelMessage =
   // models it can answer with; relayed only between runtimes of one account.
   | ({ type: "tunnel_peko_models_request" } & TunnelPekoModelsRequestPayload)
   | ({ type: "tunnel_peko_models" } & TunnelPekoModelsPayload)
+  // Runtime ADR-099: the owner's other computer lists and decides a peko's
+  // waiting approval requests on its host; relayed only between runtimes of
+  // one account.
+  | ({ type: "tunnel_peko_approvals_request" } & TunnelPekoApprovalsRequestPayload)
+  | ({ type: "tunnel_peko_approvals" } & TunnelPekoApprovalsPayload)
+  | ({ type: "tunnel_peko_approval_decide" } & TunnelPekoApprovalDecidePayload)
+  | ({ type: "tunnel_peko_approval_decided" } & TunnelPekoApprovalDecidedPayload)
   // Runtime ADR-092 D5/D6: a home registers its group (the Hub assigns the
   // ID) and reports the accounts in it; a runtime asks for its account's
   // groups (D4).
@@ -641,6 +648,73 @@ export interface TunnelPekoModelsPayload {
   recipientRuntimeId: string;
   principalDid: string;
   models: PekoModel[];
+  signature: string;
+}
+
+/**
+ * Runtime ADR-099 D1: a person (`user:hub:<account>`) asks the runtime
+ * hosting the peko whose signing DID is `principalDid` for the approval
+ * requests waiting for its owner. Relayed only from a runtime registered to
+ * that account, to another runtime registered to it.
+ */
+export interface TunnelPekoApprovalsRequestPayload {
+  requestId: string;
+  sourceRuntimeId: string;
+  recipientRuntimeId: string;
+  /** `user:hub:<account>`. */
+  sourcePrincipalDid: string;
+  principalDid: string;
+  signature: string;
+}
+
+/** Runtime ADR-099 D1: a request waiting for a peko's owner, as its host lists it. */
+export interface PekoApproval {
+  id: string;
+  actor: string;
+  actorName?: string;
+  trust: string;
+  summary: string;
+  reason: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
+/** Runtime ADR-099 D1: the host's list, relayed only between runtimes of one account. */
+export interface TunnelPekoApprovalsPayload {
+  requestId: string;
+  sourceRuntimeId: string;
+  recipientRuntimeId: string;
+  principalDid: string;
+  approvals: PekoApproval[];
+  signature: string;
+}
+
+/**
+ * Runtime ADR-099 D2: the person decides one of their peko's waiting
+ * requests on its host. Relayed like `TunnelPekoApprovalsRequestPayload`.
+ */
+export interface TunnelPekoApprovalDecidePayload {
+  requestId: string;
+  sourceRuntimeId: string;
+  recipientRuntimeId: string;
+  /** `user:hub:<account>`. */
+  sourcePrincipalDid: string;
+  principalDid: string;
+  approvalId: string;
+  approve: boolean;
+  always: boolean;
+  signature: string;
+}
+
+/** Runtime ADR-099 D2: what the host did with the decision. */
+export interface TunnelPekoApprovalDecidedPayload {
+  requestId: string;
+  sourceRuntimeId: string;
+  recipientRuntimeId: string;
+  principalDid: string;
+  approvalId: string;
+  decided: boolean;
+  message: string;
   signature: string;
 }
 

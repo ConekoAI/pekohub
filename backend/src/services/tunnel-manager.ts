@@ -787,10 +787,66 @@ export class TunnelManager {
     conn: RuntimeConnection,
     msg: Extract<TunnelMessage, { type: "tunnel_peko_models_request" | "tunnel_peko_models" }>,
   ): Promise<void> {
+    await this.relayWithinAccount(
+      conn,
+      msg,
+      msg.type === "tunnel_peko_models_request" ? msg.sourcePrincipalDid : null,
+      CounterName.HubPekoModelsForwarded,
+      CounterName.HubPekoModelsRejectedAccount,
+    );
+  }
+
+  /**
+   * Runtime ADR-099: a peko's waiting approval requests, listed and decided
+   * by its owner on another of their runtimes. The list request and the
+   * decision come from the person's runtime (`sourcePrincipalDid` must be
+   * its own account); they and the host's answers are relayed only between
+   * two runtimes registered to the same account. Requests share the history
+   * rate limit. Never stored.
+   */
+  private async handlePekoApprovals(
+    conn: RuntimeConnection,
+    msg: Extract<
+      TunnelMessage,
+      {
+        type:
+          | "tunnel_peko_approvals_request"
+          | "tunnel_peko_approvals"
+          | "tunnel_peko_approval_decide"
+          | "tunnel_peko_approval_decided";
+      }
+    >,
+  ): Promise<void> {
+    const person =
+      msg.type === "tunnel_peko_approvals_request" || msg.type === "tunnel_peko_approval_decide"
+        ? msg.sourcePrincipalDid
+        : null;
+    await this.relayWithinAccount(
+      conn,
+      msg,
+      person,
+      CounterName.HubPekoApprovalsForwarded,
+      CounterName.HubPekoApprovalsRejectedAccount,
+    );
+  }
+
+  /**
+   * Relay `msg` from `conn` to its recipient runtime when both runtimes
+   * are registered to one account — and, for a request (`person` set),
+   * when it speaks for that account's person. Requests count against the
+   * history rate limit. A runtime claiming another runtime's id is closed.
+   */
+  private async relayWithinAccount(
+    conn: RuntimeConnection,
+    msg: TunnelMessage & { sourceRuntimeId: string; recipientRuntimeId: string },
+    person: string | null,
+    forwarded: string,
+    rejected: string,
+  ): Promise<void> {
     if (conn.runtimeId !== msg.sourceRuntimeId) {
       this.fastify.log.warn(
         { connRuntime: conn.runtimeId, claim: msg.sourceRuntimeId, type: msg.type },
-        "peko models source allowlist mismatch — closing tunnel (impersonation)",
+        "same-account relay source allowlist mismatch — closing tunnel (impersonation)",
       );
       this.closeConnection(conn, "source allowlist mismatch");
       this.handleDisconnect(conn);
@@ -800,22 +856,21 @@ export class TunnelManager {
       this.resolveRuntimeOwner(conn.runtimeId),
       this.resolveRuntimeOwner(msg.recipientRuntimeId),
     ]);
-    const person = msg.type === "tunnel_peko_models_request" ? msg.sourcePrincipalDid : null;
     if (
       from === null ||
       from !== to ||
       (person !== null && person !== `user:hub:${from}`)
     ) {
-      metrics.inc(CounterName.HubPekoModelsRejectedAccount);
+      metrics.inc(rejected);
       return;
     }
-    if (msg.type === "tunnel_peko_models_request" && !this.allowHistoryRequest(conn.runtimeId)) {
+    if (person !== null && !this.allowHistoryRequest(conn.runtimeId)) {
       metrics.inc(CounterName.HubHistoryRequestRateLimited);
       return;
     }
     const target = this.getConnection(msg.recipientRuntimeId);
     if (!target) return;
-    metrics.inc(CounterName.HubPekoModelsForwarded);
+    metrics.inc(forwarded);
     this.sendMessage(target.socket, msg);
   }
 
@@ -1132,6 +1187,15 @@ export class TunnelManager {
       case "tunnel_peko_models": {
         // Runtime ADR-097 D1: between two runtimes of one account.
         await this.handlePekoModels(conn, msg);
+        break;
+      }
+
+      case "tunnel_peko_approvals_request":
+      case "tunnel_peko_approvals":
+      case "tunnel_peko_approval_decide":
+      case "tunnel_peko_approval_decided": {
+        // Runtime ADR-099: between two runtimes of one account.
+        await this.handlePekoApprovals(conn, msg);
         break;
       }
 

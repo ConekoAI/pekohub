@@ -89,6 +89,10 @@ export const CounterName = {
   // two runtimes of one account; refused otherwise.
   HubPekoModelsForwarded: "hub.peko_models.forwarded",
   HubPekoModelsRejectedAccount: "hub.peko_models.rejected_account",
+  // Runtime ADR-099: a peko's approval requests listed and decided between
+  // two runtimes of one account; refused otherwise.
+  HubPekoApprovalsForwarded: "hub.peko_approvals.forwarded",
+  HubPekoApprovalsRejectedAccount: "hub.peko_approvals.rejected_account",
   // Runtime ADR-090 D3: an envelope speaking for a person
   // (`user:hub:<account>`) from a runtime registered to another account.
   HubChannelEventRejectedPersonAccount: "hub.channel_event.rejected_person_account",

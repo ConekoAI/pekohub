@@ -1146,6 +1146,159 @@ describe("Relaying a peko's model list between its owner's runtimes", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Runtime ADR-099: a peko's approval requests, listed and decided between
+// two runtimes of one account.
+// ---------------------------------------------------------------------------
+
+describe("Relaying a peko's approval requests between its owner's runtimes", () => {
+  let testDb: TestDb;
+
+  beforeAll(async () => {
+    testDb = await createTestDb();
+  });
+
+  beforeEach(async () => {
+    await resetTables(testDb.client);
+    metrics.reset();
+  });
+
+  afterAll(async () => {
+    await testDb.client.close();
+  });
+
+  async function connect(tunnelManager: TunnelManager, id: { did: string; privateKey: Uint8Array }) {
+    const socket = new MockWebSocket();
+    tunnelManager.handleSocket(socket.asWebSocket());
+    await completeHandshake(socket, id.did, id.privateKey);
+    return socket;
+  }
+
+  async function setup() {
+    const { tunnelManager } = await buildForwardingTestApp(testDb);
+    const person = await createUser(testDb.client, { namespace: "alice" });
+    const stranger = await createUser(testDb.client, { namespace: "eve" });
+    const laptop = makeRuntimeIdentity();
+    const desktop = makeRuntimeIdentity();
+    const other = makeRuntimeIdentity();
+    for (const id of [laptop, desktop]) await seedRuntime(testDb, id.did, person.id);
+    await seedRuntime(testDb, other.did, stranger.id);
+    const socketLaptop = await connect(tunnelManager, laptop);
+    const socketDesktop = await connect(tunnelManager, desktop);
+    const socketOther = await connect(tunnelManager, other);
+    return { person, stranger, laptop, desktop, other, socketLaptop, socketDesktop, socketOther };
+  }
+
+  const list = (from: string, to: string, person: string, requestId = "approvals-1") => ({
+    type: "tunnel_peko_approvals_request" as const,
+    requestId,
+    sourceRuntimeId: from,
+    recipientRuntimeId: to,
+    sourcePrincipalDid: `user:hub:${person}`,
+    principalDid: "did:key:z6MkPeko",
+    signature: "x",
+  });
+
+  const listed = (from: string, to: string, requestId = "approvals-1") => ({
+    type: "tunnel_peko_approvals" as const,
+    requestId,
+    sourceRuntimeId: from,
+    recipientRuntimeId: to,
+    principalDid: "did:key:z6MkPeko",
+    approvals: [
+      {
+        id: "apr_0123456789ab",
+        actor: "user:hub:noah",
+        actorName: "Noah",
+        trust: "untrusted",
+        summary: "`Read` (file_path=finances/q3.md)",
+        reason: "finances are private",
+        createdAt: "2026-11-07T10:00:00+00:00",
+        expiresAt: "2026-11-08T10:00:00+00:00",
+      },
+    ],
+    signature: "x",
+  });
+
+  const decide = (from: string, to: string, person: string, requestId = "decide-1") => ({
+    type: "tunnel_peko_approval_decide" as const,
+    requestId,
+    sourceRuntimeId: from,
+    recipientRuntimeId: to,
+    sourcePrincipalDid: `user:hub:${person}`,
+    principalDid: "did:key:z6MkPeko",
+    approvalId: "apr_0123456789ab",
+    approve: true,
+    always: false,
+    signature: "x",
+  });
+
+  const decided = (from: string, to: string, requestId = "decide-1") => ({
+    type: "tunnel_peko_approval_decided" as const,
+    requestId,
+    sourceRuntimeId: from,
+    recipientRuntimeId: to,
+    principalDid: "did:key:z6MkPeko",
+    approvalId: "apr_0123456789ab",
+    decided: true,
+    message: "Approved apr_0123456789ab.",
+    signature: "x",
+  });
+
+  const of = (socket: MockWebSocket, type: string) => socket.sent.filter((m) => m.type === type);
+
+  it("relays a list, a decision and their answers between the person's own runtimes", async () => {
+    const { person, laptop, desktop, socketLaptop, socketDesktop } = await setup();
+    socketDesktop.triggerMessage(list(desktop.did, laptop.did, person.id));
+    await flush();
+    expect(of(socketLaptop, "tunnel_peko_approvals_request")).toHaveLength(1);
+    socketLaptop.triggerMessage(listed(laptop.did, desktop.did));
+    await flush();
+    const got = of(socketDesktop, "tunnel_peko_approvals");
+    expect(got).toHaveLength(1);
+    expect(got[0]).toMatchObject({ approvals: [{ id: "apr_0123456789ab", actorName: "Noah" }] });
+
+    socketDesktop.triggerMessage(decide(desktop.did, laptop.did, person.id));
+    await flush();
+    expect(of(socketLaptop, "tunnel_peko_approval_decide")).toHaveLength(1);
+    expect(of(socketLaptop, "tunnel_peko_approval_decide")[0]).toMatchObject({
+      approvalId: "apr_0123456789ab",
+      approve: true,
+    });
+    socketLaptop.triggerMessage(decided(laptop.did, desktop.did));
+    await flush();
+    expect(of(socketDesktop, "tunnel_peko_approval_decided")).toHaveLength(1);
+    expect(metrics.snapshot()[CounterName.HubPekoApprovalsForwarded]).toBe(4);
+  });
+
+  it("refuses lists, decisions and answers that cross accounts or speak for someone else", async () => {
+    const { person, stranger, laptop, desktop, other, socketLaptop, socketDesktop, socketOther } =
+      await setup();
+    // Another account's runtime decides for its own person, and as the person.
+    socketOther.triggerMessage(decide(other.did, laptop.did, stranger.id));
+    socketOther.triggerMessage(decide(other.did, laptop.did, person.id, "decide-2"));
+    socketOther.triggerMessage(list(other.did, laptop.did, person.id, "approvals-2"));
+    // The person's runtime decides for someone else.
+    socketDesktop.triggerMessage(decide(desktop.did, laptop.did, stranger.id, "decide-3"));
+    // The host answers another account's runtime.
+    socketLaptop.triggerMessage(listed(laptop.did, other.did, "approvals-4"));
+    socketLaptop.triggerMessage(decided(laptop.did, other.did, "decide-4"));
+    await flush();
+    expect(of(socketLaptop, "tunnel_peko_approval_decide")).toHaveLength(0);
+    expect(of(socketLaptop, "tunnel_peko_approvals_request")).toHaveLength(0);
+    expect(of(socketOther, "tunnel_peko_approvals")).toHaveLength(0);
+    expect(of(socketOther, "tunnel_peko_approval_decided")).toHaveLength(0);
+    expect(metrics.snapshot()[CounterName.HubPekoApprovalsRejectedAccount]).toBe(6);
+  });
+
+  it("closes a runtime that claims another runtime's id", async () => {
+    const { person, laptop, desktop, socketDesktop } = await setup();
+    socketDesktop.triggerMessage(decide(laptop.did, desktop.did, person.id));
+    await flush();
+    expect(socketDesktop.closed).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Runtime ADR-092 D4-D6: a home registers its group and reports its
 // accounts; a runtime asks for its account's groups.
 // ---------------------------------------------------------------------------
