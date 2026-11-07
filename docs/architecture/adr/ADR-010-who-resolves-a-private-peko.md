@@ -1,7 +1,7 @@
 # ADR-010: Who resolves a private peko
 
 Date: 2026-11-06
-Status: D1–D2 Accepted; D3 Proposed (needs peko-runtime and peko-desktop)
+Status: D1–D2 Accepted (D1 amended by ADR-011: also people in a registered group with the owner); D3 Proposed (needs peko-runtime and peko-desktop)
 Related: ADR-073 (actor addresses), ADR-081 (one online copy), peko-runtime
 ADR-090/091/092/095 (cross-runtime DMs, groups, people's DMs)
 

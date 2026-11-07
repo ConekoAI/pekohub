@@ -615,8 +615,9 @@ export class TunnelManager {
       return;
     }
     if (
-      !msg.sourcePrincipalDid.startsWith("user:hub:") ||
-      !(await this.speaksForItsOwnPerson(conn, msg.sourcePrincipalDid))
+      !(await this.pekoAsksForItself(conn, msg)) &&
+      (!msg.sourcePrincipalDid.startsWith("user:hub:") ||
+        !(await this.speaksForItsOwnPerson(conn, msg.sourcePrincipalDid)))
     ) {
       metrics.inc(CounterName.HubGroupJoinRejectedPerson);
       return;
@@ -1397,6 +1398,23 @@ export class TunnelManager {
     const conn = connForRequestId(this.connections, requestId);
     conn?.pendingRequestIds.delete(requestId);
     if (pending.timer) clearTimeout(pending.timer);
+  }
+
+  /**
+   * Runtime ADR-098 D2: a peko asks to join a group for itself — a join
+   * request (never an answer to an invitation) by its signing DID, naming
+   * its Hub ID, from the runtime its online link points at (ADR-081 D7).
+   * The home checks the rest end to end.
+   */
+  private async pekoAsksForItself(
+    conn: RuntimeConnection,
+    msg: Extract<TunnelMessage, { type: "tunnel_group_join" | "tunnel_group_join_request" }>,
+  ): Promise<boolean> {
+    if (msg.type !== "tunnel_group_join_request" || !msg.sourceHubId) return false;
+    if (!msg.sourcePrincipalDid.startsWith("did:key:")) return false;
+    const actor = await db.query.hubPrincipals.findFirst({ where: eq(hubPrincipals.id, msg.sourceHubId) });
+    if (!actor || actor.signingDid !== msg.sourcePrincipalDid) return false;
+    return (await instanceService.linkedRuntimeForSigningDid(msg.sourcePrincipalDid)) === conn.runtimeId;
   }
 
   /**

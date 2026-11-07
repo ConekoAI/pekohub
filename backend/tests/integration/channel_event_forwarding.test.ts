@@ -1303,6 +1303,40 @@ describe("Registering groups over the tunnel", () => {
     const relayed = reply(socketHome, "tunnel_group_join_request") as Array<{ requestId: string }>;
     expect(relayed.map((m) => m.requestId)).toEqual(["j1"]);
   });
+
+  it("relays a peko's own join request only from the runtime its online link points at (runtime ADR-098 D2)", async () => {
+    const { tunnelManager, member, home, other, bobs, socketHome } = await setup();
+    const ada = await createInstance(testDb.client, {
+      ownerSubject: { kind: "user", id: String(member.id) },
+      name: "ada",
+      exposure: "private",
+      principalDid: "did:key:zAdaJoin",
+      runtimeId: bobs.did,
+    } as never);
+    const socketBob = await connect(tunnelManager, bobs);
+    const socketOther = await connect(tunnelManager, other);
+    const request = (from: { did: string }, requestId: string, extra: Record<string, unknown>) => ({
+      type: "tunnel_group_join_request" as const,
+      requestId,
+      sourceRuntimeId: from.did,
+      recipientRuntimeId: home.did,
+      sourcePrincipalDid: "did:key:zAdaJoin",
+      channelId: "chan_book",
+      invite: "token",
+      sourceHubId: ada.hubId,
+      signature: "x",
+      ...extra,
+    });
+    socketBob.triggerMessage(request(bobs, "p1", {}));
+    // Not from another runtime, not under another Hub ID, not without one.
+    socketOther.triggerMessage(request(other, "p2", {}));
+    socketBob.triggerMessage(request(bobs, "p3", { sourceHubId: "00000000-0000-4000-8000-000000000000" }));
+    socketBob.triggerMessage(request(bobs, "p4", { sourceHubId: undefined }));
+    await flush();
+    const relayed = reply(socketHome, "tunnel_group_join_request") as Array<{ requestId: string; sourceHubId?: string }>;
+    expect(relayed.map((m) => m.requestId)).toEqual(["p1"]);
+    expect(relayed[0].sourceHubId).toBe(ada.hubId);
+  });
   it("relays at most 600 channel events a minute per runtime and drops the rest", async () => {
     const { tunnelManager } = await buildForwardingTestApp(testDb);
     const ownerA = await createUser(testDb.client, { namespace: "alice" });

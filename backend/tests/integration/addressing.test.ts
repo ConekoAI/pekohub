@@ -152,6 +152,43 @@ describe("actor addressing contract", () => {
     await app.close();
   });
 
+  it("a private peko's handle resolves for people in a registered group with its owner, and their pekos (hub ADR-011)", async () => {
+    const app = await buildTestApp({ testDb });
+    const frank = await createUser(testDb.client, { namespace: "frank" });
+    const gina = await createUser(testDb.client, { namespace: "gina" });
+    const zed = await createUser(testDb.client, { namespace: "zed" });
+    await createInstance(testDb.client, { ownerSubject: { kind: "user", id: frank.id }, principalDid: "did:key:zAda", name: "ada", exposure: "private" });
+    const ginasPeko = signer();
+    await createInstance(testDb.client, { ownerSubject: { kind: "user", id: gina.id }, principalDid: ginasPeko.sub, name: "bix", exposure: "private" });
+    const zedsPeko = signer();
+    await createInstance(testDb.client, { ownerSubject: { kind: "user", id: zed.id }, principalDid: zedsPeko.sub, name: "zip", exposure: "private" });
+    const byHandle = "/v1/principals/by-handle/frank/ada";
+    const status = async (headers?: Record<string, string>) =>
+      (await app.inject({ method: "GET", url: byHandle, headers })).statusCode;
+
+    // Before Gina and Frank share a group, nobody but Frank finds it.
+    expect(await status(await authHeaders(gina))).toBe(404);
+    expect(await status(ginasPeko.headers(byHandle))).toBe(404);
+
+    await testDb.client.query(
+      `INSERT INTO hub_groups (id, name, home_runtime, channel_id, owner_id, owner_address)
+       VALUES ('3001', 'repo', 'did:key:zHome', 'chan_repo', $1, 'user:hub:x')`,
+      [frank.id],
+    );
+    for (const user of [frank, gina]) {
+      await testDb.client.query(`INSERT INTO hub_group_members (group_id, user_id) VALUES ('3001', $1)`, [user.id]);
+    }
+    expect(await status(await authHeaders(gina))).toBe(200);
+    const hit = await app.inject({ method: "GET", url: byHandle, headers: ginasPeko.headers(byHandle) });
+    expect(hit.statusCode).toBe(200);
+    expect(hit.json()).toMatchObject({ name: "ada", ownerHandle: "frank", exposure: "private" });
+    // Someone outside the group still learns nothing.
+    expect(await status(await authHeaders(zed))).toBe(404);
+    expect(await status(zedsPeko.headers(byHandle))).toBe(404);
+    expect(await status()).toBe(404);
+    await app.close();
+  });
+
   it("keeps authenticated account and anonymous visitor chat identities distinct", async () => {
     const app = await buildTestApp({ testDb });
     const owner = await createUser(testDb.client, { namespace: "alice" });
