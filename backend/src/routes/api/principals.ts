@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { instanceService, type CallerSubject } from "../../services/instances.js";
 import { auditService } from "../../services/audit.js";
 import { db } from "../../db/index.js";
-import { hubPrincipals, users } from "../../db/schema.js";
+import { hubPrincipals, runtimes, users } from "../../db/schema.js";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { verifyDidKeyJws } from "../../services/tunnel-crypto.js";
@@ -58,28 +58,52 @@ const PEKO_NAME_PARAM = "[A-Za-z0-9][A-Za-z0-9_\\-]{0,63}";
  * inbound header trust. Anonymous traffic is `null`; the resolver
  * handles that as "deny unless exposure is public".
  */
+/**
+ * The `did:key` that signed `assertion`, a directory proof: a compact EdDSA
+ * JWS whose claims name this request's path, audience `peko-directory-v1`,
+ * and a lifetime of at most 60 seconds. Throws when it doesn't verify.
+ */
+async function directoryProofSigner(request: FastifyRequest, assertion: string | undefined): Promise<string> {
+  if (!assertion || assertion.length > 4096) throw new Error("invalid assertion");
+  const unverified = JSON.parse(Buffer.from(assertion.split(".")[1], "base64url").toString());
+  if (typeof unverified.sub !== "string" || !unverified.sub.startsWith("did:key:")) throw new Error("invalid subject");
+  const claims = await verifyDidKeyJws(unverified.sub, assertion);
+  const now = Math.floor(Date.now() / 1000);
+  if (!claims || claims.sub !== unverified.sub || claims.aud !== "peko-directory-v1" ||
+      claims.path !== request.url.split("?")[0] || typeof claims.iat !== "number" || typeof claims.exp !== "number" ||
+      claims.iat > now + 30 || claims.exp < now || claims.exp < claims.iat || claims.exp - claims.iat > 60) {
+    throw new Error("invalid claims");
+  }
+  return claims.sub as string;
+}
+
 async function extractCallerSubject(
   fastify: FastifyInstance,
   request: FastifyRequest,
 ): Promise<CallerSubject> {
-  const assertion = request.headers.authorization?.match(/^PekoPrincipal ([A-Za-z0-9_.-]+)$/)?.[1];
-  if (request.headers.authorization?.startsWith("PekoPrincipal ")) {
+  const authorization = request.headers.authorization;
+  if (authorization?.startsWith("PekoPrincipal ")) {
     try {
-      if (!assertion || assertion.length > 4096) throw new Error("invalid assertion");
-      const unverified = JSON.parse(Buffer.from(assertion.split(".")[1], "base64url").toString());
-      if (typeof unverified.sub !== "string" || !unverified.sub.startsWith("did:key:")) throw new Error("invalid subject");
-      const claims = await verifyDidKeyJws(unverified.sub, assertion);
-      const now = Math.floor(Date.now() / 1000);
-      if (!claims || claims.sub !== unverified.sub || claims.aud !== "peko-directory-v1" ||
-          claims.path !== request.url.split("?")[0] || typeof claims.iat !== "number" || typeof claims.exp !== "number" ||
-          claims.iat > now + 30 || claims.exp < now || claims.exp < claims.iat || claims.exp - claims.iat > 60) {
-        throw new Error("invalid claims");
-      }
-      const actor = await db.query.hubPrincipals.findFirst({ where: eq(hubPrincipals.signingDid, claims.sub as string) });
+      const signer = await directoryProofSigner(request, authorization.match(/^PekoPrincipal ([A-Za-z0-9_.-]+)$/)?.[1]);
+      const actor = await db.query.hubPrincipals.findFirst({ where: eq(hubPrincipals.signingDid, signer) });
       if (!actor) throw new Error("principal is not registered");
       return { kind: "principal", id: actor.id };
     } catch {
       throw Object.assign(new Error("Invalid principal directory proof"), { statusCode: 401 });
+    }
+  }
+  // A runtime registered to an account asks for its person, who signed it
+  // in there (runtime ADR-090): it reaches what that person reaches when
+  // signed in, no more. The CLI on a person's second computer has no
+  // PekoHub token of its own to send (2026-11-09 collaboration benchmark).
+  if (authorization?.startsWith("PekoRuntime ")) {
+    try {
+      const signer = await directoryProofSigner(request, authorization.match(/^PekoRuntime ([A-Za-z0-9_.-]+)$/)?.[1]);
+      const runtime = await db.query.runtimes.findFirst({ where: eq(runtimes.runtimeDid, signer) });
+      if (!runtime) throw new Error("runtime is not registered");
+      return { kind: "user", id: String(runtime.ownerId) };
+    } catch {
+      throw Object.assign(new Error("Invalid runtime directory proof"), { statusCode: 401 });
     }
   }
   try {
