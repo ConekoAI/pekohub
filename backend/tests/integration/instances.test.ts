@@ -619,6 +619,36 @@ describe("Instance API", () => {
       expect(body.pekos).toHaveLength(1);
       expect(body.pekos[0].pekoName).toBe("my-private-principal");
       expect(body.pekos[0].status).toBe("online");
+      // Never connected yet.
+      expect(body.pekos[0].lastSeenAt).toBeNull();
+    });
+
+    // An app says how long a peko has been away, and sets aside pekos of
+    // computers that never came back (2026-11-09 field test).
+    it("should say when each peko's computer was last seen", async () => {
+      const app = await buildTestApp({ testDb });
+      const owner = await createUser(testDb.client, { namespace: "alice" });
+      const headers = await authHeaders(owner);
+      const peko = await createInstance(testDb.client, {
+        ownerSubject: { kind: "user", id: String(owner.id) },
+        name: "juno",
+        exposure: "private",
+        status: "offline",
+      });
+      await testDb.client.query(
+        "UPDATE instances SET last_seen_at = $1 WHERE id = $2",
+        ["2026-11-01T08:00:00.000Z", peko.id],
+      );
+
+      const response = await app.inject({
+        method: "GET",
+        url: "/v1/me/accessible-pekos",
+        headers,
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.payload);
+      expect(body.pekos[0].lastSeenAt).toBe("2026-11-01T08:00:00.000Z");
     });
 
     // Another computer of the owner lists every peko of theirs, public

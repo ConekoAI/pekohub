@@ -245,8 +245,10 @@ export default async function publicPekoRoutes(fastify: FastifyInstance) {
   // run. Each carries its Hub ID, so an app opens the DM with it directly
   // (a private peko has no public page to resolve), plus the owner's
   // handle and the peko's id on its runtime, so another computer of the
-  // owner lists it like a peko of its own; and the computer it runs on,
-  // as that computer names itself (`runtimeName`).
+  // owner lists it like a peko of its own; the computer it runs on, as
+  // that computer names itself (`runtimeName`); and when that computer
+  // last connected (`lastSeenAt`), so an app can say how long a peko has
+  // been away and set aside the pekos of computers that never came back.
   fastify.get(
     "/me/accessible-pekos",
     { preHandler: [authenticateOrDevBypass] },
@@ -272,6 +274,7 @@ export default async function publicPekoRoutes(fastify: FastifyInstance) {
           status: instances.status,
           exposure: instances.exposure,
           runtimeName: instances.runtimeDisplayName,
+          lastSeenAt: instances.lastSeenAt,
         })
         .from(instances)
         // Post-H1: instances are joined to users via the typed
@@ -303,6 +306,7 @@ export default async function publicPekoRoutes(fastify: FastifyInstance) {
           status: r.status as InstanceStatus,
           exposure: r.exposure,
           runtimeName: r.runtimeName,
+          lastSeenAt: r.lastSeenAt ? new Date(r.lastSeenAt).toISOString() : null,
         })),
       };
     },
