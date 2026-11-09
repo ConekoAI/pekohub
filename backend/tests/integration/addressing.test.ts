@@ -99,6 +99,54 @@ describe("actor addressing contract", () => {
     await app.close();
   });
 
+  /** A runtime's signing key: a `PekoRuntime` directory proof per path. */
+  function runtimeSigner() {
+    const { secretKey, publicKey } = ed25519.keygen();
+    const did = `did:key:z${base58.encode(new Uint8Array([0xed, 0x01, ...publicKey]))}`;
+    return {
+      did,
+      headers(path: string, overrides: Record<string, unknown> = {}) {
+        const now = Math.floor(Date.now() / 1000);
+        const header = Buffer.from(JSON.stringify({ alg: "EdDSA", typ: "JWT" })).toString("base64url");
+        const payload = Buffer.from(JSON.stringify({ sub: did, aud: "peko-directory-v1", path, iat: now, exp: now + 60, ...overrides })).toString("base64url");
+        const input = `${header}.${payload}`;
+        const signature = Buffer.from(ed25519.sign(new TextEncoder().encode(input), secretKey)).toString("base64url");
+        return { authorization: `PekoRuntime ${input}.${signature}` };
+      },
+    };
+  }
+
+  // 2026-11-09 collaboration benchmark: from the CLI on her second computer
+  // Maya could not open a DM with her own private peko, having no PekoHub
+  // token there. Her runtime's proof stands in for her, no further.
+  it("a runtime registered to an account resolves for its person, and only for them", async () => {
+    const app = await buildTestApp({ testDb });
+    const maya = await createUser(testDb.client, { namespace: "maya" });
+    const noah = await createUser(testDb.client, { namespace: "noah" });
+    const juno = await createInstance(testDb.client, { ownerSubject: { kind: "user", id: maya.id }, principalDid: "did:key:zJuno", name: "juno", exposure: "private" });
+    const mayas = runtimeSigner();
+    const noahs = runtimeSigner();
+    await testDb.client.query("INSERT INTO runtimes(runtime_did, owner_id) VALUES($1,$2),($3,$4)", [mayas.did, maya.id, noahs.did, noah.id]);
+
+    const byId = `/v1/principals/by-hub-id/${juno.hubId}`;
+    expect((await app.inject({ method: "GET", url: byId })).statusCode).toBe(403);
+    const hit = await app.inject({ method: "GET", url: byId, headers: mayas.headers(byId) });
+    expect(hit.statusCode).toBe(200);
+    expect(hit.json().hubId).toBe(juno.hubId);
+
+    // By handle a private peko is its owner's alone (hub ADR-010).
+    const byHandle = "/v1/principals/by-handle/maya/juno";
+    expect((await app.inject({ method: "GET", url: byHandle, headers: mayas.headers(byHandle) })).statusCode).toBe(200);
+    expect((await app.inject({ method: "GET", url: byHandle, headers: noahs.headers(byHandle) })).statusCode).toBe(404);
+
+    // An unregistered runtime, a proof for another path, an expired one.
+    const stranger = runtimeSigner();
+    for (const headers of [stranger.headers(byId), mayas.headers("/v1/principals/by-hub-id/other"), mayas.headers(byId, { exp: 1 })]) {
+      expect((await app.inject({ method: "GET", url: byId, headers })).statusCode).toBe(401);
+    }
+    await app.close();
+  });
+
   /** A registered peko's signing key: a directory proof per request path. */
   function signer() {
     const { secretKey, publicKey } = ed25519.keygen();
