@@ -180,6 +180,8 @@ describe("ADR-059 public peko rename", () => {
           status: "online",
           exposure: "private",
           runtimeName: "Alice's MacBook",
+          // Its computer never connected yet.
+          lastSeenAt: null,
         },
       ],
     });
