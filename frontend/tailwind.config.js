@@ -4,32 +4,50 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Navy surface ramp. `ink-950` is the page, `ink-900` a
-        // resting card, `ink-700` a hairline.
+        // Neutral surface ramp (black and white, no tint). `ink-950` is
+        // the page, `ink-900` a resting card, `ink-700` a hairline. Shared
+        // with Peko Desktop (src/styles/index.css).
         ink: {
-          950: '#0a0f1e',
-          900: '#0e1527',
-          850: '#121a2f',
-          800: '#161f37',
-          750: '#1b2641',
-          700: '#232f4d',
-          600: '#2e3b5d',
-          500: '#3e4c71',
+          950: '#0a0a0a',
+          900: '#111111',
+          850: '#161616',
+          800: '#1c1c1c',
+          750: '#222222',
+          700: '#2b2b2b',
+          600: '#3a3a3a',
+          500: '#525252',
         },
-        // The one accent: the brand blue. Primary actions, links,
-        // the active state, "online".
+        // Text grays: Tailwind's slate is blue-tinted, so the scale is
+        // remapped to neutral gray to keep the site black and white.
+        slate: {
+          50: '#fafafa',
+          100: '#f5f5f5',
+          200: '#e5e5e5',
+          300: '#d4d4d4',
+          400: '#a3a3a3',
+          500: '#737373',
+          600: '#525252',
+          700: '#404040',
+          800: '#262626',
+          900: '#171717',
+          950: '#0a0a0a',
+        },
+        // Peko teal, the logo color (600 = #008880). An accent used
+        // sparingly: focus rings, the online dot, unread counts and the
+        // one highlighted phrase on the landing page. Buttons and links
+        // stay black and white.
         peko: {
-          50: '#eef3fd',
-          100: '#dce6fb',
-          200: '#bacdf6',
-          300: '#92b0ef',
-          400: '#6c92e6',
-          500: '#4f79d9',
-          600: '#3e64c2',
-          700: '#33519d',
-          800: '#2d4580',
-          900: '#283b67',
-          950: '#1a2443',
+          50: '#e5fdfa',
+          100: '#dbf3f0',
+          200: '#b7e6e0',
+          300: '#7ed3ca',
+          400: '#4eb8af',
+          500: '#309f97',
+          600: '#008880',
+          700: '#006f67',
+          800: '#00554f',
+          900: '#003f3b',
+          950: '#002a27',
         },
       },
       fontFamily: {

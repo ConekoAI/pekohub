@@ -34,7 +34,7 @@ export function SearchBar({
       className="group relative w-full"
     >
       <Search
-        className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 transition-colors group-focus-within:text-peko-300"
+        className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 transition-colors group-focus-within:text-slate-200"
         aria-hidden
       />
       <input

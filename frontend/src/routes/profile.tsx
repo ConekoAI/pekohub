@@ -192,9 +192,9 @@ function ApiKeysPanel() {
       )}
 
       {revealed && (
-        <div className="mb-4 rounded-xl border border-peko-600 bg-peko-500/[0.06] p-4">
+        <div className="mb-4 rounded-xl border border-ink-500 bg-white/[0.03] p-4">
           <div className="mb-3 flex items-center justify-between gap-3">
-            <p className="text-sm text-peko-100">Copy this key now. It won&apos;t be shown again.</p>
+            <p className="text-sm text-slate-100">Copy this key now. It won&apos;t be shown again.</p>
             <button onClick={() => setRevealed(null)} className="btn-icon p-1" aria-label="Dismiss">
               <X className="h-4 w-4" />
             </button>

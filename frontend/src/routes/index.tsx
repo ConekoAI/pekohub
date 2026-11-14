@@ -43,7 +43,7 @@ function HomePage() {
         <h1 className="text-4xl font-semibold leading-[1.1] tracking-tight text-slate-50 sm:text-[3.25rem]">
           An AI of your own
           <br />
-          <span className="text-peko-300">that keeps going.</span>
+          <span className="text-peko-400">that keeps going.</span>
         </h1>
         <p className="mx-auto mt-5 max-w-md text-base text-slate-400">
           A peko lives on your computer, with its own memory, schedule and identity.
@@ -63,7 +63,7 @@ function HomePage() {
       <section className="mt-20 grid gap-px overflow-hidden rounded-xl border border-ink-700 bg-ink-700 sm:grid-cols-2 lg:grid-cols-4">
         {FEATURES.map(({ icon: Icon, title, body }) => (
           <div key={title} className="bg-ink-950 p-6">
-            <Icon className="h-5 w-5 text-peko-300" />
+            <Icon className="h-5 w-5 text-slate-300" />
             <h3 className="mt-4 text-sm font-medium text-slate-100">{title}</h3>
             <p className="mt-1 text-[13px] text-slate-500">{body}</p>
           </div>

@@ -184,7 +184,7 @@ function HandleForm({ user, next }: { user: UserProfile; next: string | undefine
           ) : problem ? (
             <X className="h-4 w-4 text-rose-300" />
           ) : handle ? (
-            <Check className="h-4 w-4 text-peko-300" />
+            <Check className="h-4 w-4 text-slate-100" />
           ) : null}
         </span>
       </div>

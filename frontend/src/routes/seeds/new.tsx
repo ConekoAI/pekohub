@@ -113,7 +113,7 @@ function PublishForm({ handle }: { handle: string }) {
           }}
           onDragLeave={() => setDragging(false)}
           onDrop={onDrop}
-          className={`mt-2 rounded-lg ring-2 transition-shadow ${dragging ? 'ring-peko-500/50' : 'ring-transparent'}`}
+          className={`mt-2 rounded-lg ring-2 transition-shadow ${dragging ? 'ring-slate-400/50' : 'ring-transparent'}`}
         >
           <textarea
             id="seed-toml"

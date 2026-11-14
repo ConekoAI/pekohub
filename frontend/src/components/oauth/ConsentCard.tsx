@@ -36,7 +36,7 @@ export function ConsentProblem({ title, body }: { title: string; body: ReactNode
 export function ConsentDone({ title, body }: { title: string; body: ReactNode }) {
   return (
     <div className="text-center">
-      <CheckCircle2 className="mx-auto h-7 w-7 text-peko-300" />
+      <CheckCircle2 className="mx-auto h-7 w-7 text-slate-100" />
       <h1 className="mt-4 text-lg font-semibold text-slate-50">{title}</h1>
       <p className="mt-1.5 text-sm text-slate-400">{body}</p>
     </div>

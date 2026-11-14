@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import {
   Github,
@@ -212,13 +212,32 @@ export function Layout({ children }: LayoutProps) {
    Pieces
    ───────────────────────────────────────────────────────────────────────── */
 
-/** The PekoHub mark, shared with `public/favicon.svg`. */
+const SEED_PATH = 'M23 63 A27 29 0 1 0 77 63 A27 29 0 1 0 23 63 Z';
+const LEAF_PATH = 'M50 66 A36 36 0 0 1 62 8 A36 36 0 0 1 50 66 Z';
+
+/**
+ * The Peko mark (a leaf breaking out of a seed) on a teal tile, shared with
+ * `public/favicon.svg`. Inside the seed the leaf is a cut-out; past the seed's
+ * edge it turns solid. Mask ids come from `useId` because the mark renders
+ * twice on a page (header and footer).
+ */
 function LogoMark() {
+  const id = useId().replace(/:/g, '');
   return (
-    <svg viewBox="0 0 32 32" className="h-6 w-6" aria-hidden>
-      <rect width="32" height="32" rx="8" className="fill-peko-600" />
-      <circle cx="16" cy="16" r="5.5" className="fill-peko-50" />
-      <circle cx="16" cy="16" r="10" fill="none" className="stroke-peko-200" strokeOpacity="0.45" strokeWidth="1.5" />
+    <svg viewBox="0 0 100 100" className="h-6 w-6" aria-hidden>
+      <rect width="100" height="100" rx="22.5" fill="#008880" />
+      <g transform="translate(50 50) scale(0.75) translate(-50 -50)" fill="#fff">
+        <mask id={`${id}leaf`}>
+          <rect x="-100" y="-100" width="300" height="300" fill="#fff" />
+          <path d={LEAF_PATH} fill="#000" />
+        </mask>
+        <mask id={`${id}seed`}>
+          <rect x="-100" y="-100" width="300" height="300" fill="#fff" />
+          <path d={SEED_PATH} fill="#000" stroke="#000" strokeWidth="7" />
+        </mask>
+        <path d={SEED_PATH} mask={`url(#${id}leaf)`} />
+        <path d={LEAF_PATH} mask={`url(#${id}seed)`} />
+      </g>
     </svg>
   );
 }

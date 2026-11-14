@@ -82,7 +82,7 @@ export function NotificationBell() {
       >
         <Bell className="h-4 w-4" />
         {unread > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-peko-500 px-1 text-[10px] font-semibold leading-none text-white">
+          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-peko-600 px-1 text-[10px] font-semibold leading-none text-white">
             {unread > 9 ? '9+' : unread}
           </span>
         )}
@@ -105,7 +105,7 @@ export function NotificationBell() {
                     role="menuitem"
                     onClick={() => openItem(item)}
                     className={`w-full rounded-md px-2.5 py-2 text-left transition-colors hover:bg-white/[0.05] ${
-                      fresh.has(item.id) ? 'bg-peko-500/10' : ''
+                      fresh.has(item.id) ? 'bg-white/[0.04]' : ''
                     }`}
                   >
                     <p className="text-sm text-slate-200">{item.text}</p>
