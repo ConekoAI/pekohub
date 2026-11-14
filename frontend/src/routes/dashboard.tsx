@@ -560,7 +560,7 @@ function Choice({ selected, onClick, children }: { selected: boolean; onClick: (
       onClick={onClick}
       aria-pressed={selected}
       className={`flex w-full items-center gap-3 rounded-lg border px-3.5 py-3 text-left transition-colors ${
-        selected ? 'border-peko-500 bg-peko-500/10' : 'border-ink-700 hover:border-ink-600 hover:bg-ink-850'
+        selected ? 'border-slate-300 bg-white/[0.04]' : 'border-ink-700 hover:border-ink-600 hover:bg-ink-850'
       }`}
     >
       {children}

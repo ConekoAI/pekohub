@@ -174,7 +174,7 @@ function SeedBody({ data, version }: { data: SeedDetail; version: string }) {
                     <Link
                       to="/$owner/$name"
                       params={{ owner, name: `${data.name}@${v.version}` }}
-                      className={`font-mono text-[13px] hover:text-peko-200 ${v.version === version ? 'text-peko-300' : 'text-slate-300'}`}
+                      className={`font-mono text-[13px] hover:text-white ${v.version === version ? 'font-semibold text-white' : 'text-slate-300'}`}
                     >
                       {v.version}
                     </Link>

@@ -2,6 +2,11 @@
 
 ## 0.1.0 — pre-launch
 
+- The site wears the Peko mark (a leaf breaking out of a seed, on a Peko-teal tile) in the
+  header, footer and favicon, and its palette matches Peko Desktop: black, white and neutral
+  grays, with Peko teal (#008880) only as a sparing accent (focus rings, the online dot,
+  unread counts, the landing headline). Primary buttons are white; links are underlined text.
+
 - The tunnel relays a peko's waiting approval requests between two runtimes of the same
   account (runtime ADR-099), so its owner can approve or deny them from another of their
   computers: `tunnel_peko_approvals_request` and `tunnel_peko_approval_decide` (only for the

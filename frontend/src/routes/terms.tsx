@@ -77,7 +77,7 @@ function TermsPage() {
           body: (
             <p>
               We'll post changes here with a new date. Questions:{' '}
-              <a href={`${HUB_REPO_URL}/issues`} className="text-peko-300 hover:text-peko-200">
+              <a href={`${HUB_REPO_URL}/issues`} className="text-slate-100 underline decoration-slate-500 underline-offset-4 hover:text-white">
                 open an issue
               </a>
               .

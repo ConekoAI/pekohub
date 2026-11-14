@@ -44,7 +44,7 @@ export function Avatar({
   return (
     <span
       aria-hidden
-      className={`${dims} flex flex-shrink-0 items-center justify-center rounded-full bg-peko-800 font-semibold text-peko-100`}
+      className={`${dims} flex flex-shrink-0 items-center justify-center rounded-full bg-ink-700 font-semibold text-slate-100`}
     >
       {initials(name) || '?'}
     </span>
@@ -101,7 +101,7 @@ export function Badge({ tone = 'neutral', children }: { tone?: BadgeTone; childr
 }
 
 const DOT: Record<string, string> = {
-  online: 'bg-peko-400 shadow-[0_0_0_3px_rgba(108,146,230,0.2)]',
+  online: 'bg-peko-400 shadow-[0_0_0_3px_rgba(78,184,175,0.2)]',
   busy: 'bg-slate-400',
   error: 'bg-rose-400',
   offline: 'bg-slate-600',
@@ -211,7 +211,7 @@ export function CopyButton({
       }}
       className={className}
     >
-      {copied ? <Check className="h-3.5 w-3.5 text-peko-300" /> : <Copy className="h-3.5 w-3.5" />}
+      {copied ? <Check className="h-3.5 w-3.5 text-slate-100" /> : <Copy className="h-3.5 w-3.5" />}
       {label && (copied ? 'Copied' : label)}
     </button>
   );

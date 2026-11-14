@@ -22,7 +22,7 @@
     @apply bg-ink-950 text-slate-300;
     background-image: radial-gradient(
       1100px 480px at 50% -12%,
-      rgba(79, 121, 217, 0.16),
+      rgba(255, 255, 255, 0.05),
       transparent 70%
     );
     background-repeat: no-repeat;
@@ -36,8 +36,8 @@
   }
 
   ::selection {
-    background: rgba(108, 146, 230, 0.35);
-    color: #f3f6fa;
+    background: rgba(0, 136, 128, 0.35);
+    color: #fafafa;
   }
 
   :focus-visible {
@@ -49,11 +49,11 @@
     height: 10px;
   }
   ::-webkit-scrollbar-track {
-    background: #0a0f1e;
+    background: #0a0a0a;
   }
   ::-webkit-scrollbar-thumb {
-    background: #232f4d;
-    border: 2px solid #0a0f1e;
+    background: #2b2b2b;
+    border: 2px solid #0a0a0a;
     border-radius: 9999px;
   }
 
@@ -89,7 +89,7 @@
   }
 
   .link {
-    @apply text-peko-300 transition-colors hover:text-peko-100;
+    @apply text-slate-100 transition-colors hover:text-white;
   }
 
   /* The small "← back" link above a detail page. */
@@ -108,7 +108,7 @@
   }
 
   .btn-primary {
-    @apply btn bg-peko-600 text-white hover:bg-peko-500;
+    @apply btn bg-slate-100 text-ink-950 hover:bg-white;
   }
 
   .btn-secondary {
@@ -163,7 +163,7 @@
 
   /* Square tile holding an emoji avatar or two initials. */
   .tile {
-    @apply flex flex-shrink-0 items-center justify-center rounded-lg border border-ink-600 bg-ink-800 font-medium text-peko-200;
+    @apply flex flex-shrink-0 items-center justify-center rounded-lg border border-ink-600 bg-ink-800 font-medium text-slate-200;
   }
 
   /* ── Badges ────────────────────────────────────────────────────────────── */
@@ -177,7 +177,7 @@
   }
 
   .badge-accent {
-    @apply badge bg-peko-500/15 text-peko-200;
+    @apply badge bg-white/10 text-slate-200;
   }
 
   .badge-danger {
@@ -203,7 +203,7 @@
   }
   .tab-active::after {
     content: '';
-    @apply absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-peko-400;
+    @apply absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-slate-100;
   }
 
   /* ── Code ──────────────────────────────────────────────────────────────── */
@@ -262,7 +262,7 @@
     @apply mb-0 mt-1;
   }
   .markdown-body a {
-    @apply link underline decoration-peko-500/40 underline-offset-4;
+    @apply link underline decoration-slate-500 underline-offset-4 hover:decoration-slate-300;
   }
   .markdown-body strong {
     @apply font-semibold text-slate-100;

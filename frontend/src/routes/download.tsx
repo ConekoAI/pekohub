@@ -56,7 +56,7 @@ function DownloadPage() {
               href={DESKTOP_RELEASES_URL}
               target="_blank"
               rel="noreferrer"
-              className={`card card-hover flex flex-col p-5 ${recommended ? 'border-peko-600' : ''}`}
+              className={`card card-hover flex flex-col p-5 ${recommended ? 'border-slate-400' : ''}`}
               data-testid={`download-${platform.id}`}
             >
               <span className="flex items-center gap-2.5 text-slate-100">
@@ -65,7 +65,7 @@ function DownloadPage() {
                 {recommended && <span className="badge-accent ml-auto">This computer</span>}
               </span>
               <span className="mt-1.5 text-xs text-slate-500">{platform.note}</span>
-              <span className="mt-6 inline-flex items-center gap-1.5 text-sm text-peko-300">
+              <span className="mt-6 inline-flex items-center gap-1.5 text-sm text-slate-100">
                 <Download className="h-4 w-4" />
                 Download
               </span>
